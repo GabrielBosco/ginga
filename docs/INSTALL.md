@@ -1,6 +1,6 @@
 # Instalação do Ginga
 
-Este guia cobre uma instalação limpa do Ginga `0.2.0` em Linux usando Docker Compose.
+Este guia cobre uma instalação limpa do Ginga `0.3.1` em Linux usando Docker Compose.
 
 ## Sistema recomendado
 

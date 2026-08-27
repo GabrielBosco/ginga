@@ -1,6 +1,6 @@
 {
   "name": "@ginga/desktop",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Cliente desktop auto-hospedado do Ginga",
   "main": "src/main.cjs",

@@ -16,7 +16,7 @@ import { observableUserIds, presenceAudienceUserIds, presenceModeHidden } from "
 const joinSchema = z.object({ channelId: z.string().min(1) });
 const guildWatchSchema = z.object({ guildId: z.string().min(1) });
 const voicePresenceSchema = z.object({ channelId: z.string().min(1) });
-const voiceStateSchema = z.object({ channelId: z.string().min(1), micMuted: z.boolean(), deafened: z.boolean() });
+const voiceStateSchema = z.object({ channelId: z.string().min(1), micMuted: z.boolean(), deafened: z.boolean(), streaming: z.boolean().optional() });
 const voiceSyncSchema = voiceStateSchema;
 const voiceMoveSchema = z.object({ targetUserId: z.string().min(1), targetChannelId: z.string().min(1) });
 const voiceDisconnectSchema = z.object({ guildId: z.string().min(1), targetUserId: z.string().min(1) });
@@ -135,6 +135,7 @@ type VoicePresenceUser = {
   deafened?: boolean;
   serverMuted?: boolean;
   serverDeafened?: boolean;
+  streaming?: boolean;
 };
 
 type VoiceSession = {
@@ -145,6 +146,7 @@ type VoiceSession = {
   deafened: boolean;
   serverMuted: boolean;
   serverDeafened: boolean;
+  streaming: boolean;
   user: VoicePresenceUser;
 };
 
@@ -170,7 +172,8 @@ function buildVoicePresence(voiceSessions: Map<string, VoiceSession>, guildId: s
       micMuted: session.serverMuted || session.serverDeafened || session.micMuted,
       deafened: session.serverDeafened || session.deafened,
       serverMuted: session.serverMuted,
-      serverDeafened: session.serverDeafened
+      serverDeafened: session.serverDeafened,
+      streaming: session.streaming
     });
   }
 
@@ -429,6 +432,7 @@ export function setupSocket(server: HttpServer) {
           deafened: membership.serverDeafened,
           serverMuted: membership.serverMuted,
           serverDeafened: membership.serverDeafened,
+          streaming: false,
           user
         });
 
@@ -448,9 +452,11 @@ export function setupSocket(server: HttpServer) {
         if (!current || current.channelId !== data.channelId) throw new HttpError(404, "Sessao de voz nao encontrada");
         const nextMicMuted = current.serverMuted || current.serverDeafened ? true : data.micMuted;
         const nextDeafened = current.serverDeafened ? true : data.deafened;
-        const changed = current.micMuted !== nextMicMuted || current.deafened !== nextDeafened;
+        const nextStreaming = typeof data.streaming === "boolean" ? data.streaming : current.streaming;
+        const changed = current.micMuted !== nextMicMuted || current.deafened !== nextDeafened || current.streaming !== nextStreaming;
         current.micMuted = nextMicMuted;
         current.deafened = nextDeafened;
+        current.streaming = nextStreaming;
         voiceSessions.set(socket.id, current);
         if (changed) emitVoicePresence(current.guildId);
         ack?.({ ok: true });
@@ -471,9 +477,11 @@ export function setupSocket(server: HttpServer) {
           existing.serverDeafened = membership.serverDeafened;
           const nextMicMuted = existing.serverMuted || existing.serverDeafened ? true : data.micMuted;
           const nextDeafened = existing.serverDeafened ? true : data.deafened;
-          const changed = existing.micMuted !== nextMicMuted || existing.deafened !== nextDeafened;
+          const nextStreaming = typeof data.streaming === "boolean" ? data.streaming : existing.streaming;
+          const changed = existing.micMuted !== nextMicMuted || existing.deafened !== nextDeafened || existing.streaming !== nextStreaming;
           existing.micMuted = nextMicMuted;
           existing.deafened = nextDeafened;
+          existing.streaming = nextStreaming;
           claimVoiceSession(socket.id, userId, data.channelId);
           voiceSessions.set(socket.id, existing);
           if (changed) emitVoicePresence(existing.guildId);
@@ -507,6 +515,7 @@ export function setupSocket(server: HttpServer) {
           deafened: membership.serverDeafened ? true : data.deafened,
           serverMuted: membership.serverMuted,
           serverDeafened: membership.serverDeafened,
+          streaming: Boolean(data.streaming),
           user
         });
         if (previousGuildId && previousGuildId !== channel.guildId) emitVoicePresence(previousGuildId);

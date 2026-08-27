@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import nodemailer from "nodemailer";
 import { z } from "zod";
@@ -14,12 +14,55 @@ import { hashPassword, verifyPassword } from "../password.js";
 import { randomColor } from "../utils.js";
 import { assertDeliverableEmail, assertPasswordNotPwned } from "../credentialSecurity.js";
 import {
-  createTwoFactorLoginChallenge, createTwoFactorSetup, disableTwoFactor, enableTwoFactor,
-  isTwoFactorEnabled, regenerateRecoveryCodes, twoFactorStatus, verifyTwoFactorCode,
-  verifyTwoFactorLoginChallenge
+  createTrustedTwoFactorDevice, createTwoFactorLoginChallenge, createTwoFactorSetup, disableTwoFactor, enableTwoFactor,
+  isTwoFactorEnabled, listTrustedTwoFactorDevices, regenerateRecoveryCodes, revokeTrustedTwoFactorDevice, revokeTrustedTwoFactorDevices,
+  trustedTwoFactorDeviceIdFromToken, twoFactorStatus, verifyTwoFactorCode, verifyTrustedTwoFactorDevice, verifyTwoFactorLoginChallenge
 } from "../twoFactor.js";
 
 export const authRouter = Router();
+
+const TRUSTED_2FA_COOKIE = "ginga_trusted_2fa";
+
+function readCookie(req: Request, name: string) {
+  const header = String(req.headers.cookie || "");
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const separator = trimmed.indexOf("=");
+    if (separator < 0 || trimmed.slice(0, separator) !== name) continue;
+    const rawValue = trimmed.slice(separator + 1);
+    try { return decodeURIComponent(rawValue); } catch { return rawValue; }
+  }
+  return "";
+}
+
+function requestUsesHttps(req: Request) {
+  if (req.secure) return true;
+  return String(req.header("x-forwarded-proto") || "").split(",")[0].trim().toLowerCase() === "https";
+}
+
+function setTrustedTwoFactorCookie(req: Request, res: Response, token: string, expiresInSeconds: number) {
+  res.cookie(TRUSTED_2FA_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: requestUsesHttps(req),
+    path: "/api/auth",
+    maxAge: expiresInSeconds * 1000
+  });
+}
+
+function clearTrustedTwoFactorCookie(req: Request, res: Response) {
+  res.clearCookie(TRUSTED_2FA_COOKIE, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: requestUsesHttps(req),
+    path: "/api/auth"
+  });
+}
+
+function requestUserAgent(req: Request) {
+  return String(req.header("user-agent") || "Dispositivo desconhecido");
+}
 
 const loginLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
@@ -220,7 +263,8 @@ const loginSchema = z.object({
 
 const twoFactorLoginSchema = z.object({
   challengeId: z.string().trim().min(32).max(200),
-  code: z.string().trim().min(6).max(32)
+  code: z.string().trim().min(6).max(32),
+  rememberDevice: z.boolean().optional().default(false)
 });
 
 const twoFactorCodeSchema = z.object({ code: z.string().trim().min(6).max(32) });
@@ -341,6 +385,16 @@ authRouter.post("/login", loginLimiter, asyncHandler(async (req, res) => {
   });
 
   if (twoFactorEnabled) {
+    const trustedToken = readCookie(req, TRUSTED_2FA_COOKIE);
+    if (trustedToken) {
+      const trusted = await verifyTrustedTwoFactorDevice(updated.id, trustedToken, requestUserAgent(req));
+      if (trusted) {
+        const trustedLogin = await prisma.user.update({ where: { id: updated.id }, data: { lastLoginAt: new Date() } });
+        const sessionId = await createAuthSession(trustedLogin.id, req);
+        return res.json({ token: signToken(trustedLogin, sessionId), user: publicUser(trustedLogin), twoFactorTrustedDevice: true });
+      }
+      clearTrustedTwoFactorCookie(req, res);
+    }
     const challenge = await createTwoFactorLoginChallenge(updated.id);
     return res.json({ twoFactorRequired: true, ...challenge });
   }
@@ -355,6 +409,12 @@ authRouter.post("/login/2fa", twoFactorLimiter, asyncHandler(async (req, res) =>
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || user.accountType !== "HUMAN" || user.accountDisabled) throw new HttpError(401, "Conta indisponivel.");
   const updated = await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  if (data.rememberDevice) {
+    const trusted = await createTrustedTwoFactorDevice(updated.id, requestUserAgent(req));
+    setTrustedTwoFactorCookie(req, res, trusted.token, trusted.expiresInSeconds);
+  } else {
+    clearTrustedTwoFactorCookie(req, res);
+  }
   const sessionId = await createAuthSession(updated.id, req);
   return res.json({ token: signToken(updated, sessionId), user: publicUser(updated) });
 }));
@@ -467,6 +527,8 @@ authRouter.post("/password-reset/confirm", passwordResetConfirmLimiter, asyncHan
 
   if (!result) throw new HttpError(400, "Este link de redefinicao e invalido, ja foi usado ou expirou.");
   await revokeAllAuthSessions(result.id);
+  await revokeTrustedTwoFactorDevices(result.id);
+  clearTrustedTwoFactorCookie(req, res);
   req.app.get("io")?.in?.(`user:${result.id}`)?.disconnectSockets?.(true);
   void sendPasswordChangedEmail(result.email, result.displayName).catch((error) => console.warn("Falha ao enviar aviso de senha alterada", error));
   res.json({ ok: true, message: "Senha alterada. Entre novamente com a nova senha." });
@@ -484,6 +546,27 @@ authRouter.post("/password-policy/check", passwordPolicyLimiter, asyncHandler(as
 
 authRouter.get("/2fa/status", requireAuth, asyncHandler(async (req, res) => {
   res.json(await twoFactorStatus(req.auth!.sub));
+}));
+
+authRouter.get("/2fa/trusted-devices", requireAuth, asyncHandler(async (req, res) => {
+  const currentToken = readCookie(req, TRUSTED_2FA_COOKIE);
+  res.json({ devices: await listTrustedTwoFactorDevices(req.auth!.sub, currentToken) });
+}));
+
+authRouter.delete("/2fa/trusted-devices/:deviceId", requireAuth, sensitiveActionLimiter, asyncHandler(async (req, res) => {
+  const deviceId = String(req.params.deviceId || "").trim();
+  if (!/^[0-9a-f]{64}$/i.test(deviceId)) throw new HttpError(400, "Dispositivo confiavel invalido.");
+  const currentToken = readCookie(req, TRUSTED_2FA_COOKIE);
+  const currentDeviceId = trustedTwoFactorDeviceIdFromToken(currentToken);
+  if (!(await revokeTrustedTwoFactorDevice(req.auth!.sub, deviceId))) throw new HttpError(404, "Dispositivo confiavel nao encontrado.");
+  if (currentDeviceId && currentDeviceId === deviceId) clearTrustedTwoFactorCookie(req, res);
+  res.status(204).end();
+}));
+
+authRouter.delete("/2fa/trusted-devices", requireAuth, sensitiveActionLimiter, asyncHandler(async (req, res) => {
+  await revokeTrustedTwoFactorDevices(req.auth!.sub);
+  clearTrustedTwoFactorCookie(req, res);
+  res.status(204).end();
 }));
 
 authRouter.post("/2fa/setup", requireAuth, twoFactorLimiter, asyncHandler(async (req, res) => {
@@ -516,6 +599,7 @@ authRouter.post("/2fa/disable", requireAuth, twoFactorLimiter, asyncHandler(asyn
   const verified = await verifyTwoFactorCode(user.id, data.code);
   if (!verified.ok) throw new HttpError(401, "Codigo do autenticador invalido.", { field: "code" });
   await disableTwoFactor(user.id);
+  clearTrustedTwoFactorCookie(req, res);
   const updated = await prisma.user.update({ where: { id: user.id }, data: { tokenVersion: { increment: 1 } } });
   const sessionId = await replaceCurrentAuthSession(updated.id, req, req.auth!.sid);
   res.json({ token: signToken(updated, sessionId), user: publicUser(updated) });
@@ -534,6 +618,8 @@ authRouter.delete("/sessions/:sessionId", requireAuth, sensitiveActionLimiter, a
 }));
 
 authRouter.post("/logout-all", requireAuth, sensitiveActionLimiter, asyncHandler(async (req, res) => {
+  await revokeTrustedTwoFactorDevices(req.auth!.sub);
+  clearTrustedTwoFactorCookie(req, res);
   const user = await prisma.user.update({
     where: { id: req.auth!.sub },
     data: { tokenVersion: { increment: 1 } }

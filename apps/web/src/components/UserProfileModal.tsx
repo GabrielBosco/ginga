@@ -64,6 +64,8 @@ export function UserProfileModal({ user, currentUser, guildId, online, onClose, 
   const blockedViewer = Boolean(block?.blockedViewer);
   const interactionsBlocked = blockedByViewer || blockedViewer;
   const friendship = data?.friendship ?? null;
+  const isSystemIdentity = profile.accountType === "SYSTEM";
+  const isHumanIdentity = profile.accountType === undefined || profile.accountType === "HUMAN";
 
   async function addFriend() {
     if (!data) return;
@@ -109,16 +111,16 @@ export function UserProfileModal({ user, currentUser, guildId, online, onClose, 
         <div className="full-profile-top">
           <Avatar user={profile} size="xl" status={online ? "online" : "offline"} />
           <div className="full-profile-actions">
-            {!isSelf && data && !interactionsBlocked && (friendship?.status === "ACCEPTED" || sharedGuilds.length > 0) && <button className="primary-button" disabled={busy} onClick={() => void openMessage()}><MessageCircle size={16} /> Mensagem</button>}
-            {!isSelf && data && !interactionsBlocked && friendship?.status !== "ACCEPTED" && <button className="secondary-button" disabled={busy || friendship?.direction === "OUTGOING"} onClick={() => void addFriend()}><UserPlus size={16} /> {friendship?.direction === "OUTGOING" ? "Solicitacao enviada" : friendship?.direction === "INCOMING" ? "Aceitar amizade" : "Adicionar amigo"}</button>}
-            {!isSelf && data && <button className="secondary-button danger-soft-button" disabled={busy} onClick={() => void toggleBlock()}><Ban size={16}/> {blockedByViewer ? "Desbloquear" : "Bloquear"}</button>}
+            {isHumanIdentity && !isSelf && data && !interactionsBlocked && (friendship?.status === "ACCEPTED" || sharedGuilds.length > 0) && <button className="primary-button" disabled={busy} onClick={() => void openMessage()}><MessageCircle size={16} /> Mensagem</button>}
+            {isHumanIdentity && !isSelf && data && !interactionsBlocked && friendship?.status !== "ACCEPTED" && <button className="secondary-button" disabled={busy || friendship?.direction === "OUTGOING"} onClick={() => void addFriend()}><UserPlus size={16} /> {friendship?.direction === "OUTGOING" ? "Solicitacao enviada" : friendship?.direction === "INCOMING" ? "Aceitar amizade" : "Adicionar amigo"}</button>}
+            {isHumanIdentity && !isSelf && data && <button className="secondary-button danger-soft-button" disabled={busy} onClick={() => void toggleBlock()}><Ban size={16}/> {blockedByViewer ? "Desbloquear" : "Bloquear"}</button>}
           </div>
         </div>
 
         <div className="full-profile-identity">
           <h2>{profile.displayName || profile.username || "Usuario"} <UserBadges user={profile} /></h2>
           <span>@{profile.username || "usuario"}</span>
-          <div className="contact-status"><i className={online ? "online" : ""} /> {online ? "Online agora" : "Offline"}</div>
+          {isSystemIdentity ? <div className="contact-status system"><ShieldCheck size={14}/> Identidade interna do Ginga</div> : <div className="contact-status"><i className={online ? "online" : ""} /> {online ? "Online agora" : "Offline"}</div>}
         </div>
 
         {loading && <div className="profile-loading-v2"><span/><div><b/><i/></div></div>}
@@ -127,9 +129,15 @@ export function UserProfileModal({ user, currentUser, guildId, online, onClose, 
         {error && <div className="profile-load-warning-v2"><ShieldCheck size={17}/><div><strong>Perfil parcialmente carregado</strong><span>{error}. O restante do Ginga continua funcionando.</span></div><button type="button" onClick={() => { setLoading(true); setError(""); void load().catch((caught) => setError(caught instanceof Error ? caught.message : "Falha ao carregar perfil")).finally(() => setLoading(false)); }}>Tentar novamente</button></div>}
 
         <div className="full-profile-grid">
-          <section><strong>SOBRE MIM</strong><p>{profile.bio || "Este usuario ainda nao escreveu uma apresentacao."}</p></section>
-          <section><strong>CONTA</strong><div className="profile-detail-line"><CalendarDays size={16} /><span>Entrou no Ginga em {safeDate(data?.profile?.createdAt)}</span></div>{membership && <div className="profile-detail-line"><Server size={16} /><span>{roleLabel[membership.role] ?? "Membro"} neste espaco · entrou em {safeDate(membership.joinedAt)}</span></div>}</section>
-          {sharedGuilds.length > 0 && <section className="full-profile-shared"><strong>ESPACOS EM COMUM</strong><div>{sharedGuilds.map((shared) => <span key={shared.id}><i style={{ background: shared.iconColor || "#7867e8" }}>{shared.name?.slice(0, 1).toUpperCase() || "G"}</i>{shared.name || "Espaco"}</span>)}</div></section>}
+          {isSystemIdentity ? (
+            <section className="system-profile-explainer"><strong>SISTEMA</strong><p>Esta e uma identidade interna do Ginga. Ela publica avisos automaticos do servidor, como entrada e saida de membros, e nao possui login, amizade, mensagens privadas ou acoes de moderacao.</p><div className="profile-detail-line"><ShieldCheck size={16}/><span>Protegida contra timeout, expulsao e banimento</span></div></section>
+          ) : (
+            <>
+              <section><strong>SOBRE MIM</strong><p>{profile.bio || "Este usuario ainda nao escreveu uma apresentacao."}</p></section>
+              <section><strong>CONTA</strong><div className="profile-detail-line"><CalendarDays size={16} /><span>Entrou no Ginga em {safeDate(data?.profile?.createdAt)}</span></div>{membership && <div className="profile-detail-line"><Server size={16} /><span>{roleLabel[membership.role] ?? "Membro"} neste espaco · entrou em {safeDate(membership.joinedAt)}</span></div>}</section>
+              {sharedGuilds.length > 0 && <section className="full-profile-shared"><strong>ESPACOS EM COMUM</strong><div>{sharedGuilds.map((shared) => <span key={shared.id}><i style={{ background: shared.iconColor || "#7867e8" }}>{shared.name?.slice(0, 1).toUpperCase() || "G"}</i>{shared.name || "Espaco"}</span>)}</div></section>}
+            </>
+          )}
         </div>
       </div>
     </Modal>

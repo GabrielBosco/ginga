@@ -78,6 +78,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [registrationPolicy, setRegistrationPolicy] = useState<RegistrationPolicy | null>(null);
   const [twoFactorChallengeId, setTwoFactorChallengeId] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [rememberTwoFactorDevice, setRememberTwoFactorDevice] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
   const [loading, setLoading] = useState(false);
@@ -169,6 +170,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     setShowPassword(false);
     setTwoFactorChallengeId("");
     setTwoFactorCode("");
+    setRememberTwoFactorDevice(false);
     resetRegistrationFlow();
     if (!isDesktop) {
       const nextPath = nextMode === "register" ? "/register" : "/";
@@ -191,6 +193,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     if ("twoFactorRequired" in result && result.twoFactorRequired) {
       setTwoFactorChallengeId(result.challengeId);
       setTwoFactorCode("");
+      setRememberTwoFactorDevice(false);
       setPasswordValue("");
       return;
     }
@@ -243,7 +246,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         if (twoFactorChallengeId) {
           const code = twoFactorCode.trim();
           if (code.length < 6) throw new Error("Digite o codigo do autenticador ou um codigo de recuperacao.");
-          await finishAuthentication("/api/auth/login/2fa", { challengeId: twoFactorChallengeId, code });
+          await finishAuthentication("/api/auth/login/2fa", { challengeId: twoFactorChallengeId, code, rememberDevice: rememberTwoFactorDevice });
           return;
         }
         await submitLogin({
@@ -331,7 +334,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
       {mode === "login" && !twoFactorChallengeId && <label>Usuario ou e-mail<input name="login" required placeholder="usuario ou e-mail" autoComplete="username" /></label>}
 
-      {((mode === "login" && !twoFactorChallengeId) || registerStep === "form") && (
+      {((mode === "login" && !twoFactorChallengeId) || (mode === "register" && registerStep === "form")) && (
         <label className={errorField === "password" ? "field-invalid" : ""}>Senha<span className="password-field"><input name="password" type={showPassword ? "text" : "password"} required minLength={mode === "register" ? 8 : 1} maxLength={128} value={passwordValue} onChange={(event) => { setPasswordValue(event.target.value); if (errorField === "password") setErrorField(""); }} placeholder="••••••••" autoComplete={mode === "login" ? "current-password" : "new-password"} /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label="Mostrar ou ocultar senha">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span>{mode === "register" && registerStep === "form" && <span className={`password-requirement ${passwordValue.length >= 8 ? "ok" : ""}`}><ShieldCheck size={14}/><span>{passwordValue.length >= 8 ? "O Ginga tambem verifica se esta senha ja apareceu em vazamentos" : `Minimo de 8 caracteres (${passwordValue.length}/8)`}</span></span>}</label>
       )}
 
@@ -339,6 +342,10 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         <div className="verification-box two-factor-login-box">
           <span className="two-factor-login-icon"><KeyRound size={20}/></span>
           <label>Codigo do autenticador ou recuperacao<input className="verification-code-input" value={twoFactorCode} onChange={(event) => setTwoFactorCode(event.target.value.replace(/\s+/g, "").slice(0, 32))} autoComplete="one-time-code" placeholder="000000 ou codigo de recuperacao" required autoFocus /></label>
+          <label className="auth-remember-device">
+            <input type="checkbox" checked={rememberTwoFactorDevice} onChange={(event) => setRememberTwoFactorDevice(event.target.checked)} />
+            <span><strong>Lembrar deste dispositivo</strong><small>Nao pedir o codigo 2FA novamente por 30 dias neste navegador.</small></span>
+          </label>
           <div className="verification-hint"><ShieldCheck size={16}/><span>Se perdeu o autenticador, use um dos codigos de recuperacao salvos quando ativou o 2FA.</span></div>
         </div>
       )}
@@ -360,7 +367,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         </div>
       )}
 
-      {mode === "login" && twoFactorChallengeId && <div className="verification-actions"><button type="button" className="auth-link-button muted" onClick={() => { setTwoFactorChallengeId(""); setTwoFactorCode(""); setError(""); }}>Voltar para usuario e senha</button></div>}
+      {mode === "login" && twoFactorChallengeId && <div className="verification-actions"><button type="button" className="auth-link-button muted" onClick={() => { setTwoFactorChallengeId(""); setTwoFactorCode(""); setRememberTwoFactorDevice(false); setError(""); }}>Voltar para usuario e senha</button></div>}
 
       {isDesktop ? (
         <div className="auth-links">

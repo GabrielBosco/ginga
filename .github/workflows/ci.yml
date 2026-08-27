@@ -41,4 +41,4 @@ jobs:
           if [ -f apps/desktop/src/game-overlay-preload.cjs ]; then node --check apps/desktop/src/game-overlay-preload.cjs; fi
 
       - name: Verificar repositório
-        run: ./scripts/prepare-github.sh
+        run: bash ./scripts/prepare-github.sh

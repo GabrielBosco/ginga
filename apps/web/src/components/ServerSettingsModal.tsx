@@ -32,6 +32,7 @@ import {
   Webhook
 } from "lucide-react";
 import { api } from "../lib/api";
+import { friendlyWebhookError } from "../lib/webhookErrors";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { builtinGuildRoleId, useDeveloperMode } from "../lib/developerMode";
 import { imageFileToSquareWebp, imageFileToWideWebp } from "../lib/imageUpload";
@@ -743,7 +744,7 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
         body: JSON.stringify({ expiresInMinutes: expiresInMinutes > 0 ? expiresInMinutes : null, maxUses: maxUsesRaw && Number(maxUsesRaw) > 0 ? Number(maxUsesRaw) : null })
       });
       if (guild.permissions.canManageInvites) await loadInvites();
-      event.currentTarget.reset();
+      formElement.reset();
       setNotice("Novo convite criado");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Nao foi possivel criar o convite");
@@ -768,10 +769,12 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
 
   async function createWebhook(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const name = String(form.get("name") ?? "").trim();
     const channelId = String(form.get("channelId") ?? "").trim();
-    if (!name || !channelId) return;
+    if (!channelId) return setError("Escolha o canal que vai receber as mensagens do webhook.");
+    if (name.length < 2) return setError("Digite um nome com pelo menos 2 caracteres para identificar o webhook.");
     setBusy(true); setError(""); setNotice(""); setWebhookReveal(null);
     try {
       const result = await api<{ webhook: WebhookItem; token: string }>("/api/developers/webhooks", {
@@ -781,10 +784,12 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
       const endpoint = `${window.location.origin}/api/webhooks/${result.webhook.id}`;
       setWebhookReveal({ id: result.webhook.id, endpoint, token: result.token });
       await loadWebhooks();
-      event.currentTarget.reset();
+      formElement.reset();
       setNotice("Webhook criado. Copie o segredo agora; ele nao sera exibido novamente.");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Nao foi possivel criar o webhook");
+      const friendly = friendlyWebhookError(caught);
+      setError([friendly.message, friendly.hint].filter(Boolean).join(" "));
+      if (friendly.field) formElement.querySelector<HTMLElement>(`[name="${friendly.field}"]`)?.focus();
     } finally { setBusy(false); }
   }
 
@@ -837,7 +842,7 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
     setBusy(true); setError(""); setNotice("");
     try {
       await api(`/api/guilds/${guild.id}/custom-roles`, { method: "POST", body: JSON.stringify({ name: String(form.get("name") ?? ""), color: String(form.get("color") ?? "#8b93a7"), hoist: Boolean(form.get("hoist")), mentionable: Boolean(form.get("mentionable")), permissions: [] }) });
-      event.currentTarget.reset();
+      formElement.reset();
       await loadStructure();
       setNotice("Cargo personalizado criado");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Nao foi possivel criar o cargo"); } finally { setBusy(false); }
@@ -1083,11 +1088,12 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
             </section>}
 
             {guild.permissions.canManageWebhooks && <section className="integration-settings-block webhook-settings-block">
-              <div className="settings-subheading"><div><h2>Webhooks</h2><p>Receba mensagens de CI/CD, monitoramento, jogos e outros servicos em canais de texto.</p></div></div>
+              <div className="settings-subheading"><div><h2>Webhooks</h2><p>Conecte monitoramento, CI/CD ou qualquer sistema HTTP para publicar mensagens automaticamente em um canal.</p></div></div>
+              <div className="webhook-create-explainer"><Webhook size={20}/><div><strong>Como criar um webhook</strong><p>Escolha um nome e o canal de destino. Ao criar, o Ginga mostra um <b>endpoint</b> e um <b>segredo</b> que voce copia para o sistema externo.</p></div></div>
               <form className="webhook-create-grid" onSubmit={createWebhook}>
-                <label>Nome<input name="name" required minLength={2} maxLength={64} placeholder="Deploy, Alertas, Status..." /></label>
-                <label>Canal<select name="channelId" required defaultValue=""><option value="" disabled>Selecione um canal</option>{structure.channels.filter((channel) => ["TEXT","ANNOUNCEMENT"].includes(channel.type)).map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}</select></label>
-                <button className="primary-button" disabled={busy}><Webhook size={16}/> Criar webhook</button>
+                <label><span>1. Nome</span><input name="name" required minLength={2} maxLength={64} placeholder="Ex.: Zabbix, Deploy, Alertas" /><small>Identifica quem esta enviando.</small></label>
+                <label><span>2. Canal</span><select name="channelId" required defaultValue=""><option value="" disabled>Escolha o canal de destino</option>{structure.channels.filter((channel) => ["TEXT","ANNOUNCEMENT"].includes(channel.type)).map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}</select><small>As mensagens serao publicadas aqui.</small></label>
+                <button className="primary-button" disabled={busy}><Webhook size={16}/> 3. Criar webhook</button>
               </form>
               {webhookReveal && <div className="webhook-secret-reveal"><KeyRound size={18}/><div><strong>Segredo do webhook</strong><code>{webhookReveal.token}</code><small>Endpoint: {webhookReveal.endpoint}<br/>Use <code>Authorization: Bearer &lt;token&gt;</code>. O segredo nao e colocado na URL.</small></div><div className="webhook-secret-actions"><button type="button" className="secondary-button" onClick={() => void navigator.clipboard.writeText(webhookReveal.token).then(() => setNotice("Segredo copiado"))}><Copy size={15}/> Segredo</button><button type="button" className="secondary-button" onClick={() => void navigator.clipboard.writeText(webhookReveal.endpoint).then(() => setNotice("Endpoint copiado"))}><Copy size={15}/> Endpoint</button></div></div>}
               <div className="webhook-admin-list">

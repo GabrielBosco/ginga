@@ -4,10 +4,10 @@ set -Eeuo pipefail
 # Build + publish do cliente Windows.
 #
 # Uso:
-#   GINGA_PUBLIC_URL=https://chat.example.com ./release-win.sh 0.2.0
+#   GINGA_PUBLIC_URL=https://chat.example.com ./release-win.sh 0.3.1
 #
 # Primeira cadeia de updater apenas:
-#   GINGA_PUBLIC_URL=https://chat.example.com ./release-win.sh 0.2.0 --init-key
+#   GINGA_PUBLIC_URL=https://chat.example.com ./release-win.sh 0.3.1 --init-key
 #
 # O mesmo private.pem deve ser reutilizado em todas as releases seguintes.
 
@@ -34,7 +34,7 @@ log() { printf '\n[Ginga Release] %s\n' "$*"; }
 ok() { printf '[OK] %s\n' "$*"; }
 die() { printf '[ERRO] %s\n' "$*" >&2; exit 1; }
 
-[[ -n "$VERSION" ]] || die "Informe a versao. Ex.: ./release-win.sh 0.2.0"
+[[ -n "$VERSION" ]] || die "Informe a versao. Ex.: ./release-win.sh 0.3.1"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]] || die "Versao invalida: $VERSION"
 
 if [[ -z "$PUBLIC_URL" && -f "$SERVER_ROOT/.env" ]]; then

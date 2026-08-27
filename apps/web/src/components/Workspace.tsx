@@ -39,6 +39,7 @@ import {
   Phone,
   PhoneOff,
   Plus,
+  Radio,
   Search,
   Send,
   Settings,
@@ -87,6 +88,7 @@ import { CommunityExplore } from "./CommunityExplore";
 import { EventsView } from "./EventsView";
 import { ForumView } from "./ForumView";
 import { GingaNews } from "./GingaNews";
+import { GlobalSearch } from "./GlobalSearch";
 import { GingaMusicPlayer } from "./GingaMusicPlayer";
 import { ContextMenu } from "./ContextMenu";
 import { DirectChat } from "./DirectChat";
@@ -274,7 +276,9 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   const [inviteSentTo, setInviteSentTo] = useState<Set<string>>(new Set());
   const [socketConnected, setSocketConnected] = useState(socket.connected);
   const [voicePresence, setVoicePresence] = useState<Record<string, VoicePresenceUser[]>>({});
+  const [voiceStreamTarget, setVoiceStreamTarget] = useState<{ channelId: string; userId: string } | null>(null);
   const voicePresenceRevisionRef = useRef(0);
+  const directCallJoinInFlightRef = useRef<Set<string>>(new Set());
   const [speakingVoiceUserIds, setSpeakingVoiceUserIds] = useState<Set<string>>(new Set());
   const [musicStates, setMusicStates] = useState<Record<string, MusicState>>({});
   const rememberMusicState = useCallback((state: MusicState) => {
@@ -308,6 +312,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   const [guildPreferencesRevision, setGuildPreferencesRevision] = useState(0);
   const [developerMode, setDeveloperMode] = useState(() => loadDeveloperPreferences().enabled);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   const [directCallHistory, setDirectCallHistory] = useState<DirectCall[]>([]);
 
   useEffect(() => () => { socket.disconnect(); }, [socket]);
@@ -1091,6 +1096,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
 
   const textLikeTypes: ChannelType[] = ["TEXT", "ANNOUNCEMENT", "FORUM", "EVENT"];
   const canManageChannels = Boolean(selectedGuild?.permissions.canManageChannels);
+  const canManageChannelPermissions = Boolean(selectedGuild?.permissions.canManageRoles);
   const canCreateInvites = Boolean(selectedGuild?.permissions.canCreateInvites);
   const canOpenServerSettings = Boolean(selectedGuild && (
     selectedGuild.permissions.canManageServer || selectedGuild.permissions.canManageChannels ||
@@ -1154,6 +1160,13 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
     }
   }, [selectedChannelId, selectedGuild]);
 
+  function playPersistentVoiceActionSound(kind: "mute" | "unmute" | "deafen" | "undeafen" | "leave") {
+    const notificationPreferences = loadNotificationPreferences();
+    if (!notificationPreferences.playSound) return;
+    if (activeVoiceGuild && isGuildSilent(loadGuildPreferences(activeVoiceGuild.id))) return;
+    void playUiSound(kind);
+  }
+
   async function togglePersistentVoiceMic() {
     const session = window.__gingaVoiceSession;
     if (!session || session.channelId !== activeVoiceChannelId) return;
@@ -1161,7 +1174,13 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
       const participant = session.room.localParticipant;
       await participant.setMicrophoneEnabled(!participant.isMicrophoneEnabled);
       session.desiredMicEnabled = participant.isMicrophoneEnabled;
-      socket.emit("voice:state", { channelId: activeVoiceChannelId, micMuted: !participant.isMicrophoneEnabled, deafened: Boolean(session.deafened) });
+      socket.emit("voice:state", {
+        channelId: activeVoiceChannelId,
+        micMuted: !participant.isMicrophoneEnabled,
+        deafened: Boolean(session.deafened),
+        streaming: participant.isScreenShareEnabled
+      });
+      playPersistentVoiceActionSound(participant.isMicrophoneEnabled ? "unmute" : "mute");
       setVoiceControlRevision((value) => value + 1);
     } catch (caught) {
       setToast(caught instanceof Error ? caught.message : "Nao foi possivel alterar o microfone");
@@ -1171,15 +1190,23 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   function togglePersistentVoiceDeafen() {
     const session = window.__gingaVoiceSession;
     if (!session || session.channelId !== activeVoiceChannelId) return;
-    session.deafened = !Boolean(session.deafened);
-    window.dispatchEvent(new CustomEvent("ginga:voice-deafen-changed", { detail: { channelId: activeVoiceChannelId, deafened: session.deafened } }));
-    socket.emit("voice:state", { channelId: activeVoiceChannelId, micMuted: !session.room.localParticipant.isMicrophoneEnabled, deafened: Boolean(session.deafened) });
+    const nextDeafened = !Boolean(session.deafened);
+    session.deafened = nextDeafened;
+    window.dispatchEvent(new CustomEvent("ginga:voice-deafen-changed", { detail: { channelId: activeVoiceChannelId, deafened: nextDeafened } }));
+    socket.emit("voice:state", {
+      channelId: activeVoiceChannelId,
+      micMuted: !session.room.localParticipant.isMicrophoneEnabled,
+      deafened: nextDeafened,
+      streaming: session.room.localParticipant.isScreenShareEnabled
+    });
+    playPersistentVoiceActionSound(nextDeafened ? "deafen" : "undeafen");
     setVoiceControlRevision((value) => value + 1);
   }
 
   function disconnectPersistentVoice() {
     const session = window.__gingaVoiceSession;
     if (!session || session.channelId !== activeVoiceChannelId) return;
+    playPersistentVoiceActionSound("leave");
     socket.emit("voice:leave", { channelId: activeVoiceChannelId });
     if (session.reconnectListener) socket.off("connect", session.reconnectListener);
     try { session.room.disconnect(); } catch {}
@@ -1700,15 +1727,60 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   }
 
   async function joinDirectCall(call: DirectCall) {
+    if (directCallJoinInFlightRef.current.has(call.id)) return;
+    directCallJoinInFlightRef.current.add(call.id);
+
     try {
-      const joined = await getDirectCallsBridge()?.join(call.id);
-      if (!joined) throw new Error("A chamada nao esta mais disponivel.");
-      setDirectCalls((current) => [joined, ...current.filter((item) => item.id !== joined.id)]);
-      if (joined.conversationId && conversations.some((conversation) => conversation.id === joined.conversationId)) setSelectedConversationId(joined.conversationId);
+      let bridge = getDirectCallsBridge();
+      for (let waitAttempt = 0; !bridge && waitAttempt < 5; waitAttempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 120));
+        bridge = getDirectCallsBridge();
+      }
+      if (!bridge) throw new Error("O modulo de chamadas ainda esta iniciando. Tente novamente em um instante.");
+
+      let joined: DirectCall | null = null;
+      let lastError: unknown = null;
+
+      // Um clique pode coincidir com polling/socket alterando o mesmo snapshot.
+      // Repetimos somente falhas transitorias e sempre consultamos o estado real
+      // antes da segunda tentativa; nao fazemos dois JOINs cegos em paralelo.
+      for (let attempt = 0; attempt < 2 && !joined; attempt += 1) {
+        try {
+          joined = await bridge.join(call.id);
+        } catch (caught) {
+          lastError = caught;
+          if (attempt === 0) {
+            await new Promise((resolve) => window.setTimeout(resolve, 180));
+            const refreshed = await bridge.refresh();
+            const current = refreshed.find((item) => item.id === call.id);
+            if (current?.state === "ACTIVE" && current.membershipStatus === "JOINED") joined = current;
+            else if (!current || !["RINGING", "ACTIVE"].includes(current.state)) break;
+          }
+        }
+      }
+
+      if (!joined) throw (lastError instanceof Error ? lastError : new Error("A chamada nao esta mais disponivel."));
+
+      // Confirma o estado efetivo antes de montar a sala de midia. Isso elimina
+      // o caso intermitente em que o componente abria com membership antigo.
+      if (joined.state !== "ACTIVE" || joined.membershipStatus !== "JOINED") {
+        const refreshed = await bridge.refresh();
+        joined = refreshed.find((item) => item.id === call.id) ?? joined;
+      }
+      if (joined.state !== "ACTIVE" || joined.membershipStatus !== "JOINED") {
+        throw new Error("Nao foi possivel confirmar sua entrada na chamada.");
+      }
+
+      setDirectCalls((current) => [joined!, ...current.filter((item) => item.id !== joined!.id)]);
+      if (joined.conversationId && conversations.some((conversation) => conversation.id === joined!.conversationId)) setSelectedConversationId(joined.conversationId);
       setActiveDirectCallId(joined.id);
       setSection("direct");
       void loadConversations();
-    } catch (caught) { setToast(caught instanceof Error ? caught.message : "Nao foi possivel entrar na chamada"); }
+    } catch (caught) {
+      setToast(caught instanceof Error ? caught.message : "Nao foi possivel entrar na chamada", "error");
+    } finally {
+      directCallJoinInFlightRef.current.delete(call.id);
+    }
   }
 
   async function declineDirectCall(call: DirectCall) {
@@ -1767,11 +1839,17 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
     const onKey = (event: globalThis.KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault(); setQuickOpen((value) => !value); setQuickQuery("");
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f") {
+        if (!selectedGuildId) return;
+        event.preventDefault();
+        setShowGlobalSearch(true);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [selectedGuildId]);
 
   function quickItems() {
     const q = quickQuery.trim().toLowerCase();
@@ -1937,6 +2015,21 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
     </button>;
   }
 
+  async function setChannelPermissionInheritance(channel: Channel, sync: boolean) {
+    try {
+      await api(`/api/channels/${encodeURIComponent(channel.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ syncPermissionsWithCategory: sync })
+      });
+      await loadGuilds(selectedGuildId || channel.guildId);
+      setToast(sync ? "Permissoes sincronizadas com a categoria" : "O canal agora usa permissoes proprias");
+    } catch (caught) {
+      setToast(caught instanceof Error ? caught.message : "Nao foi possivel alterar a heranca de permissoes", "error");
+    } finally {
+      setChannelMenu(null);
+    }
+  }
+
   function renderChannel(channel: Channel) {
     const connectedUsers = voicePresence[channel.id] ?? [];
     const musicState = selectedGuild ? musicStates[selectedGuild.id] : undefined;
@@ -1998,7 +2091,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
                 event.stopPropagation();
                 openVoiceMenu(event.clientX + 6, event.clientY + 6);
               }}
-            ><Avatar user={voiceUser} size="xs" status="online" /><span>{voiceUser.displayName}{voiceUser.id === user.id ? " (voce)" : ""}</span><span className="voice-user-states">{voiceUser.deafened ? <VolumeX size={13}/> : voiceUser.micMuted ? <MicOff size={13}/> : null}</span></button>;
+            ><Avatar user={voiceUser} size="xs" status="online" /><span>{voiceUser.displayName}{voiceUser.id === user.id ? " (voce)" : ""}</span>{voiceUser.streaming && <em className="voice-live-badge" role="button" tabIndex={0} title={`Assistir transmissao de ${voiceUser.displayName}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setVoiceStreamTarget({ channelId: channel.id, userId: voiceUser.id }); setSelectedGuildId(channel.guildId); setSelectedChannelId(channel.id); setSection("space"); setMobileContextOpen(false); }} onKeyDown={(event) => { if (event.key !== "Enter" && event.key !== " ") return; event.preventDefault(); event.stopPropagation(); setVoiceStreamTarget({ channelId: channel.id, userId: voiceUser.id }); setSelectedGuildId(channel.guildId); setSelectedChannelId(channel.id); setSection("space"); setMobileContextOpen(false); }}><Radio size={10}/> AO VIVO</em>}<span className="voice-user-states">{voiceUser.deafened ? <VolumeX size={13}/> : voiceUser.micMuted ? <MicOff size={13}/> : null}</span></button>;
           })}
         </div>}
       </div>
@@ -2116,7 +2209,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
 
         {section === "space" && selectedGuild && (
           <>
-            <header className="context-header space-context-header"><div><small>ESPACO</small><strong>{selectedGuild.name}</strong></div>{canOpenServerSettings && <button onClick={() => { setServerSettingsInitialTab(undefined); setShowServerSettings(true); }} aria-label="Configuracoes do espaco"><Settings size={17} /></button>}</header>
+            <header className="context-header space-context-header"><div><small>ESPACO</small><strong>{selectedGuild.name}</strong></div><span className="space-context-actions-v3"><button onClick={() => setShowGlobalSearch(true)} aria-label="Buscar mensagens no servidor" title="Buscar no servidor (Ctrl+Shift+F)"><Search size={17}/></button>{canOpenServerSettings && <button onClick={() => { setServerSettingsInitialTab(undefined); setShowServerSettings(true); }} aria-label="Configuracoes do espaco"><Settings size={17} /></button>}</span></header>
             <div className="context-scroll channel-list">
               {canManageChannels && <div className="channel-list-toolbar"><button onClick={() => setShowCategoryModal(true)}><FolderPlus size={15} /> Categoria</button><button onClick={() => { setChannelModalDefaultType("TEXT"); setShowChannelModal(true); }}><Plus size={15} /> Canal</button></div>}
               {orderedCategories.map((category) => {
@@ -2218,7 +2311,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
         {section === "space" && selectedGuild && selectedChannel && ["TEXT","ANNOUNCEMENT"].includes(selectedChannel.type) && <ChatView key={selectedChannel.id} channel={selectedChannel} currentUser={user} socket={socket} permissions={selectedGuild.permissions} members={members} forwardChannels={selectedGuild.channels.filter((item) => ["TEXT","ANNOUNCEMENT"].includes(item.type))} onUserClick={(target, rect) => openUserCard(target, rect, members.find((member) => member.user.id === target.id), selectedGuild.id)} onModerateMember={(action,target)=>{ setVoiceBanReason(""); setVoiceTimeoutReason(""); if(action==="ban")setVoiceBanDuration("7D"); if(action==="timeout")setVoiceTimeoutDuration(10); setVoiceModerationTarget({action,user:target,guildId:selectedGuild.id}); }} />}
         {section === "space" && selectedGuild && selectedChannel?.type === "FORUM" && <ForumView key={selectedChannel.id} channel={selectedChannel} currentUser={user} socket={socket} canManage={selectedGuild.permissions.canManageForums} />}
         {section === "space" && selectedGuild && selectedChannel?.type === "EVENT" && <EventsView key={selectedChannel.id} channel={selectedChannel} guild={selectedGuild} currentUser={user} socket={socket} />}
-        {section === "space" && selectedGuild && selectedChannel?.type === "VOICE" && <VoiceRoom key={selectedChannel.id} channel={selectedChannel} currentUserId={user.id} voiceChannels={selectedGuild.channels.filter((item) => item.type === "VOICE")} socket={socket} onLeave={leaveVoice} onOpenVoiceSettings={() => { setUserSettingsTab("voice"); setShowUserSettings(true); }} onOpenParticipantProfile={openUserProfileById} onMessageParticipant={startConversation} onCallParticipant={startDirectCallWithUser} onKickParticipant={kickVoiceParticipant} onBanParticipant={banVoiceParticipant} onTimeoutParticipant={timeoutVoiceParticipant} onServerMuteParticipant={(userId, muted) => setServerVoiceModeration(userId, { muted }, selectedGuild.id)} onServerDeafenParticipant={(userId, deafened) => setServerVoiceModeration(userId, { deafened }, selectedGuild.id)} onMoveParticipant={moveVoiceParticipant} onDisconnectParticipant={(userId) => disconnectVoiceParticipant(selectedGuild.id, userId)} canKickParticipants={selectedGuild.permissions.canKickMembers} canMoveParticipants={selectedGuild.permissions.canMoveMembers} canBanParticipants={selectedGuild.permissions.canBanMembers} canTimeoutParticipants={selectedGuild.permissions.canManageMembers || selectedGuild.permissions.canKickMembers} canMuteParticipants={selectedGuild.permissions.canMuteMembers} canDeafenParticipants={selectedGuild.permissions.canDeafenMembers} canManageParticipantRoles={selectedGuild.permissions.canManageRoles} onManageParticipantRoles={() => { setServerSettingsInitialTab("members"); setShowServerSettings(true); }} />}
+        {section === "space" && selectedGuild && selectedChannel?.type === "VOICE" && <VoiceRoom key={selectedChannel.id} channel={selectedChannel} currentUserId={user.id} voiceChannels={selectedGuild.channels.filter((item) => item.type === "VOICE")} socket={socket} onLeave={leaveVoice} onOpenVoiceSettings={() => { setUserSettingsTab("voice"); setShowUserSettings(true); }} onOpenParticipantProfile={openUserProfileById} onMessageParticipant={startConversation} onCallParticipant={startDirectCallWithUser} onKickParticipant={kickVoiceParticipant} onBanParticipant={banVoiceParticipant} onTimeoutParticipant={timeoutVoiceParticipant} onServerMuteParticipant={(userId, muted) => setServerVoiceModeration(userId, { muted }, selectedGuild.id)} onServerDeafenParticipant={(userId, deafened) => setServerVoiceModeration(userId, { deafened }, selectedGuild.id)} onMoveParticipant={moveVoiceParticipant} onDisconnectParticipant={(userId) => disconnectVoiceParticipant(selectedGuild.id, userId)} canKickParticipants={selectedGuild.permissions.canKickMembers} canMoveParticipants={selectedGuild.permissions.canMoveMembers} canBanParticipants={selectedGuild.permissions.canBanMembers} canTimeoutParticipants={selectedGuild.permissions.canManageMembers || selectedGuild.permissions.canKickMembers} canMuteParticipants={selectedGuild.permissions.canMuteMembers} canDeafenParticipants={selectedGuild.permissions.canDeafenMembers} canManageParticipantRoles={selectedGuild.permissions.canManageRoles} canShareScreen={selectedGuild.permissions.canShareScreen} canUseVideo={selectedGuild.permissions.canUseVideo} autoWatchUserId={voiceStreamTarget?.channelId === selectedChannel.id ? voiceStreamTarget.userId : ""} onManageParticipantRoles={() => { setServerSettingsInitialTab("members"); setShowServerSettings(true); }} />}
       </section>
 
       {section === "space" && (
@@ -2484,6 +2577,8 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
         </ContextMenu>;
       })()}
 
+      {showGlobalSearch && selectedGuild && <GlobalSearch guild={selectedGuild} members={members} onClose={()=>setShowGlobalSearch(false)} onOpenMessage={(channelId,messageId)=>{try{sessionStorage.setItem("ginga.pendingMessageJump",JSON.stringify({channelId,messageId,at:Date.now()}));}catch{}setSection("space");setSelectedGuildId(selectedGuild.id);setSelectedChannelId(channelId);setShowGlobalSearch(false);window.setTimeout(()=>window.dispatchEvent(new CustomEvent("ginga:jump-message",{detail:{channelId,messageId}})),160);}} />}
+
       {quickOpen && <div className="command-palette-backdrop" onMouseDown={() => setQuickOpen(false)}><div className="command-palette" onMouseDown={(e)=>e.stopPropagation()}><div className="command-search"><Command size={18}/><input autoFocus value={quickQuery} onChange={e=>setQuickQuery(e.target.value)} placeholder="Ir para canal, conversa ou recurso..."/><kbd>ESC</kbd></div><div className="command-results">{quickItems().map(item=><button key={item.id} onClick={()=>{item.run();setQuickOpen(false);}}><strong>{item.label}</strong><span>{item.detail}</span></button>)}</div></div></div>}
 
       {guildMenu && (() => {
@@ -2604,6 +2699,8 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
         {channelMuted ? <button onClick={()=>{unmuteChannel(selectedGuild.id,channelMenu.channel.id);setGuildPreferencesRevision(v=>v+1);setToast("Som do canal reativado");setChannelMenu(null)}}><Bell size={15}/> Ativar som do canal</button> : <button onClick={()=>setChannelMenu({...channelMenu,page:"mute-duration"})}><BellOff size={15}/> Silenciar canal <ChevronRight className="context-menu-trailing" size={15}/></button>}
         {canManageChannels && <><div className="context-menu-separator"/><button onClick={() => void renameChannelQuick(channelMenu.channel)}><Pencil size={15} /> Editar canal</button></>}
         {canManageChannels && <button onClick={() => void duplicateChannelQuick(channelMenu.channel)}><Copy size={15} /> Duplicar canal</button>}
+        {canManageChannelPermissions && <button onClick={() => { setChannelMenu(null); setServerSettingsInitialTab("roles"); setShowServerSettings(true); }}><ShieldCheck size={15}/> Permissoes</button>}
+        {canManageChannels && channelMenu.channel.categoryId && <button onClick={() => void setChannelPermissionInheritance(channelMenu.channel, !channelMenu.channel.syncPermissionsWithCategory)}><Link2 size={15}/> {channelMenu.channel.syncPermissionsWithCategory ? "Desvincular da categoria" : "Sincronizar com a categoria"}<span className="context-menu-trailing">{channelMenu.channel.syncPermissionsWithCategory ? "SIM" : "NAO"}</span></button>}
         {canManageChannels && <><div className="context-menu-label">MOVER PARA</div>
         {orderedCategories.map((category) => <button key={category.id} disabled={channelMenu.channel.categoryId === category.id} onClick={() => void moveChannelToCategory(channelMenu.channel, category.id)}><FolderInput size={15} /> {category.name}</button>)}
         <button disabled={!channelMenu.channel.categoryId} onClick={() => void moveChannelToCategory(channelMenu.channel, null)}><FolderInput size={15} /> Sem categoria</button></>}
@@ -2614,6 +2711,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
       {categoryMenu && <ContextMenu x={categoryMenu.x} y={categoryMenu.y} onClose={() => setCategoryMenu(null)}>
         {canManageChannels && <button onClick={() => void renameCategoryQuick(categoryMenu.category)}><Pencil size={15} /> Editar categoria</button>}
         {canManageChannels && <button onClick={() => void duplicateCategoryQuick(categoryMenu.category)}><Copy size={15} /> Duplicar categoria</button>}
+        {canManageChannelPermissions && <button onClick={() => { setCategoryMenu(null); setServerSettingsInitialTab("roles"); setShowServerSettings(true); }}><ShieldCheck size={15}/> Permissoes da categoria</button>}
         {developerMode && <button onClick={() => { void copyIdentifier("ID da categoria", categoryMenu.category.id); setCategoryMenu(null); }}><Copy size={15}/> Copiar ID da categoria</button>}
         {canManageChannels && <button className="danger" onClick={() => void deleteCategoryQuick(categoryMenu.category)}><Trash2 size={15} /> Excluir categoria</button>}
       </ContextMenu>}

@@ -187,6 +187,13 @@ socialRouter.get("/users/:userId/profile", requireAuth, asyncHandler(async (req,
   });
   if (!profile) throw new HttpError(404, "Usuario nao encontrado");
 
+  // Identidades internas (SYSTEM/BOT/WEBHOOK) possuem perfil somente leitura.
+  // Elas nao participam do grafo social humano, evitando amizade, bloqueio e DM acidentais.
+  if (profile.accountType !== "HUMAN") {
+    res.json({ profile, friendship: null, sharedGuilds: [], guildMembership: null, block: null });
+    return;
+  }
+
   await ensureSocialSafetyStorage();
   const [friendship, sharedGuilds, blockRelation] = await Promise.all([
     userId === viewerId ? null : prisma.friendship.findFirst({
@@ -354,7 +361,7 @@ socialRouter.post("/direct/conversations", requireAuth, asyncHandler(async (req,
   const [target, friendship, sharedMembership] = await Promise.all([
     prisma.user.findUnique({
       where: { id: otherUserId },
-      select: { allowDirectMessages: true }
+      select: { allowDirectMessages: true, accountType: true }
     }),
     prisma.friendship.findFirst({
       where: {
@@ -377,7 +384,7 @@ socialRouter.post("/direct/conversations", requireAuth, asyncHandler(async (req,
     })
   ]);
 
-  if (!target) throw new HttpError(404, "Usuario nao encontrado");
+  if (!target || target.accountType !== "HUMAN") throw new HttpError(404, "Usuario nao encontrado");
   if (!friendship && !sharedMembership) {
     throw new HttpError(403, "Voce precisa compartilhar um espaco com esta pessoa ou adiciona-la como amiga");
   }

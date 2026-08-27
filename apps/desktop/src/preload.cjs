@@ -6,7 +6,6 @@ const desktopApi = Object.freeze({
   retryServer: () => ipcRenderer.invoke('ginga:retry-server'),
   showMainWindow: () => ipcRenderer.invoke('ginga:show-window'),
   getServerUrl: () => ipcRenderer.invoke('ginga:server-url'),
-  openServerSettings: () => ipcRenderer.invoke('ginga:open-server-settings'),
   minimizeWindow: () => ipcRenderer.invoke('ginga:window-minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('ginga:window-toggle-maximize'),
   closeWindow: () => ipcRenderer.invoke('ginga:window-close'),

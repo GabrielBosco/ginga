@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
-  Activity, Ban, Bot, Building2, Check, ChevronRight, Clipboard, Clock3, Eye, EyeOff,
-  Laptop, LayoutDashboard, LogOut, Mail, Megaphone, Power, PowerOff, RefreshCw, Search,
+  Activity, Ban, Bot, Building2, Check, ChevronRight, Clipboard, Clock3, Database, Eye, EyeOff,
+  HardDrive, Laptop, LayoutDashboard, LogOut, Mail, Megaphone, Power, PowerOff, Radio, RefreshCw, Search,
   ScrollText, ShieldAlert, ShieldCheck, Trash2, UserCog, Users, X
 } from "lucide-react";
 import { api } from "../lib/api";
@@ -67,6 +67,21 @@ interface AdminGuild {
   _count: { members: number; channels: number; bans: number; botInstalls: number };
 }
 
+interface SystemHealth {
+  status: "healthy" | "degraded";
+  version: string;
+  timestamp: string;
+  startedAt: string;
+  uptimeSeconds: number;
+  environment: string;
+  nodeVersion: string;
+  process: { pid:number; rssMb:number; heapUsedMb:number; heapTotalMb:number };
+  database: { ok:boolean; latencyMs:number; error?:string };
+  storage: { ok:boolean; path:string; totalMb:number; freeMb:number; usedPercent:number; error?:string };
+  livekit: { ok:boolean; latencyMs:number; statusCode:number|null; publicUrl:string; error?:string };
+  websocket: { ok:boolean; connectedClients:number };
+}
+
 interface PlatformAudit {
   id: string;
   action: string;
@@ -76,11 +91,12 @@ interface PlatformAudit {
   actor?: User | null;
 }
 
-type AdminSection = "overview" | "users" | "guilds" | "announcements" | "audit";
+type AdminSection = "overview" | "system" | "users" | "guilds" | "announcements" | "audit";
 type UserFilter = "all" | "online" | "disabled" | "admins" | "developers" | "no2fa";
 
 const sectionMeta: Record<AdminSection, { title: string; subtitle: string }> = {
-  overview: { title: "Visão geral", subtitle: "Saúde da plataforma, uso e atividade administrativa." },
+  overview: { title: "Visão geral", subtitle: "Uso, atividade e administração da plataforma." },
+  system: { title: "Saúde do sistema", subtitle: "API, banco, LiveKit, WebSocket, memória e armazenamento em tempo real." },
   users: { title: "Usuários", subtitle: "Contas, permissões globais, sessões e segurança." },
   guilds: { title: "Servidores", subtitle: "Servidores criados, proprietários e tamanho da operação." },
   announcements: { title: "Comunicados", subtitle: "Avisos globais, manutenção e notas de versão." },
@@ -101,6 +117,8 @@ function actionLabel(value: string) {
 export function AdminPortal({ user, onExit }: { user: User; onExit: () => void }) {
   const [section, setSection] = useState<AdminSection>("overview");
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
+  const [systemHealthLoading, setSystemHealthLoading] = useState(false);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [guilds, setGuilds] = useState<AdminGuild[]>([]);
   const [announcements, setAnnouncements] = useState<PlatformAnnouncement[]>([]);
@@ -130,6 +148,15 @@ export function AdminPortal({ user, onExit }: { user: User; onExit: () => void }
 
   const loadOverview = useCallback(async () => {
     setOverview(await api<Overview>("/api/platform/admin/overview"));
+  }, []);
+
+  const loadSystemHealth = useCallback(async () => {
+    setSystemHealthLoading(true);
+    try {
+      setSystemHealth(await api<SystemHealth>("/api/platform/admin/system-health"));
+    } finally {
+      setSystemHealthLoading(false);
+    }
   }, []);
 
   const loadGuilds = useCallback(async () => {
@@ -174,6 +201,21 @@ export function AdminPortal({ user, onExit }: { user: User; onExit: () => void }
   }, [loadBase]);
 
   useEffect(() => {
+    if (section !== "system") return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        await loadSystemHealth();
+      } catch (caught) {
+        if (!cancelled) setFailure(caught, "Não foi possível consultar a saúde do sistema");
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 10_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [loadSystemHealth, section, setFailure]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => { void loadUsers(query.trim()); }, query.trim() ? 280 : 0);
     return () => window.clearTimeout(timer);
   }, [loadUsers, query]);
@@ -206,6 +248,7 @@ export function AdminPortal({ user, onExit }: { user: User; onExit: () => void }
 
   async function refreshCurrent() {
     setError("");
+    if (section === "system") return loadSystemHealth().catch((caught) => setFailure(caught, "Não foi possível consultar a saúde do sistema"));
     if (section === "users") return loadUsers(query.trim());
     if (section === "guilds") return loadGuilds().catch((caught) => setFailure(caught, "Não foi possível carregar os servidores"));
     if (section === "announcements") return loadAnnouncements().catch((caught) => setFailure(caught, "Não foi possível carregar os comunicados"));
@@ -372,7 +415,7 @@ export function AdminPortal({ user, onExit }: { user: User; onExit: () => void }
     }
   }
 
-  const loading = baseLoading || usersLoading;
+  const loading = baseLoading || usersLoading || (section === "system" && systemHealthLoading);
   const totalMessages = (overview?.messages ?? 0) + (overview?.directMessages ?? 0);
   const privilegedUsers = useMemo(() => users.filter((item) => item.platformOwner || item.systemRole === "PLATFORM_ADMIN" || item.systemRole === "DEVELOPER"), [users]);
   const onlineUsers = useMemo(() => users.filter((item) => item.online && !item.accountDisabled).length, [users]);
@@ -401,6 +444,7 @@ export function AdminPortal({ user, onExit }: { user: User; onExit: () => void }
 
   const nav = [
     { id: "overview" as const, label: "Visão geral", icon: LayoutDashboard },
+    { id: "system" as const, label: "Sistema", icon: Activity },
     { id: "users" as const, label: "Usuários", icon: Users },
     { id: "guilds" as const, label: "Servidores", icon: Building2 },
     { id: "announcements" as const, label: "Comunicados", icon: Megaphone },
@@ -438,7 +482,7 @@ export function AdminPortal({ user, onExit }: { user: User; onExit: () => void }
             <p>{sectionMeta[section].subtitle}</p>
           </div>
           <div className="admin-topbar-actions-v2">
-            <span className={`admin-health-pill ${error ? "warning" : "ok"}`}><i/>{error ? "Atenção" : "Operacional"}</span>
+            <span className={`admin-health-pill ${error || systemHealth?.status === "degraded" ? "warning" : "ok"}`}><i/>{error || systemHealth?.status === "degraded" ? "Atenção" : "Operacional"}</span>
             <button className="secondary-button" disabled={loading} onClick={() => void refreshCurrent()}><RefreshCw size={16} className={loading ? "spin" : ""}/> Atualizar</button>
           </div>
         </header>
@@ -484,6 +528,22 @@ export function AdminPortal({ user, onExit }: { user: User; onExit: () => void }
               <header><div><span>ATIVIDADE</span><h2>Últimas alterações</h2><p>Ações administrativas recentes.</p></div><button onClick={() => setSection("audit")}>Abrir log <ChevronRight size={15}/></button></header>
               <div className="admin-mini-audit-v2">{recentAudit.map((item) => <div key={item.id}><ScrollText size={15}/><span><strong>{actionLabel(item.action)}</strong><small>{item.actor?.displayName ?? "Sistema"} · {safeDate(item.createdAt)}</small></span></div>)}{recentAudit.length === 0 && <div className="admin-empty-v2">Nenhuma atividade global.</div>}</div>
             </section>
+          </div>
+        </div>}
+
+        {section === "system" && <div className="admin-page-v2 admin-system-page-v3">
+          <div className="admin-system-summary-v3">
+            <section className={`admin-system-hero-v3 ${systemHealth?.status ?? "loading"}`}><div><Activity size={24}/><span><small>ESTADO GERAL</small><strong>{systemHealth?.status === "healthy" ? "Tudo operacional" : systemHealth ? "Atenção necessária" : "Consultando..."}</strong><em>Ginga {systemHealth?.version ?? overview?.version ?? "-"} · uptime {systemHealth ? `${Math.floor(systemHealth.uptimeSeconds/3600)}h ${Math.floor((systemHealth.uptimeSeconds%3600)/60)}min` : "-"}</em></span></div><button type="button" className="secondary-button" onClick={()=>void refreshCurrent()} disabled={systemHealthLoading}><RefreshCw size={15} className={systemHealthLoading?"spin":""}/> Atualizar agora</button></section>
+          </div>
+          <div className="admin-system-grid-v3">
+            <article className={systemHealth?.database.ok?"ok":"danger"}><span><Database size={20}/></span><div><small>POSTGRESQL</small><strong>{systemHealth?.database.ok?"Operacional":"Indisponível"}</strong><em>{systemHealth ? `${systemHealth.database.latencyMs} ms de latência` : "Consultando..."}</em>{systemHealth?.database.error&&<p>{systemHealth.database.error}</p>}</div></article>
+            <article className={systemHealth?.livekit.ok?"ok":"danger"}><span><Radio size={20}/></span><div><small>LIVEKIT / RTC</small><strong>{systemHealth?.livekit.ok?"Alcançável":"Indisponível"}</strong><em>{systemHealth ? `${systemHealth.livekit.latencyMs} ms · HTTP ${systemHealth.livekit.statusCode ?? "-"}` : "Consultando..."}</em>{systemHealth?.livekit.error&&<p>{systemHealth.livekit.error}</p>}</div></article>
+            <article className={systemHealth?.websocket.ok?"ok":"danger"}><span><Activity size={20}/></span><div><small>WEBSOCKET</small><strong>{systemHealth?.websocket.connectedClients ?? 0} cliente{(systemHealth?.websocket.connectedClients ?? 0)===1?"":"s"}</strong><em>Conexões Socket.IO ativas</em></div></article>
+            <article className={systemHealth?.storage.ok && (systemHealth?.storage.usedPercent ?? 0)<90?"ok":"warning"}><span><HardDrive size={20}/></span><div><small>ARMAZENAMENTO</small><strong>{systemHealth ? `${systemHealth.storage.usedPercent}% usado` : "Consultando..."}</strong><em>{systemHealth ? `${Math.round(systemHealth.storage.freeMb/1024)} GB livres de ${Math.round(systemHealth.storage.totalMb/1024)} GB` : "-"}</em><div className="admin-resource-bar-v3"><i style={{width:`${Math.min(100,systemHealth?.storage.usedPercent??0)}%`}}/></div></div></article>
+          </div>
+          <div className="admin-system-detail-grid-v3">
+            <section className="admin-panel-v2"><header><div><span>PROCESSO</span><h2>API Node.js</h2><p>Consumo do processo atual da API.</p></div></header><div className="admin-system-kv-v3"><div><span>RSS</span><strong>{systemHealth?.process.rssMb ?? "-"} MB</strong></div><div><span>Heap</span><strong>{systemHealth?.process.heapUsedMb ?? "-"} / {systemHealth?.process.heapTotalMb ?? "-"} MB</strong></div><div><span>Node</span><strong>{systemHealth?.nodeVersion ?? "-"}</strong></div><div><span>Ambiente</span><strong>{systemHealth?.environment ?? "-"}</strong></div></div></section>
+            <section className="admin-panel-v2"><header><div><span>REDE E MÍDIA</span><h2>RTC publicado</h2><p>Endpoint usado pelos clientes para voz, vídeo e stream.</p></div></header><div className="admin-system-endpoint-v3"><Radio size={17}/><code>{systemHealth?.livekit.publicUrl ?? "-"}</code></div><small className="admin-system-updated-v3">Última leitura: {systemHealth ? safeDate(systemHealth.timestamp) : "-"}</small></section>
           </div>
         </div>}
 

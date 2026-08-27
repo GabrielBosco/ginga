@@ -7,6 +7,7 @@ const TOTP_STEP_SECONDS = 30;
 const TOTP_DIGITS = 6;
 const LOGIN_CHALLENGE_TTL_SECONDS = 5 * 60;
 const MAX_CHALLENGE_ATTEMPTS = 5;
+const TRUSTED_DEVICE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -39,6 +40,21 @@ export async function ensureTwoFactorStorage() {
       `);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ginga_2fa_challenge_user_idx" ON "GingaTwoFactorLoginChallenge" (user_id, created_at DESC)`);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ginga_2fa_challenge_expiry_idx" ON "GingaTwoFactorLoginChallenge" (expires_at, used_at)`);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "GingaTwoFactorTrustedDevice" (
+          token_hash VARCHAR(64) PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          user_agent_hash VARCHAR(64) NOT NULL,
+          user_agent VARCHAR(240) NOT NULL DEFAULT 'Dispositivo desconhecido',
+          expires_at TIMESTAMPTZ NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          revoked_at TIMESTAMPTZ NULL
+        )
+      `);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "GingaTwoFactorTrustedDevice" ADD COLUMN IF NOT EXISTS user_agent VARCHAR(240) NOT NULL DEFAULT 'Dispositivo desconhecido'`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ginga_2fa_trusted_device_user_idx" ON "GingaTwoFactorTrustedDevice" (user_id, revoked_at, expires_at DESC)`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ginga_2fa_trusted_device_expiry_idx" ON "GingaTwoFactorTrustedDevice" (expires_at, revoked_at)`);
     })().catch((error) => {
       storagePromise = null;
       throw error;
@@ -151,6 +167,23 @@ function hashChallenge(token: string) {
   return createHmac("sha256", keyBuffer()).update(token).digest("hex");
 }
 
+function hashTrustedDeviceToken(token: string) {
+  return createHmac("sha256", keyBuffer()).update(`trusted-device:${token}`).digest("hex");
+}
+
+function normalizeTrustedDeviceUserAgent(userAgent: string) {
+  return String(userAgent || "Dispositivo desconhecido").replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim().slice(0, 240) || "Dispositivo desconhecido";
+}
+
+function hashTrustedDeviceUserAgent(userAgent: string) {
+  const normalized = normalizeTrustedDeviceUserAgent(userAgent);
+  return createHmac("sha256", keyBuffer()).update(`trusted-device-ua:${normalized}`).digest("hex");
+}
+
+export function trustedTwoFactorDeviceIdFromToken(token: string) {
+  return token && twoFactorAvailable() ? hashTrustedDeviceToken(token) : "";
+}
+
 type TwoFactorRow = {
   userId: string;
   secretCipher: string;
@@ -184,6 +217,7 @@ export async function isTwoFactorEnabled(userId: string) {
 export async function createTwoFactorSetup(userId: string, username: string) {
   await ensureTwoFactorStorage();
   if (!twoFactorAvailable()) throw new HttpError(503, "2FA ainda nao foi configurado pelo administrador do Ginga.");
+  await revokeTrustedTwoFactorDevices(userId);
   const secret = base32Encode(randomBytes(20));
   const encrypted = encryptSecret(secret);
   await prisma.$executeRawUnsafe(
@@ -229,7 +263,86 @@ export async function regenerateRecoveryCodes(userId: string) {
 
 export async function disableTwoFactor(userId: string) {
   await ensureTwoFactorStorage();
+  await revokeTrustedTwoFactorDevices(userId);
   await prisma.$executeRawUnsafe(`DELETE FROM "GingaTwoFactor" WHERE user_id=$1`, userId);
+}
+
+export async function createTrustedTwoFactorDevice(userId: string, userAgent: string) {
+  await ensureTwoFactorStorage();
+  if (!twoFactorAvailable()) throw new HttpError(503, "O segundo fator desta conta esta indisponivel. Contate o administrador.");
+  await prisma.$executeRawUnsafe(`DELETE FROM "GingaTwoFactorTrustedDevice" WHERE expires_at < NOW() - INTERVAL '7 days' OR revoked_at < NOW() - INTERVAL '7 days'`);
+  const token = randomBytes(32).toString("base64url");
+  const tokenHash = hashTrustedDeviceToken(token);
+  const normalizedUserAgent = normalizeTrustedDeviceUserAgent(userAgent);
+  const userAgentHash = hashTrustedDeviceUserAgent(normalizedUserAgent);
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "GingaTwoFactorTrustedDevice" (token_hash,user_id,user_agent_hash,user_agent,expires_at) VALUES ($1,$2,$3,$4,NOW()+INTERVAL '30 days')`,
+    tokenHash,
+    userId,
+    userAgentHash,
+    normalizedUserAgent
+  );
+  return { token, expiresInSeconds: TRUSTED_DEVICE_TTL_SECONDS };
+}
+
+export async function verifyTrustedTwoFactorDevice(userId: string, token: string, userAgent: string) {
+  await ensureTwoFactorStorage();
+  if (!token || !twoFactorAvailable()) return false;
+  const tokenHash = hashTrustedDeviceToken(token);
+  const userAgentHash = hashTrustedDeviceUserAgent(userAgent);
+  const rows = await prisma.$queryRawUnsafe<Array<{ userAgentHash: string }>>(
+    `SELECT user_agent_hash AS "userAgentHash" FROM "GingaTwoFactorTrustedDevice" WHERE token_hash=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at > NOW() LIMIT 1`,
+    tokenHash,
+    userId
+  );
+  const row = rows[0];
+  if (!row) return false;
+  if (row.userAgentHash !== userAgentHash) {
+    await prisma.$executeRawUnsafe(`UPDATE "GingaTwoFactorTrustedDevice" SET revoked_at=COALESCE(revoked_at,NOW()) WHERE token_hash=$1`, tokenHash);
+    return false;
+  }
+  await prisma.$executeRawUnsafe(`UPDATE "GingaTwoFactorTrustedDevice" SET last_used_at=NOW() WHERE token_hash=$1 AND revoked_at IS NULL`, tokenHash);
+  return true;
+}
+
+export interface TrustedTwoFactorDevice {
+  id: string;
+  userAgent: string;
+  createdAt: Date;
+  lastUsedAt: Date;
+  expiresAt: Date;
+  current: boolean;
+}
+
+export async function listTrustedTwoFactorDevices(userId: string, currentToken = ""): Promise<TrustedTwoFactorDevice[]> {
+  await ensureTwoFactorStorage();
+  const currentId = currentToken && twoFactorAvailable() ? hashTrustedDeviceToken(currentToken) : "";
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    id: string; userAgent: string; createdAt: Date; lastUsedAt: Date; expiresAt: Date;
+  }>>(
+    `SELECT token_hash AS id,user_agent AS "userAgent",created_at AS "createdAt",last_used_at AS "lastUsedAt",expires_at AS "expiresAt"
+     FROM "GingaTwoFactorTrustedDevice"
+     WHERE user_id=$1 AND revoked_at IS NULL AND expires_at > NOW()
+     ORDER BY last_used_at DESC, created_at DESC`,
+    userId
+  );
+  return rows.map((row) => ({ ...row, current: Boolean(currentId && row.id === currentId) }));
+}
+
+export async function revokeTrustedTwoFactorDevice(userId: string, deviceId: string) {
+  await ensureTwoFactorStorage();
+  if (!/^[0-9a-f]{64}$/i.test(deviceId)) return false;
+  const changed = await prisma.$executeRawUnsafe(
+    `UPDATE "GingaTwoFactorTrustedDevice" SET revoked_at=COALESCE(revoked_at,NOW()) WHERE token_hash=$1 AND user_id=$2 AND revoked_at IS NULL`,
+    deviceId,
+    userId
+  );
+  return Number(changed) > 0;
+}
+
+export async function revokeTrustedTwoFactorDevices(userId: string) {
+  await ensureTwoFactorStorage();
+  await prisma.$executeRawUnsafe(`UPDATE "GingaTwoFactorTrustedDevice" SET revoked_at=COALESCE(revoked_at,NOW()) WHERE user_id=$1 AND revoked_at IS NULL`, userId);
 }
 
 export async function verifyTwoFactorCode(userId: string, code: string) {

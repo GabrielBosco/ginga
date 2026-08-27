@@ -34,6 +34,7 @@ interface UserSettingsModalProps {
 
 
 interface AuthSessionItem { id:string; createdAt:string; lastSeenAt:string; revokedAt:string|null; ipHash:string|null; userAgent:string; current?:boolean; }
+interface TrustedTwoFactorDeviceItem { id:string; userAgent:string; createdAt:string; lastUsedAt:string; expiresAt:string; current:boolean; }
 interface TwoFactorStatus { available:boolean; enabled:boolean; }
 interface TwoFactorSetup { secret:string; otpauthUri:string; }
 interface DesktopUpdateResult { available?:boolean; version?:string; latestVersion?:string; currentVersion?:string; channel?:"stable"|"beta"; skippedPrerelease?:boolean; releaseNotes?:string; restarting?:boolean; }
@@ -107,8 +108,10 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [twoFactorBusy, setTwoFactorBusy] = useState(false);
   const [authSessions, setAuthSessions] = useState<AuthSessionItem[]>([]);
+  const [trustedTwoFactorDevices, setTrustedTwoFactorDevices] = useState<TrustedTwoFactorDeviceItem[]>([]);
   const [authSessionsLoading, setAuthSessionsLoading] = useState(false);
   const [sessionActionId, setSessionActionId] = useState("");
+  const [trustedDeviceActionId, setTrustedDeviceActionId] = useState("");
   const [updateChannel, setUpdateChannel] = useState<"stable"|"beta">("stable");
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateResult|null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -253,14 +256,17 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
     setAuthSessionsLoading(true);
     void Promise.all([
       api<{sessions:AuthSessionItem[]}>("/api/auth/sessions"),
-      api<TwoFactorStatus>("/api/auth/2fa/status")
-    ]).then(([sessionResult, twoFactorResult]) => {
+      api<TwoFactorStatus>("/api/auth/2fa/status"),
+      api<{devices:TrustedTwoFactorDeviceItem[]}>("/api/auth/2fa/trusted-devices")
+    ]).then(([sessionResult, twoFactorResult, trustedDeviceResult]) => {
       if (!active) return;
       setAuthSessions(sessionResult.sessions);
       setTwoFactor(twoFactorResult);
+      setTrustedTwoFactorDevices(trustedDeviceResult.devices);
     }).catch(() => {
       if (!active) return;
       setAuthSessions([]);
+      setTrustedTwoFactorDevices([]);
       setTwoFactor(null);
     }).finally(() => { if (active) setAuthSessionsLoading(false); });
     return () => { active = false; };
@@ -748,6 +754,26 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
   }
 
   async function revokeOwnSession(sessionId:string){if(sessionActionId)return;setSessionActionId(sessionId);resetFeedback();try{await api(`/api/auth/sessions/${encodeURIComponent(sessionId)}`,{method:"DELETE"});setAuthSessions(cur=>cur.map(i=>i.id===sessionId?{...i,revokedAt:new Date().toISOString()}:i));setNotice("Sessao desconectada");}catch(e){setError(e instanceof Error?e.message:"Falha ao desconectar sessao")}finally{setSessionActionId("")}}
+
+  async function revokeTrustedTwoFactorDevice(deviceId:string){
+    if(trustedDeviceActionId)return;
+    setTrustedDeviceActionId(deviceId);resetFeedback();
+    try{
+      await api(`/api/auth/2fa/trusted-devices/${encodeURIComponent(deviceId)}`,{method:"DELETE"});
+      setTrustedTwoFactorDevices(cur=>cur.filter(item=>item.id!==deviceId));
+      setNotice("Dispositivo removido da lista de confiaveis. O 2FA sera solicitado no proximo login.");
+    }catch(e){setError(e instanceof Error?e.message:"Falha ao revogar dispositivo confiavel")}finally{setTrustedDeviceActionId("")}
+  }
+
+  async function revokeAllTrustedTwoFactorDevices(){
+    if(trustedDeviceActionId)return;
+    setTrustedDeviceActionId("all");resetFeedback();
+    try{
+      await api("/api/auth/2fa/trusted-devices",{method:"DELETE"});
+      setTrustedTwoFactorDevices([]);
+      setNotice("Todos os dispositivos confiaveis foram revogados.");
+    }catch(e){setError(e instanceof Error?e.message:"Falha ao revogar dispositivos confiaveis")}finally{setTrustedDeviceActionId("")}
+  }
   async function checkDesktopUpdate(){const bridge=desktopUpdaterBridge();if(!bridge?.checkForUpdate)return;setUpdateChecking(true);try{setUpdateStatus(await bridge.checkForUpdate())}catch(e){setError(e instanceof Error?e.message:"Falha ao verificar atualizacao")}finally{setUpdateChecking(false)}}
   async function changeDesktopUpdateChannel(channel:"stable"|"beta"){const bridge=desktopUpdaterBridge();if(!bridge?.setUpdateChannel)return;setUpdateChecking(true);try{const r=await bridge.setUpdateChannel(channel);setUpdateChannel(channel);setUpdateStatus(r);setNotice(channel==="stable"?"Canal estavel selecionado":"Canal beta selecionado")}catch(e){setError(e instanceof Error?e.message:"Falha ao mudar canal")}finally{setUpdateChecking(false)}}
 
@@ -1068,6 +1094,11 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
           {twoFactor?.enabled && !twoFactorSetup && <div className="two-factor-manage-grid">
             <section><strong>Gerar novos codigos de recuperacao</strong><span>Informe um codigo atual do autenticador. Os codigos de recuperacao antigos serao cancelados.</span><div className="two-factor-inline-form"><input value={twoFactorCode} onChange={(event) => setTwoFactorCode(event.target.value.slice(0, 32))} placeholder="Codigo do autenticador"/><button type="button" className="secondary-button" disabled={twoFactorBusy} onClick={() => void regenerateTwoFactorRecovery()}><RefreshCw size={14}/> Gerar novos</button></div></section>
             <section className="two-factor-disable-card"><strong>Desativar 2FA</strong><span>Use apenas se voce realmente nao quiser mais a segunda camada de protecao.</span><input type="password" value={twoFactorPassword} onChange={(event) => setTwoFactorPassword(event.target.value)} placeholder="Senha atual"/><input value={twoFactorCode} onChange={(event) => setTwoFactorCode(event.target.value.slice(0, 32))} placeholder="Codigo do autenticador"/><button type="button" className="danger-button" disabled={twoFactorBusy} onClick={() => void turnOffTwoFactor()}>Desativar 2FA</button></section>
+          </div>}
+
+          {twoFactor?.enabled && <div className="trusted-device-block">
+            <div className="trusted-device-heading"><div><strong>Dispositivos confiaveis do 2FA</strong><span>Estes dispositivos podem entrar por ate 30 dias sem pedir um novo codigo, desde que a senha esteja correta.</span></div>{trustedTwoFactorDevices.length>0&&<button type="button" className="danger-button compact-button" disabled={Boolean(trustedDeviceActionId)} onClick={()=>void revokeAllTrustedTwoFactorDevices()}><Trash2 size={14}/> Revogar todos</button>}</div>
+            {authSessionsLoading?<div className="security-session-empty">Carregando...</div>:trustedTwoFactorDevices.length===0?<div className="security-session-empty">Nenhum dispositivo confiavel ativo.</div>:<div className="trusted-device-list">{trustedTwoFactorDevices.map(device=><article key={device.id} className={`trusted-device-row ${device.current?"current":""}`}><ShieldCheck size={18}/><div><strong>{device.userAgent}</strong><span>Usado por ultimo em {new Date(device.lastUsedAt).toLocaleString("pt-BR")}</span><small>Confiavel ate {new Date(device.expiresAt).toLocaleString("pt-BR")}{device.current?" · este navegador":""}</small></div><button type="button" className="danger-button compact-button" disabled={Boolean(trustedDeviceActionId)} onClick={()=>void revokeTrustedTwoFactorDevice(device.id)}><Trash2 size={14}/> Revogar</button></article>)}</div>}
           </div>}
 
           <div className="security-panel"><KeyRound size={28} /><div><strong>Alterar senha</strong><span>O Ginga envia um link de uso unico para o seu e-mail. Senhas encontradas em vazamentos conhecidos sao recusadas.</span></div></div>

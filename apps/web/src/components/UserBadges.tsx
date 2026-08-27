@@ -8,7 +8,7 @@ export function UserBadges({ user, compact = false }: { user: Pick<User, "system
       {user.systemRole === "DEVELOPER" && <span className="user-badge developer"><Code2 size={compact ? 11 : 12} /> DEV</span>}
       {user.accountType === "BOT" && <span className="user-badge bot"><Bot size={compact ? 11 : 12} /> BOT</span>}
       {user.accountType === "WEBHOOK" && <span className="user-badge webhook"><Webhook size={compact ? 11 : 12} /> WEBHOOK</span>}
-      {user.accountType === "SYSTEM" && <span className="user-badge platform-admin"><ShieldCheck size={compact ? 11 : 12} /> SISTEMA</span>}
+      {user.accountType === "SYSTEM" && <span className="user-badge system"><ShieldCheck size={compact ? 11 : 12} /> SISTEMA</span>}
     </span>
   );
 }

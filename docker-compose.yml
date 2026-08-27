@@ -113,6 +113,10 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     ports:
       - "80:80/tcp"
     volumes:

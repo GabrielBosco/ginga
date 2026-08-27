@@ -74,6 +74,7 @@ export function installDirectCallExperience(api: ApiRequest, isAuthenticated: ()
 
   let activeCalls: DirectCall[] = [];
   let refreshBusy: Promise<DirectCall[]> | null = null;
+  let mutationGeneration = 0;
   let ringingIds = new Set<string>();
 
   function syncRinging() {
@@ -89,8 +90,12 @@ export function installDirectCallExperience(api: ApiRequest, isAuthenticated: ()
   async function refresh() {
     if (!isAuthenticated()) { if (activeCalls.length || ringingIds.size) { activeCalls=[];ringingIds.clear();stopRinging();dispatchCalls([]); } return activeCalls; }
     if (refreshBusy) return refreshBusy;
+    const generationAtStart = mutationGeneration;
     refreshBusy = api<{ calls: DirectCall[] }>("/api/direct-calls/active")
       .then((result) => {
+        // Nao deixa um GET iniciado antes de um JOIN/LEAVE sobrescrever o
+        // resultado mais novo da mutacao quando as respostas chegam invertidas.
+        if (generationAtStart !== mutationGeneration) return activeCalls;
         activeCalls = result.calls;
         syncRinging();
         dispatchCalls(activeCalls);
@@ -106,7 +111,22 @@ export function installDirectCallExperience(api: ApiRequest, isAuthenticated: ()
 
   async function mutate(path: string, init: RequestInit = {}) {
     const result = await api<{ call: DirectCall }>(path, init);
-    await refresh();
+
+    // A resposta da mutacao e a fonte mais recente naquele instante. Atualiza
+    // o snapshot imediatamente e deixa o refresh reconciliar em seguida. Isso
+    // evita o intervalo em que o botao "Entrar na chamada" recebia 200, mas
+    // a UI voltava momentaneamente para o snapshot antigo do polling/socket.
+    mutationGeneration += 1;
+    activeCalls = [result.call, ...activeCalls.filter((call) => call.id !== result.call.id)];
+    syncRinging();
+    dispatchCalls(activeCalls);
+
+    // Se havia polling antigo em voo, espera ele terminar (ele sera ignorado
+    // pela geracao acima) e so entao busca um snapshot novo.
+    void (async () => {
+      if (refreshBusy) await refreshBusy.catch(() => activeCalls);
+      await refresh();
+    })();
     return result.call;
   }
 

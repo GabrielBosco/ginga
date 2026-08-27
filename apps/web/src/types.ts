@@ -225,7 +225,7 @@ export interface DirectMessage { id: string; conversationId: string; authorId: s
 
 export interface GuildMember { role: GuildRole; joinedAt: string; timeoutUntil?: string | null; timeoutReason?: string; nickname?: string; serverMuted?: boolean; serverDeafened?: boolean; user: User; customRoles?: CustomRole[]; }
 export interface LiveKitCredentials { url: string; token: string; roomName: string; mediaPermissions?: { canShareScreen: boolean; canUseVideo: boolean }; serverVoiceState?: { muted: boolean; deafened: boolean }; }
-export interface VoicePresenceUser { id: string; username: string; displayName: string; avatarColor: string; systemRole?: SystemRole; accountType?: AccountType; micMuted?: boolean; deafened?: boolean; serverMuted?: boolean; serverDeafened?: boolean; }
+export interface VoicePresenceUser { id: string; username: string; displayName: string; avatarColor: string; systemRole?: SystemRole; accountType?: AccountType; micMuted?: boolean; deafened?: boolean; serverMuted?: boolean; serverDeafened?: boolean; streaming?: boolean; }
 export interface VoicePresencePayload { guildId: string; channels: Record<string, VoicePresenceUser[]>; revision?: number; }
 
 export interface FriendEntry { id: string; user: User; since?: string; createdAt?: string; }

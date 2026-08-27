@@ -1,4 +1,4 @@
-# Ginga para Android — teste da versão 0.2.0
+# Ginga para Android — teste da versão 0.3.1
 
 A primeira versão Android é um cliente nativo leve que abre a interface responsiva do seu próprio servidor Ginga em um `WebView` controlado pelo aplicativo.
 
@@ -22,7 +22,7 @@ O aplicativo exige **HTTPS** para servidores externos e bloqueia tráfego HTTP s
 2. Escolha **Gerar APK Android**.
 3. Clique em **Run workflow / Executar fluxo de trabalho** — o texto do botão é controlado pela interface do próprio GitHub.
 4. Informe a URL pública HTTPS do seu Ginga, sem caminho adicional.
-5. Ao terminar, baixe o artefato `Ginga-0.2.0-Android-debug`.
+5. Ao terminar, baixe o artefato `Ginga-0.3.1-Android-debug`.
 
 O APK gerado é de desenvolvimento/teste. Para distribuição pública ou Play Store, configure uma `keystore` de produção e assinatura própria.
 
@@ -37,7 +37,7 @@ Com Android SDK e Gradle instalados:
 Saída:
 
 ```text
-dist/android/Ginga-0.2.0-debug.apk
+dist/android/Ginga-0.3.1-debug.apk
 ```
 
 ## Push-to-Talk no celular

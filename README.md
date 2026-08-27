@@ -5,7 +5,7 @@
   <p>Chat em tempo real, voz, vídeo, compartilhamento de tela, moderação, bots, Desktop e Android em uma única stack.</p>
 
   <p>
-    <img alt="Versão" src="https://img.shields.io/badge/versão-0.2.0-5865F2" />
+    <img alt="Versão" src="https://img.shields.io/badge/versão-0.3.1-5865F2" />
     <img alt="Idioma" src="https://img.shields.io/badge/idioma-pt--BR-009C3B" />
     <img alt="Debian" src="https://img.shields.io/badge/Debian-13-A81D33?logo=debian&logoColor=white" />
     <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
@@ -31,7 +31,7 @@ O **Ginga** é uma plataforma de comunicação em tempo real feita para rodar na
 
 Você hospeda, administra e escolhe onde os dados ficam.
 
-> **Versão atual:** `0.2.0`. O projeto ainda está na série `0.x`; APIs, estrutura do banco e alguns fluxos de implantação podem evoluir antes da `1.0.0`.
+> **Versão atual:** `0.3.1`. O projeto ainda está na série `0.x`; APIs, estrutura do banco e alguns fluxos de implantação podem evoluir antes da `1.0.0`.
 
 A documentação oficial do projeto é mantida em **português do Brasil**.
 
@@ -214,14 +214,14 @@ Para compilar o instalador Windows:
 Saída esperada:
 
 ```text
-apps/desktop/dist/Ginga-Setup-0.2.0-x64.exe
+apps/desktop/dist/Ginga-Setup-0.3.1-x64.exe
 ```
 
 A chave privada do atualizador nunca deve entrar no Git. Veja [docs/DESKTOP.md](docs/DESKTOP.md).
 
 ## Android
 
-A `0.2.0` inclui uma base Android experimental voltada a testes. O aplicativo utiliza a interface responsiva do servidor Ginga e exige HTTPS para conexões externas.
+A `0.3.1` inclui uma base Android experimental voltada a testes. O aplicativo utiliza a interface responsiva do servidor Ginga e exige HTTPS para conexões externas.
 
 O APK de teste pode ser gerado pelo fluxo **Gerar APK Android** no GitHub Actions ou localmente:
 

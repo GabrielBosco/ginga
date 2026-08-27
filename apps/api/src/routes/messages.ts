@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
@@ -31,8 +32,12 @@ const scheduleSchema = z.object({
 const searchSchema = z.object({
   q: z.string().trim().min(2).max(100),
   channelId: z.string().min(1).optional(),
+  authorId: z.string().min(1).optional(),
+  has: z.enum(["attachments", "links"]).optional(),
+  after: z.string().datetime().optional(),
+  before: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50)
-});
+}).refine((value) => !value.after || !value.before || new Date(value.after).getTime() <= new Date(value.before).getTime(), { message: "Intervalo de datas invalido" });
 
 const messageInclude = {
   author: { select: { id: true, username: true, displayName: true, avatarColor: true, systemRole: true, platformOwner: true, accountType: true } },
@@ -368,17 +373,27 @@ messagesRouter.get("/guilds/:guildId/search", requireAuth, asyncHandler(async (r
   for (const channel of channels) {
     try { await requireChannelCapability(req.auth!.sub, channel.id, "view"); visibleIds.push(channel.id); } catch { /* hidden channel */ }
   }
-  const messages = await prisma.message.findMany({
-    where: {
-      channelId: { in: visibleIds },
-      OR: [
+  const where: Prisma.MessageWhereInput = {
+    channelId: { in: visibleIds },
+    ...(query.authorId ? { authorId: query.authorId } : {}),
+    ...(query.after || query.before ? { createdAt: { ...(query.after ? { gte: new Date(query.after) } : {}), ...(query.before ? { lte: new Date(query.before) } : {}) } } : {}),
+    ...(query.has === "attachments" ? { attachments: { some: {} } } : {}),
+    AND: [
+      { OR: [
         { content: { contains: query.q, mode: "insensitive" } },
         { author: { is: { displayName: { contains: query.q, mode: "insensitive" } } } },
         { author: { is: { username: { contains: query.q, mode: "insensitive" } } } },
         { attachments: { some: { originalName: { contains: query.q, mode: "insensitive" } } } }
-      ]
-    },
-    orderBy: { createdAt: "desc" }, take: query.limit, include: { ...messageInclude, channel: { select: { id: true, name: true, type: true } } }
+      ] },
+      ...(query.has === "links" ? [{ OR: [
+        { content: { contains: "https://", mode: "insensitive" } },
+        { content: { contains: "http://", mode: "insensitive" } }
+      ] } satisfies Prisma.MessageWhereInput] : [])
+    ]
+  };
+  const messages = await prisma.message.findMany({
+    where,
+    orderBy: { createdAt: "desc" }, take: query.limit, include: { ...messageInclude, channel: { select: { id: true, name: true, type: true, guildId: true } } }
   });
   res.json({ messages });
 }));

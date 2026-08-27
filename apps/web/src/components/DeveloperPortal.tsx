@@ -4,6 +4,7 @@ import {
   Link2, Plus, RefreshCw, Server, ShieldCheck, TerminalSquare, Trash2, Webhook, X
 } from "lucide-react";
 import { api } from "../lib/api";
+import { friendlyWebhookError } from "../lib/webhookErrors";
 import type { DeveloperApplication, Guild, User, WebhookItem } from "../types";
 import { Modal } from "./Modal";
 
@@ -212,16 +213,26 @@ export function DeveloperPortal({ user, onExit }: { user: User; onExit: () => vo
     clearFeedback();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
+    const guildId = String(form.get("guildId") || "").trim();
+    const channelId = String(form.get("channelId") || "").trim();
+    const name = String(form.get("name") || "").trim();
+    if (!guildId) return setError("Primeiro escolha o servidor onde o webhook sera criado.");
+    if (!channelId) return setError("Escolha o canal que vai receber as mensagens do webhook.");
+    if (name.length < 2) return setError("Digite um nome com pelo menos 2 caracteres para identificar o webhook.");
     try {
       const result = await api<{ webhook: WebhookItem; token: string }>("/api/developers/webhooks", {
         method: "POST",
-        body: JSON.stringify({ guildId: String(form.get("guildId") || ""), channelId: String(form.get("channelId") || ""), name: String(form.get("name") || "") })
+        body: JSON.stringify({ guildId, channelId, name })
       });
       setNewWebhookSecret({ id: result.webhook.id, token: result.token });
       await loadWebhooks(result.webhook.guildId);
-      formElement.querySelector<HTMLInputElement>('input[name="name"]')?.focus();
-      setNotice("Webhook criado. Copie o segredo agora.");
-    } catch (caught) { setError(portalError(caught, "Falha ao criar webhook")); }
+      formElement.reset();
+      setNotice(`Webhook ${result.webhook.name} criado em #${result.webhook.channel?.name ?? "canal"}. Copie a credencial agora; ela nao sera mostrada novamente.`);
+    } catch (caught) {
+      const friendly = friendlyWebhookError(caught);
+      setError([friendly.message, friendly.hint].filter(Boolean).join(" "));
+      if (friendly.field) formElement.querySelector<HTMLElement>(`[name="${friendly.field}"]`)?.focus();
+    }
   }
 
   async function resetWebhook(webhook: WebhookItem) {
@@ -379,7 +390,10 @@ export function DeveloperPortal({ user, onExit }: { user: User; onExit: () => vo
       {section === "webhooks" && <div className="developer-webhooks-page">
         <div className="developer-webhook-toolbar"><label>Servidor<select value={webhookGuildId} onChange={(event) => setWebhookGuildId(event.target.value)}><option value="">Selecione...</option>{manageableGuilds.map((guild) => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select></label><span>{webhookGuild ? `${webhooks.length} webhook${webhooks.length === 1 ? "" : "s"} em ${webhookGuild.name}` : "Escolha um servidor que voce possa administrar."}</span></div>
         <div className="developer-webhook-grid">
-          <section className="portal-card"><header><Webhook/><div><h2>Novo webhook</h2><p>Crie um endpoint para publicar mensagens em um canal especifico.</p></div></header><form className="stack-form developer-clean-form" onSubmit={createWebhook}><input type="hidden" name="guildId" value={webhookGuildId}/><label>Canal<select name="channelId" required disabled={!webhookGuild}><option value="">Escolha um canal...</option>{webhookGuild?.channels.filter((channel) => ["TEXT", "ANNOUNCEMENT"].includes(channel.type)).map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}</select></label><label>Nome<input name="name" required maxLength={64} placeholder="Deploy CI" disabled={!webhookGuild}/></label><button className="primary-button" disabled={!webhookGuild}><Plus size={16}/> Criar webhook</button></form>
+          <section className="portal-card developer-webhook-create-card"><header><Webhook/><div><h2>Criar webhook</h2><p>O Ginga vai gerar um endpoint e uma credencial para outro sistema publicar mensagens automaticamente.</p></div></header>
+            <div className="webhook-create-guide"><span><b>1</b><small>Escolha o canal</small></span><span><b>2</b><small>De um nome</small></span><span><b>3</b><small>Copie a credencial</small></span></div>
+            <form className="stack-form developer-clean-form" onSubmit={createWebhook}><input type="hidden" name="guildId" value={webhookGuildId}/><label><span>1. Canal de destino</span><select name="channelId" required disabled={!webhookGuild}><option value="">Escolha onde as mensagens vao aparecer...</option>{webhookGuild?.channels.filter((channel) => ["TEXT", "ANNOUNCEMENT"].includes(channel.type)).map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}</select><small>Somente canais de texto e anuncios podem receber webhooks.</small></label><label><span>2. Nome do webhook</span><input name="name" required minLength={2} maxLength={64} placeholder="Ex.: Deploy, Zabbix, Alertas" disabled={!webhookGuild}/><small>Esse nome aparece como identidade das mensagens enviadas.</small></label><button className="primary-button" disabled={!webhookGuild}><Plus size={16}/> 3. Criar webhook e gerar credencial</button></form>
+            <div className="webhook-create-note"><ShieldCheck size={16}/><span><strong>Depois de criar</strong><small>Copie o endpoint e o segredo para o sistema externo. O segredo aparece somente uma vez.</small></span></div>
             {newWebhookSecret && <div className="one-time-secret webhook-secret-safe developer-webhook-secret"><KeyRound/><div><strong>Copie o segredo agora</strong><code>{newWebhookSecret.token}</code><small>Endpoint: {webhookEndpoint}<br/>Use <code>Authorization: Bearer &lt;token&gt;</code>.</small></div><div className="webhook-secret-actions"><button onClick={() => void copyText(newWebhookSecret.token, "Segredo copiado")}><Copy/> Segredo</button><button onClick={() => void copyText(webhookEndpoint, "Endpoint copiado")}><Copy/> Endpoint</button></div></div>}
           </section>
           <section className="portal-card"><header><ShieldCheck/><div><h2>Webhooks ativos</h2><p>Segredos nao sao reexibidos. Voce pode rotacionar ou remover.</p></div></header><div className="webhook-list detailed developer-webhook-list">{!webhookGuild && <div className="settings-empty-state">Selecione um servidor.</div>}{webhookGuild && webhooks.length === 0 && <div className="settings-empty-state">Nenhum webhook neste servidor.</div>}{webhooks.map((webhook) => <article key={webhook.id}><div><Webhook size={15}/><span><strong>{webhook.name}</strong><small>#{webhook.channel?.name ?? "canal"} · {webhook.tokenPrefix}••••</small></span></div><div><button onClick={() => setConfirmAction({ kind: "reset-webhook", webhook })} aria-label="Rotacionar segredo"><RefreshCw size={15}/></button><button onClick={() => setConfirmAction({ kind: "remove-webhook", webhook })} aria-label="Excluir webhook"><Trash2 size={15}/></button></div></article>)}</div></section>

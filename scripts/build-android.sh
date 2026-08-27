@@ -19,8 +19,8 @@ cd "$ROOT/apps/android"
 gradle --no-daemon clean assembleDebug -PGINGA_SERVER_URL="$SERVER_URL"
 
 mkdir -p "$ROOT/dist/android"
-cp -f app/build/outputs/apk/debug/app-debug.apk "$ROOT/dist/android/Ginga-0.2.0-debug.apk"
+cp -f app/build/outputs/apk/debug/app-debug.apk "$ROOT/dist/android/Ginga-0.3.1-debug.apk"
 
 echo
 echo "APK gerado:"
-echo "$ROOT/dist/android/Ginga-0.2.0-debug.apk"
+echo "$ROOT/dist/android/Ginga-0.3.1-debug.apk"

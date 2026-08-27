@@ -1,0 +1,25 @@
+/* Ginga 2FA - dispositivo confiavel */
+.auth-card .auth-remember-device {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid #303741;
+  border-radius: 9px;
+  background: #12161c;
+  cursor: pointer;
+  user-select: none;
+}
+.auth-card .auth-remember-device input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  padding: 0;
+  margin: 0;
+  accent-color: #7565e8;
+  cursor: pointer;
+}
+.auth-card .auth-remember-device > span { min-width: 0; display: grid; gap: 2px; }
+.auth-card .auth-remember-device strong { color: #d9dde4; font-size: 11px; font-weight: 780; }
+.auth-card .auth-remember-device small { color: #7f8995; font-size: 9px; font-weight: 560; line-height: 1.4; letter-spacing: 0; }

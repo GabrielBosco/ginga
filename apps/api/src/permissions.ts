@@ -296,6 +296,14 @@ async function requireModerationHierarchy(
   actor: { role: GuildRole }
 ) {
   if (actorUserId === targetUserId) throw new HttpError(400, "Voce nao pode aplicar esta acao a si mesmo");
+  const targetIdentity = await prisma.user.findUnique({
+    where: { id: targetUserId },
+    select: { id: true, accountType: true }
+  });
+  if (!targetIdentity) throw new HttpError(404, "Membro nao encontrado");
+  if (targetIdentity.accountType !== "HUMAN") {
+    throw new HttpError(403, "Identidades do sistema, bots e webhooks nao podem ser moderadas como membros");
+  }
   const target = await prisma.guildMember.findUnique({ where: { guildId_userId: { guildId, userId: targetUserId } } });
   if (!target) throw new HttpError(404, "Membro nao encontrado");
   if (target.role === "OWNER") throw new HttpError(403, "O proprietario do espaco nao pode ser moderado");

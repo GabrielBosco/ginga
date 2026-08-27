@@ -35,7 +35,7 @@ function configBaseDir() {
 }
 
 
-const USER_SERVER_CONFIG = path.join(configBaseDir(), 'server.json');
+const LEGACY_USER_SERVER_CONFIG = path.join(configBaseDir(), 'server.json');
 const USER_SESSION_FILE = path.join(configBaseDir(), 'session.bin');
 const UPDATE_LOG_FILE = path.join(configBaseDir(), 'logs', 'updater.log');
 const USER_UPDATE_CONFIG = path.join(configBaseDir(), 'update.json');
@@ -396,33 +396,22 @@ function readEmbeddedServerUrl() {
   }
 }
 
-function readSavedServerUrl() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(USER_SERVER_CONFIG, 'utf8'));
-    return normalizeServerUrl(parsed.serverUrl);
-  } catch {
-    return null;
-  }
-}
-
-function saveServerUrl(serverUrl) {
-  const normalized = normalizeServerUrl(serverUrl);
-  fs.mkdirSync(path.dirname(USER_SERVER_CONFIG), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(USER_SERVER_CONFIG, JSON.stringify({ serverUrl: normalized }, null, 2), { mode: 0o600 });
-  return normalized;
-}
-
 function defaultUpdateChannel() { return String(app.getVersion() || '').includes('-') ? 'beta' : 'stable'; }
 function readUpdateChannel() { const forced=String(process.env.GINGA_UPDATE_CHANNEL||'').trim().toLowerCase();if(forced==='stable'||forced==='beta')return forced;try{const parsed=JSON.parse(fs.readFileSync(USER_UPDATE_CONFIG,'utf8'));return parsed?.channel==='stable'||parsed?.channel==='beta'?parsed.channel:defaultUpdateChannel();}catch{return defaultUpdateChannel();} }
 function saveUpdateChannel(channel) { const normalized=String(channel||'').trim().toLowerCase();if(!['stable','beta'].includes(normalized))throw new Error('Canal de atualizacao invalido');fs.mkdirSync(path.dirname(USER_UPDATE_CONFIG),{recursive:true,mode:0o700});fs.writeFileSync(USER_UPDATE_CONFIG,JSON.stringify({channel:normalized},null,2),{mode:0o600});return normalized; }
 function manifestAllowedForChannel(manifest,channel=readUpdateChannel()){return channel==='beta'||!String(manifest?.version||'').includes('-');}
 
 const SERVER_URL = normalizeServerUrl(
-  process.env.GINGA_SERVER_URL || readSavedServerUrl() || readEmbeddedServerUrl()
+  process.env.GINGA_SERVER_URL || readEmbeddedServerUrl()
 );
 const SERVER_ORIGIN = new URL(SERVER_URL).origin;
 const UPDATE_URL = new URL('/updates/windows/', `${SERVER_URL}/`).toString();
 const ALLOWED_ORIGINS = new Set([SERVER_ORIGIN]);
+
+// Builds antigos permitiam salvar um servidor por usuario. Isso fazia uma
+// instalacao nova continuar presa a IPs/domínios antigos. O cliente oficial
+// agora usa exclusivamente a URL embutida no build (ou GINGA_SERVER_URL).
+try { fs.rmSync(LEGACY_USER_SERVER_CONFIG, { force: true }); } catch {}
 
 function isLocalServer(origin = SERVER_ORIGIN) {
   try {
@@ -442,7 +431,6 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 let mainWindow = null;
 let updateWindow = null;
-let serverWindow = null;
 let tray = null;
 let isQuitting = false;
 let startupFinished = false;
@@ -594,7 +582,7 @@ function offlineHtml(errorMessage = '') {
   const server = escapeHtml(SERVER_URL);
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Ginga</title>
 <style>:root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;background:#0f191f;color:#eff7f5}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f191f}.card{width:min(620px,calc(100vw - 40px));padding:42px;border:1px solid #294048;border-radius:24px;background:#132229;box-shadow:0 24px 80px #0008}.brand{font-size:15px;letter-spacing:.16em;text-transform:uppercase;color:#64d5c2;font-weight:800}.logo{font-size:34px;margin:10px 0 6px;font-weight:850}p{color:#a9bdc3;line-height:1.55}.detail{font-family:Consolas,monospace;font-size:12px;color:#82969c;word-break:break-word;background:#0c151a;padding:12px;border-radius:10px}.row{display:flex;gap:10px;margin-top:18px}button{border:0;border-radius:12px;padding:12px 18px;background:#64d5c2;color:#071114;font-weight:800;cursor:pointer}.secondary{background:#22343b;color:#dce9e7}</style></head>
-<body><main class="card"><div class="brand">Ginga Desktop</div><div class="logo">Servidor indisponivel</div><p>O aplicativo tentou acessar <strong>${server}</strong>, mas o Ginga Server nao respondeu.</p>${detail ? `<div class="detail">${detail}</div>` : ''}<div class="row"><button id="retry">Tentar novamente</button><button class="secondary" id="server">Configurar servidor</button></div><script>document.getElementById('retry').onclick=()=>window.gingaDesktop.retryServer();document.getElementById('server').onclick=()=>window.gingaDesktop.openServerSettings();</script></main></body></html>`;
+<body><main class="card"><div class="brand">Ginga Desktop</div><div class="logo">Servidor indisponivel</div><p>O aplicativo tentou acessar <strong>${server}</strong>, mas o Ginga Server nao respondeu.</p>${detail ? `<div class="detail">${detail}</div>` : ''}<div class="row"><button id="retry">Tentar novamente</button></div><script>document.getElementById('retry').onclick=()=>window.gingaDesktop.retryServer();</script></main></body></html>`;
 }
 
 function hardenedWindowOptions(extra = {}) {
@@ -663,13 +651,20 @@ function closeUpdateWindow() {
 async function fetchWithTimeout(url, timeoutMs = HEALTH_TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const options = {
+    signal: controller.signal,
+    cache: 'no-store',
+    redirect: 'error',
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
+  };
   try {
-    return await fetch(url, {
-      signal: controller.signal,
-      cache: 'no-store',
-      redirect: 'error',
-      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
-    });
+    // Use a mesma pilha de rede do Chromium/BrowserWindow. O fetch global do
+    // Node nao respeita necessariamente proxy/WPAD e politicas de rede do
+    // Windows, gerando "fetch failed" no Desktop enquanto o site abre no browser.
+    if (app.isReady() && session.defaultSession?.fetch) {
+      return await session.defaultSession.fetch(url, options);
+    }
+    return await fetch(url, options);
   } finally {
     clearTimeout(timer);
   }
@@ -720,19 +715,32 @@ function sleep(ms) {
 
 async function testServerUrl(value) {
   const normalized = normalizeServerUrl(value);
-  const response = await fetchWithTimeout(`${normalized}/api/health`);
-  if (!response.ok) throw new Error(`Servidor respondeu HTTP ${response.status}`);
-  const body = await response.json().catch(() => null);
-  if (!body || body.status !== 'ok' || body.service !== 'ginga-api') throw new Error('O endereco respondeu, mas nao parece ser um Ginga Server');
-  return { serverUrl: normalized, version: body.version || 'desconhecida', secure: normalized.startsWith('https://') || isLocalServer(normalized) };
+  try {
+    const proxy = app.isReady() ? await session.defaultSession.resolveProxy(normalized).catch(() => '') : '';
+    if (proxy) logRuntime(`server-network origin=${normalized} proxy=${proxy}`);
+    const response = await fetchWithTimeout(`${normalized}/api/health`);
+    if (!response.ok) throw new Error(`Servidor respondeu HTTP ${response.status}`);
+    const body = await response.json().catch(() => null);
+    if (!body || body.status !== 'ok' || body.service !== 'ginga-api') throw new Error('O endereco respondeu, mas nao parece ser um Ginga Server');
+    return { serverUrl: normalized, version: body.version || 'desconhecida', secure: normalized.startsWith('https://') || isLocalServer(normalized) };
+  } catch (error) {
+    logRuntime(`server-health-failed origin=${normalized} error=${error instanceof Error ? error.message : String(error)}`);
+    throw error;
+  }
 }
 
 async function loadServer() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   try {
-    await testServerUrl(SERVER_URL);
+    // O BrowserWindow e a fonte de verdade. Builds antigos bloqueavam a abertura
+    // em um preflight Node fetch; em algumas redes/proxies o site funcionava no
+    // navegador, mas o Desktop mostrava "fetch failed" antes mesmo de tentar
+    // carregar a pagina. Agora a mesma pilha Chromium que renderiza o Ginga faz
+    // a conexao principal. O health check fica apenas como diagnostico.
     await mainWindow.loadURL(SERVER_URL);
+    void testServerUrl(SERVER_URL).catch(() => undefined);
   } catch (error) {
+    logRuntime(`server-load-failed origin=${SERVER_URL} error=${error instanceof Error ? error.message : String(error)}`);
     await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(offlineHtml(error instanceof Error ? error.message : String(error)))}`);
   }
 }
@@ -801,29 +809,6 @@ function createMainWindow() {
   return mainWindow;
 }
 
-function createServerSettingsWindow() {
-  if (serverWindow && !serverWindow.isDestroyed()) {
-    serverWindow.show();
-    serverWindow.focus();
-    return serverWindow;
-  }
-  serverWindow = new BrowserWindow({
-    width: 560,
-    height: 410,
-    resizable: false,
-    maximizable: false,
-    minimizable: false,
-    parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
-    modal: Boolean(mainWindow && !mainWindow.isDestroyed()),
-    backgroundColor: '#0f191f',
-    autoHideMenuBar: true,
-    webPreferences: hardenedWindowOptions({ preload: path.join(__dirname, 'server-settings-preload.cjs') })
-  });
-  serverWindow.loadFile(path.join(__dirname, 'server-settings.html'));
-  serverWindow.on('closed', () => { serverWindow = null; });
-  return serverWindow;
-}
-
 function createTray() {
   if (tray) return;
   tray = new Tray(trayIcon());
@@ -831,7 +816,6 @@ function createTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Abrir Ginga', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
     { label: 'Recarregar servidor', click: () => void loadServer() },
-    { label: 'Configurar servidor...', click: () => createServerSettingsWindow() },
     { type: 'separator' },
     { label: 'Sair', click: () => { isQuitting = true; app.quit(); } }
   ]));
@@ -1420,7 +1404,6 @@ if (!lock) {
       return { restarting: true, version: runtimeUpdateManifest?.version || result.version };
     });
     ipcMain.handle('ginga:server-url', async () => SERVER_URL);
-    ipcMain.handle('ginga:open-server-settings', async () => { createServerSettingsWindow(); return true; });
     ipcMain.handle('ginga:notify', async (event, payload) => {
       if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');
       return showNativeNotification(payload);
@@ -1432,24 +1415,6 @@ if (!lock) {
     ipcMain.handle('ginga:taskbar-badge-clear', async (event) => {
       if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');
       return clearTaskbarUnread();
-    });
-    ipcMain.handle('ginga:server-settings-get', async (event) => {
-      if (!isLocalFileSender(event)) throw new Error('Origem IPC nao permitida');
-      return { serverUrl: SERVER_URL, secure: SERVER_URL.startsWith('https://') || isLocalServer() };
-    });
-    ipcMain.handle('ginga:server-settings-test', async (event, value) => {
-      if (!isLocalFileSender(event)) throw new Error('Origem IPC nao permitida');
-      return testServerUrl(value);
-    });
-    ipcMain.handle('ginga:server-settings-save', async (event, value) => {
-      if (!isLocalFileSender(event)) throw new Error('Origem IPC nao permitida');
-      const normalized = saveServerUrl(value);
-      setTimeout(() => {
-        isQuitting = true;
-        app.relaunch();
-        app.exit(0);
-      }, 350);
-      return { serverUrl: normalized, restarting: true };
     });
     ipcMain.handle('ginga:screen-source-selected', async (event, selection) => {
       if (!isLocalFileSender(event) || !pickerResolve) return false;

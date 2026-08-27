@@ -19,6 +19,7 @@ import {
   Copy,
   LoaderCircle,
   LogOut,
+  Maximize2,
   Mic,
   MicOff,
   MessageCircle,
@@ -84,6 +85,9 @@ interface VoiceRoomProps {
   canMuteParticipants?: boolean;
   canDeafenParticipants?: boolean;
   canManageParticipantRoles?: boolean;
+  canShareScreen?: boolean;
+  canUseVideo?: boolean;
+  autoWatchUserId?: string;
   onOpenVoiceSettings?: () => void;
 }
 
@@ -259,7 +263,7 @@ function participantColor(participant: Participant): string {
   }
 }
 
-function AttachedTrack({ publication, muted = false, sinkId = "" }: { publication: TrackPublication; muted?: boolean; sinkId?: string }) {
+function AttachedTrack({ publication, muted = false, sinkId = "", volume = 100, className = "" }: { publication: TrackPublication; muted?: boolean; sinkId?: string; volume?: number; className?: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const isVideo = publication.kind === Track.Kind.Video;
@@ -278,19 +282,26 @@ function AttachedTrack({ publication, muted = false, sinkId = "" }: { publicatio
     void media.setSinkId?.(sinkId).catch(() => undefined);
   }, [isVideo, sinkId]);
 
-  if (isVideo) return <video ref={videoRef} autoPlay playsInline muted={muted} />;
-  return <audio ref={audioRef} autoPlay muted={muted} />;
+  useEffect(() => {
+    if (isVideo || !audioRef.current) return;
+    audioRef.current.volume = Math.max(0, Math.min(1, volume / 100));
+  }, [isVideo, volume]);
+
+  if (isVideo) return <video className={className} ref={videoRef} autoPlay playsInline muted={muted} />;
+  return <audio className={className} ref={audioRef} autoPlay muted={muted || volume <= 0} />;
 }
 
 function ParticipantTile({
   participant,
   onContextMenu,
   onActivate,
+  onWatchStream,
   deafened = false
 }: {
   participant: Participant;
   onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
   onActivate?: (event: ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>) => void;
+  onWatchStream?: () => void;
   deafened?: boolean;
 }) {
   // Participant pode ser local ou remoto. Converter para a classe base evita a uniao
@@ -321,34 +332,38 @@ function ParticipantTile({
     };
   }, [userId]);
 
-  const interactive = !participant.isLocal && Boolean(onActivate);
+  const interactive = Boolean(screenPublication && onWatchStream) || (!participant.isLocal && Boolean(onActivate));
 
   return (
     <article
       className={`participant-tile ${publication ? "with-video" : "without-video"} ${screenPublication ? "screen-tile" : ""} ${participant.isSpeaking ? "speaking" : ""} ${participant.isLocal ? "local-participant" : "remote-participant"}`}
-      onPointerDown={onContextMenu ? (event) => {
+      onPointerDown={(event) => {
         if (event.button !== 2) return;
+        if (screenPublication) { event.preventDefault(); event.stopPropagation(); return; }
+        if (!onContextMenu) return;
         event.preventDefault();
         event.stopPropagation();
         onContextMenu(event as unknown as ReactMouseEvent<HTMLElement>);
-      } : undefined}
-      onContextMenu={onContextMenu ? (event) => {
+      }}
+      onContextMenu={(event) => {
+        if (screenPublication) { event.preventDefault(); event.stopPropagation(); return; }
+        if (!onContextMenu) return;
         event.preventDefault();
         event.stopPropagation();
         onContextMenu(event);
-      } : undefined}
+      }}
       onClick={interactive ? (event) => {
         event.stopPropagation();
-        onActivate?.(event);
+        if (screenPublication) onWatchStream?.(); else onActivate?.(event);
       } : undefined}
       onKeyDown={interactive ? (event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
-        onActivate?.(event);
+        if (screenPublication) onWatchStream?.(); else onActivate?.(event);
       } : undefined}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
-      aria-label={interactive ? `Abrir controles de ${displayName}` : undefined}
+      aria-label={interactive ? (screenPublication ? `Assistir transmissao de ${displayName}` : `Abrir controles de ${displayName}`) : undefined}
     >
       {publication ? (
         <AttachedTrack publication={publication} muted={participant.isLocal} />
@@ -367,9 +382,75 @@ function ParticipantTile({
         <span>{displayName}{participant.isLocal ? " (voce)" : ""}</span>
         {participant.isLocal && deafened ? <VolumeX size={14} /> : participant.isMicrophoneEnabled ? <Mic size={14} /> : <MicOff size={14} />}
       </div>
-      {screenPublication && <span className="screen-badge"><MonitorUp size={13} /> Compartilhando tela</span>}
+      {screenPublication && <span className="screen-badge live"><Radio size={13} /> AO VIVO</span>}
     </article>
   );
+}
+
+function StreamViewer({ participant, availableStreams, sinkId = "", onSwitch, onClose }: { participant: Participant; availableStreams: Participant[]; sinkId?: string; onSwitch: (identity: string) => void; onClose: () => void }) {
+  const containerRef = useRef<HTMLElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const volumeKey = `ginga.voice.streamVolume.${participant.identity}`;
+  const [volume, setVolume] = useState(() => storedNumber(volumeKey, 100, 0, 100));
+  const displayName = participant.name || participant.identity;
+  const videoPublications = Array.from(participant.videoTrackPublications.values()) as TrackPublication[];
+  const audioPublications = Array.from(participant.audioTrackPublications.values()) as TrackPublication[];
+  const screenPublication = videoPublications.find((publication) => publication.source === Track.Source.ScreenShare && publication.track && !publication.isMuted);
+  const screenAudioPublication = audioPublications.find((publication) => publication.source === Track.Source.ScreenShareAudio && publication.track && !publication.isMuted);
+
+  useEffect(() => {
+    const onFullscreen = () => setFullscreen(document.fullscreenElement === containerRef.current);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || document.fullscreenElement) return;
+      event.preventDefault();
+      onClose();
+    };
+    document.addEventListener("fullscreenchange", onFullscreen);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreen);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose]);
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await containerRef.current?.requestFullscreen();
+    } catch {
+      // Alguns navegadores/webviews podem bloquear fullscreen sem gesto valido.
+    }
+  }
+
+  function changeVolume(nextValue: number) {
+    const next = Math.max(0, Math.min(100, Math.round(nextValue)));
+    setVolume(next);
+    try { localStorage.setItem(volumeKey, String(next)); } catch {}
+  }
+
+  if (!screenPublication) return null;
+  return <div className="stream-viewer-backdrop" onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
+    <section className="stream-viewer" ref={containerRef} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
+      <header className="stream-viewer-header">
+        <div><span className="stream-live-pill"><Radio size={13}/> AO VIVO</span><strong>{displayName}</strong><small>Compartilhamento de tela</small></div>
+        <div className="stream-viewer-actions">
+          <button type="button" onClick={() => void toggleFullscreen()} aria-label={fullscreen ? "Sair da tela cheia" : "Tela cheia"}><Maximize2 size={18}/></button>
+          <button type="button" onClick={onClose} aria-label="Fechar transmissao"><X size={19}/></button>
+        </div>
+      </header>
+      <div className="stream-viewer-stage">
+        <AttachedTrack publication={screenPublication} muted className="stream-viewer-video" />
+        {screenAudioPublication && <AttachedTrack publication={screenAudioPublication} sinkId={sinkId} volume={volume} className="stream-viewer-audio" />}
+      </div>
+      {availableStreams.length > 1 && <nav className="stream-viewer-switcher-v3" aria-label="Transmissoes disponiveis">{availableStreams.map((stream)=><button type="button" key={stream.identity} className={stream.identity===participant.identity?"active":""} onClick={()=>onSwitch(stream.identity)}><Radio size={12}/><span>{stream.name||stream.identity}</span><em>AO VIVO</em></button>)}</nav>}
+      <footer className="stream-viewer-controls">
+        <Volume2 size={17}/>
+        <label><span>Volume da transmissao</span><input type="range" min="0" max="100" step="5" value={volume} onChange={(event) => changeVolume(Number(event.target.value))}/><strong>{volume}%</strong></label>
+        {!screenAudioPublication && <small>Esta transmissao nao compartilha audio.</small>}
+        <button type="button" className="secondary-button compact-button" onClick={() => void toggleFullscreen()}><Maximize2 size={16}/> {fullscreen ? "Sair da tela cheia" : "Tela cheia"}</button>
+      </footer>
+    </section>
+  </div>;
 }
 
 function PermissionPill({ state, label }: { state: PermissionState; label: string }) {
@@ -401,6 +482,9 @@ export function VoiceRoom({
   canMuteParticipants = false,
   canDeafenParticipants = false,
   canManageParticipantRoles = false,
+  canShareScreen = true,
+  canUseVideo = true,
+  autoWatchUserId = "",
   onOpenVoiceSettings
 }: VoiceRoomProps) {
   const [room, setRoom] = useState<Room | null>(null);
@@ -413,6 +497,8 @@ export function VoiceRoom({
   const [micEnabled, setMicEnabled] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [screenEnabled, setScreenEnabled] = useState(false);
+  const [mediaPermissions, setMediaPermissions] = useState({ canShareScreen, canUseVideo });
+  const [watchingStreamIdentity, setWatchingStreamIdentity] = useState("");
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [networkStats, setNetworkStats] = useState<{ pingMs: number | null; jitterMs: number | null; packetLossPercent: number | null }>({ pingMs: null, jitterMs: null, packetLossPercent: null });
   const [deafened, setDeafened] = useState(() => Boolean(window.__gingaVoiceSession?.deafened));
@@ -450,8 +536,16 @@ export function VoiceRoom({
   const micTestFrameRef = useRef<number | null>(null);
   const connectedServerRailRef = useRef<HTMLElement | null>(null);
   const persistedSessionRef = useRef<PersistedVoiceSession | null>(null);
+  const lastAutoWatchRef = useRef("");
 
-  function playVoiceEventSound(kind: "join" | "leave") {
+  useEffect(() => {
+    setMediaPermissions((current) => ({
+      canShareScreen: current.canShareScreen && canShareScreen,
+      canUseVideo: current.canUseVideo && canUseVideo
+    }));
+  }, [canShareScreen, canUseVideo]);
+
+  function playVoiceEventSound(kind: "join" | "leave" | "mute" | "unmute" | "deafen" | "undeafen" | "cameraOn" | "cameraOff" | "streamStart" | "streamStop") {
     const notificationPreferences = loadNotificationPreferences();
     if (!notificationPreferences.playSound) return;
     const guildPreferences = loadGuildPreferences(channel.guildId);
@@ -677,7 +771,7 @@ function syncLocalVoiceIndicators(targetRoom: Room | null = room, nextDeafened =
 
     const voiceSocket = socket as {
       connected?: boolean;
-      emit?: (event: string, payload: { channelId: string; micMuted?: boolean; deafened?: boolean }, ack?: (response?: { ok?: boolean; restored?: boolean; error?: string }) => void) => void;
+      emit?: (event: string, payload: { channelId: string; micMuted?: boolean; deafened?: boolean; streaming?: boolean }, ack?: (response?: { ok?: boolean; restored?: boolean; error?: string }) => void) => void;
       on?: (event: string, listener: () => void) => void;
       off?: (event: string, listener: () => void) => void;
     } | undefined;
@@ -696,6 +790,7 @@ function syncLocalVoiceIndicators(targetRoom: Room | null = room, nextDeafened =
       ? existingSession.room
       : new Room({ adaptiveStream: true, dynacast: true });
     persistedSessionRef.current = existingSession?.channelId === channel.id ? existingSession : null;
+    if (persistedSessionRef.current?.mediaPermissions) setMediaPermissions(persistedSessionRef.current.mediaPermissions);
 
     const publishPresence = (joined: boolean) => {
       if (joined === presenceJoined) return;
@@ -706,7 +801,8 @@ function syncLocalVoiceIndicators(targetRoom: Room | null = room, nextDeafened =
         ? {
             channelId: channel.id,
             micMuted: !activeRoom.localParticipant.isMicrophoneEnabled,
-            deafened: Boolean(persistedSessionRef.current?.deafened ?? deafened)
+            deafened: Boolean(persistedSessionRef.current?.deafened ?? deafened),
+            streaming: activeRoom.localParticipant.isScreenShareEnabled
           }
         : { channelId: channel.id };
       try {
@@ -811,12 +907,18 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
         body: JSON.stringify({ channelId: channel.id })
       });
       if (cancelled) return;
+      const effectiveMediaPermissions = {
+        canShareScreen: Boolean(credentials.mediaPermissions?.canShareScreen ?? canShareScreen),
+        canUseVideo: Boolean(credentials.mediaPermissions?.canUseVideo ?? canUseVideo)
+      };
+      setMediaPermissions(effectiveMediaPermissions);
 
       await activeRoom.connect(credentials.url, credentials.token, { autoSubscribe: true });
       const persisted: PersistedVoiceSession = {
         channelId: channel.id, channelName: channel.name, room: activeRoom, presenceJoined: false, reconnectListener: publishPresenceAgain,
         deafened, serverMuted: Boolean(credentials.serverVoiceState?.muted), serverDeafened: Boolean(credentials.serverVoiceState?.deafened),
-        desiredMicEnabled: inputMode !== "ptt" && !credentials.serverVoiceState?.muted && !credentials.serverVoiceState?.deafened
+        desiredMicEnabled: inputMode !== "ptt" && !credentials.serverVoiceState?.muted && !credentials.serverVoiceState?.deafened,
+        mediaPermissions: effectiveMediaPermissions
       };
       window.__gingaVoiceSession = persisted;
       persistedSessionRef.current = persisted;
@@ -934,8 +1036,8 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
   useEffect(() => {
     if (status !== ConnectionState.Connected) return;
     const voiceSocket = socket as { emit?: (event: string, payload: unknown) => void } | undefined;
-    voiceSocket?.emit?.("voice:state", { channelId: channel.id, micMuted: !micEnabled, deafened });
-  }, [channel.id, deafened, micEnabled, socket, status]);
+    voiceSocket?.emit?.("voice:state", { channelId: channel.id, micMuted: !micEnabled, deafened, streaming: screenEnabled });
+  }, [channel.id, deafened, micEnabled, screenEnabled, socket, status]);
 
   const participants = useMemo(() => {
     if (!room) return [];
@@ -1078,7 +1180,7 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
       if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
       if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
       if (event.key.toLowerCase() === "m") { event.preventDefault(); void toggleMedia("mic"); }
-      if (event.key.toLowerCase() === "d") { event.preventDefault(); setDeafened((value) => !value); }
+      if (event.key.toLowerCase() === "d") { event.preventDefault(); toggleLocalDeafen(); }
     };
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
@@ -1153,13 +1255,39 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
 
   useEffect(() => () => stopMicTest(), []);
 
-  const hasScreenShare = participants.some((participant) => participant.isScreenShareEnabled);
+  const streamingParticipants = useMemo(() => participants.filter((participant) => participant.isScreenShareEnabled), [participants]);
+  const hasScreenShare = streamingParticipants.length > 0;
+  const connectionGrade = (() => {
+    const { pingMs, jitterMs, packetLossPercent } = networkStats;
+    if (pingMs === null && jitterMs === null && packetLossPercent === null) return { label: "Medindo", tone: "neutral" };
+    if ((packetLossPercent ?? 0) >= 6 || (pingMs ?? 0) >= 350 || (jitterMs ?? 0) >= 70) return { label: "Ruim", tone: "danger" };
+    if ((packetLossPercent ?? 0) >= 2.5 || (pingMs ?? 0) >= 190 || (jitterMs ?? 0) >= 35) return { label: "Instavel", tone: "warn" };
+    if ((packetLossPercent ?? 0) >= 1 || (pingMs ?? 0) >= 110 || (jitterMs ?? 0) >= 20) return { label: "Boa", tone: "good" };
+    return { label: "Excelente", tone: "excellent" };
+  })();
+  const watchingStreamParticipant = watchingStreamIdentity
+    ? streamingParticipants.find((participant) => participant.identity === watchingStreamIdentity) ?? null
+    : null;
+
+  useEffect(() => {
+    if (watchingStreamIdentity && !watchingStreamParticipant) setWatchingStreamIdentity("");
+  }, [watchingStreamIdentity, watchingStreamParticipant]);
+
+  useEffect(() => {
+    if (!autoWatchUserId || lastAutoWatchRef.current === autoWatchUserId) return;
+    const target = streamingParticipants.find((participant) => participant.identity === autoWatchUserId);
+    if (!target) return;
+    lastAutoWatchRef.current = autoWatchUserId;
+    setWatchingStreamIdentity(autoWatchUserId);
+  }, [autoWatchUserId, streamingParticipants, revision]);
 
   async function toggleMedia(kind: "mic" | "camera" | "screen") {
     if (!room || busy || status !== ConnectionState.Connected) return;
     setBusy(true);
     setMediaWarning("");
     try {
+      if (kind === "screen" && !mediaPermissions.canShareScreen) throw new Error("Voce nao tem permissao para transmitir a tela neste servidor.");
+      if (kind === "camera" && !mediaPermissions.canUseVideo) throw new Error("Voce nao tem permissao para usar video neste servidor.");
       if (kind === "mic") {
         if (!room.localParticipant.isMicrophoneEnabled && micPermission !== "granted") {
           const allowed = await requestMediaPermission("microphone");
@@ -1169,6 +1297,7 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
         await enableMicrophone(room, nextMicEnabled);
         if (window.__gingaVoiceSession?.channelId === channel.id) window.__gingaVoiceSession.desiredMicEnabled = nextMicEnabled;
         if (room.localParticipant.isMicrophoneEnabled) setMicrophoneProblem("");
+        playVoiceEventSound(room.localParticipant.isMicrophoneEnabled ? "unmute" : "mute");
       }
       if (kind === "camera") {
         if (!room.localParticipant.isCameraEnabled && cameraPermission !== "granted") {
@@ -1176,8 +1305,12 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
           if (!allowed) throw new Error("A camera esta bloqueada pelo navegador.");
         }
         await enableCamera(room, !room.localParticipant.isCameraEnabled);
+        playVoiceEventSound(room.localParticipant.isCameraEnabled ? "cameraOn" : "cameraOff");
       }
-      if (kind === "screen") await enableScreen(room, !room.localParticipant.isScreenShareEnabled);
+      if (kind === "screen") {
+        await enableScreen(room, !room.localParticipant.isScreenShareEnabled);
+        playVoiceEventSound(room.localParticipant.isScreenShareEnabled ? "streamStart" : "streamStop");
+      }
       setMicEnabled(room.localParticipant.isMicrophoneEnabled);
       setCameraEnabled(room.localParticipant.isCameraEnabled);
       setScreenEnabled(room.localParticipant.isScreenShareEnabled);
@@ -1187,6 +1320,13 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
     } finally {
       setBusy(false);
     }
+  }
+
+  function toggleLocalDeafen() {
+    if (status !== ConnectionState.Connected) return;
+    const nextDeafened = !deafened;
+    setDeafened(nextDeafened);
+    playVoiceEventSound(nextDeafened ? "deafen" : "undeafen");
   }
 
   async function enablePlayback() {
@@ -1342,7 +1482,7 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
           <span className="channel-topic">{participants.length} participante{participants.length === 1 ? "" : "s"}</span>
         </div>
         <div className="voice-header-actions">
-          {status === ConnectionState.Connected && <div className="voice-live-diagnostics" aria-label="Qualidade da conexao de voz"><span className={`network-metric-pill ${networkStats.pingMs !== null && networkStats.pingMs > 180 ? "warn" : ""}`}><Gauge size={13}/>{networkStats.pingMs === null ? "--" : networkStats.pingMs} ms</span><span className={`network-metric-pill ${networkStats.jitterMs !== null && networkStats.jitterMs > 30 ? "warn" : ""}`}>Jitter {networkStats.jitterMs === null ? "--" : networkStats.jitterMs} ms</span><span className={`network-metric-pill ${networkStats.packetLossPercent !== null && networkStats.packetLossPercent > 2 ? "danger" : ""}`}>Perda {networkStats.packetLossPercent === null ? "--" : networkStats.packetLossPercent}%</span></div>}
+          {status === ConnectionState.Connected && <div className="voice-live-diagnostics" aria-label="Qualidade da conexao de voz"><span className={`voice-quality-grade-v3 ${connectionGrade.tone}`}><i/>{connectionGrade.label}</span><span className={`network-metric-pill ${networkStats.pingMs !== null && networkStats.pingMs > 180 ? "warn" : ""}`}><Gauge size={13}/>{networkStats.pingMs === null ? "--" : networkStats.pingMs} ms</span><span className={`network-metric-pill ${networkStats.jitterMs !== null && networkStats.jitterMs > 30 ? "warn" : ""}`}>Jitter {networkStats.jitterMs === null ? "--" : networkStats.jitterMs} ms</span><span className={`network-metric-pill ${networkStats.packetLossPercent !== null && networkStats.packetLossPercent > 2 ? "danger" : ""}`}>Perda {networkStats.packetLossPercent === null ? "--" : networkStats.packetLossPercent}%</span></div>}
           <span className={`connection-pill state-${status.toLowerCase()}`}><Radio size={14} /> {status === ConnectionState.Connected ? "Conectado" : status === ConnectionState.Connecting ? "Conectando" : status}</span>
         </div>
       </header>
@@ -1366,13 +1506,25 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
                 key={participant.sid || participant.identity}
                 participant={participant}
                 deafened={participant.isLocal ? deafened : false}
-                onContextMenu={participant.isLocal ? undefined : (event) => openParticipantMenu(participant, event)}
-                onActivate={participant.isLocal ? undefined : (event) => openParticipantMenu(participant, event)}
+                onWatchStream={() => setWatchingStreamIdentity(participant.identity)}
+                onContextMenu={participant.isLocal || participant.isScreenShareEnabled ? undefined : (event) => openParticipantMenu(participant, event)}
+                onActivate={participant.isLocal || participant.isScreenShareEnabled ? undefined : (event) => openParticipantMenu(participant, event)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {watchingStreamParticipant && (
+        <StreamViewer
+          key={watchingStreamParticipant.identity}
+          participant={watchingStreamParticipant}
+          availableStreams={streamingParticipants}
+          sinkId={outputDevice}
+          onSwitch={setWatchingStreamIdentity}
+          onClose={() => setWatchingStreamIdentity("")}
+        />
+      )}
 
       {participantMenu && selectedParticipant && (
         <ContextMenu x={participantMenu.x} y={participantMenu.y} onClose={() => { setParticipantMenu(null); setRolesExpanded(false); }}>
@@ -1456,13 +1608,13 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
           <button className={`media-button ${!micEnabled ? "off" : ""}`} onClick={() => void toggleMedia("mic")} disabled={busy || status !== ConnectionState.Connected} aria-label={micEnabled ? "Desativar microfone" : "Ativar microfone"}>
             {micEnabled ? <Mic /> : <MicOff />}
           </button>
-          <button className={`media-button ${!cameraEnabled ? "off" : ""}`} onClick={() => void toggleMedia("camera")} disabled={busy || status !== ConnectionState.Connected} aria-label={cameraEnabled ? "Desativar camera" : "Ativar camera"}>
+          <button className={`media-button ${!cameraEnabled ? "off" : ""}`} onClick={() => void toggleMedia("camera")} disabled={busy || status !== ConnectionState.Connected || !mediaPermissions.canUseVideo} title={!mediaPermissions.canUseVideo ? "Video desativado pelas permissoes do servidor" : undefined} aria-label={cameraEnabled ? "Desativar camera" : "Ativar camera"}>
             {cameraEnabled ? <Camera /> : <CameraOff />}
           </button>
-          <button className={`media-button ${screenEnabled ? "active" : ""}`} onClick={() => void toggleMedia("screen")} disabled={busy || status !== ConnectionState.Connected} aria-label={`Compartilhar tela em ${quality}`}>
+          <button className={`media-button ${screenEnabled ? "active" : ""}`} onClick={() => void toggleMedia("screen")} disabled={busy || status !== ConnectionState.Connected || !mediaPermissions.canShareScreen} title={!mediaPermissions.canShareScreen ? "Transmissao de tela desativada pelas permissoes do servidor" : undefined} aria-label={`Compartilhar tela em ${quality}`}>
             <MonitorUp />
           </button>
-          <button className={`media-button ${deafened ? "deafened" : ""}`} onClick={() => setDeafened((value) => !value)} disabled={status !== ConnectionState.Connected} aria-label={deafened ? "Ativar audio da chamada" : "Silenciar audio da chamada"}>
+          <button className={`media-button ${deafened ? "deafened" : ""}`} onClick={toggleLocalDeafen} disabled={status !== ConnectionState.Connected} aria-label={deafened ? "Ativar audio da chamada" : "Silenciar audio da chamada"}>
             {deafened ? <VolumeX /> : <Volume2 />}
           </button>
           <button className="media-button voice-settings-trigger" onClick={onOpenVoiceSettings} aria-label="Abrir Voz e Video nas configuracoes do usuario">

@@ -1,6 +1,20 @@
 import { loadNotificationPreferences } from "./preferences";
 
-export type UiSound = "join" | "leave" | "ring" | "notification" | "message" | "success";
+export type UiSound =
+  | "join"
+  | "leave"
+  | "mute"
+  | "unmute"
+  | "deafen"
+  | "undeafen"
+  | "cameraOn"
+  | "cameraOff"
+  | "streamStart"
+  | "streamStop"
+  | "ring"
+  | "notification"
+  | "message"
+  | "success";
 
 let audioContext: AudioContext | null = null;
 let ringingTimer: number | null = null;
@@ -40,13 +54,26 @@ export async function unlockUiAudio() {
   await ensureContext();
 }
 
+function isVoiceSound(kind: UiSound) {
+  return kind === "join"
+    || kind === "leave"
+    || kind === "mute"
+    || kind === "unmute"
+    || kind === "deafen"
+    || kind === "undeafen"
+    || kind === "cameraOn"
+    || kind === "cameraOff"
+    || kind === "streamStart"
+    || kind === "streamStop";
+}
+
 export async function playUiSound(kind: UiSound) {
   const preferences = loadNotificationPreferences();
   if (!preferences.playSound) return;
   if (kind === "message" && !preferences.soundMessages) return;
   if (kind === "notification" && !preferences.soundMentions) return;
   if (kind === "ring" && !preferences.soundCalls) return;
-  if ((kind === "join" || kind === "leave") && !preferences.soundVoiceEvents) return;
+  if (isVoiceSound(kind) && !preferences.soundVoiceEvents) return;
   const ctx = await ensureContext();
   if (!ctx) return;
   const now = ctx.currentTime + 0.012;
@@ -59,6 +86,40 @@ export async function playUiSound(kind: UiSound) {
     case "leave":
       tone(ctx, now, 620, 0.10, 0.04, "sine");
       tone(ctx, now + 0.085, 390, 0.15, 0.046, "sine");
+      break;
+    case "mute":
+      tone(ctx, now, 360, 0.075, 0.035, "triangle");
+      tone(ctx, now + 0.055, 220, 0.11, 0.038, "triangle");
+      break;
+    case "unmute":
+      tone(ctx, now, 280, 0.075, 0.034, "triangle");
+      tone(ctx, now + 0.055, 520, 0.11, 0.041, "triangle");
+      break;
+    case "deafen":
+      tone(ctx, now, 240, 0.09, 0.033, "square");
+      tone(ctx, now + 0.07, 150, 0.13, 0.029, "square");
+      break;
+    case "undeafen":
+      tone(ctx, now, 190, 0.08, 0.031, "square");
+      tone(ctx, now + 0.065, 430, 0.13, 0.037, "square");
+      break;
+    case "cameraOn":
+      tone(ctx, now, 500, 0.07, 0.031, "sine");
+      tone(ctx, now + 0.052, 720, 0.10, 0.035, "sine");
+      break;
+    case "cameraOff":
+      tone(ctx, now, 670, 0.07, 0.029, "sine");
+      tone(ctx, now + 0.052, 410, 0.10, 0.033, "sine");
+      break;
+    case "streamStart":
+      tone(ctx, now, 460, 0.08, 0.035, "triangle");
+      tone(ctx, now + 0.065, 690, 0.09, 0.039, "triangle");
+      tone(ctx, now + 0.14, 930, 0.13, 0.043, "triangle");
+      break;
+    case "streamStop":
+      tone(ctx, now, 900, 0.07, 0.034, "triangle");
+      tone(ctx, now + 0.06, 610, 0.09, 0.036, "triangle");
+      tone(ctx, now + 0.13, 340, 0.12, 0.038, "triangle");
       break;
     case "ring":
       tone(ctx, now, 520, 0.18, 0.05, "triangle");

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import "./styles.css";
+import "./remember-device.css";
 import "./ui-audit-pass.css";
 
 type DesktopRuntimeLogger = { logRuntime?: (payload: unknown) => Promise<unknown> | unknown };

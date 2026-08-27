@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { Ban, Check, ExternalLink, MessageCircle, Settings, UserPlus, X } from "lucide-react";
+import { Ban, Check, ExternalLink, MessageCircle, Settings, ShieldCheck, UserPlus, X } from "lucide-react";
 import { api } from "../lib/api";
 import type { GuildRole, User, UserProfilePayload } from "../types";
 import { Avatar } from "./Avatar";
@@ -57,6 +57,8 @@ export function UserProfileCard({ user, currentUser, guildId, online, anchor, ro
   const effectiveJoinedAt = data?.guildMembership?.joinedAt ?? joinedAt;
   const sharedGuilds = Array.isArray(data?.sharedGuilds) ? data.sharedGuilds : [];
   const effectiveJoinedLabel = safeProfileDate(effectiveJoinedAt);
+  const isSystemIdentity = effectiveUser.accountType === "SYSTEM";
+  const isHumanIdentity = effectiveUser.accountType === undefined || effectiveUser.accountType === "HUMAN";
 
   useEffect(() => {
     let active = true;
@@ -160,21 +162,30 @@ export function UserProfileCard({ user, currentUser, guildId, online, anchor, ro
       <div className="user-popover-avatar"><Avatar user={effectiveUser} size="xl" status={online ? "online" : "offline"} /></div>
       <div className="user-popover-content">
         <div className="user-popover-name"><h3>{effectiveUser.displayName} <UserBadges user={effectiveUser} compact /></h3><span>@{effectiveUser.username}</span></div>
-        <div className="user-popover-presence"><i className={online ? "online" : ""} /><span>{online ? "Online agora" : "Offline"}</span></div>
-        {effectiveUser.statusMessage && <div className="user-popover-status">{effectiveUser.statusMessage}</div>}
-        <div className="user-popover-about"><strong>SOBRE MIM</strong><p>{effectiveUser.bio || "Este usuario ainda nao adicionou uma descricao."}</p></div>
-        {(effectiveRole || effectiveJoinedAt) && <div className="user-popover-server"><strong>NESTE ESPACO</strong>{effectiveRole && <span>{roleLabel[effectiveRole]}</span>}{effectiveJoinedLabel && <span>Membro desde {effectiveJoinedLabel}</span>}</div>}
-        {data && sharedGuilds.length > 0 && <div className="user-popover-shared"><strong>{sharedGuilds.length}</strong><span>espaco{sharedGuilds.length === 1 ? "" : "s"} em comum</span></div>}
-        {error && <div className="profile-card-error">{error}</div>}
-        <div className="user-popover-actions">
+        {isSystemIdentity ? (
+          <div className="user-popover-system-identity">
+            <span className="system-identity-icon"><ShieldCheck size={18}/></span>
+            <div><strong>IDENTIDADE DO SISTEMA</strong><p>Conta interna do Ginga usada para avisos automaticos, como entrada e saida de membros. Ela nao representa uma pessoa e nao pode receber amizade, mensagem, timeout, expulsao ou banimento.</p></div>
+          </div>
+        ) : (
+          <>
+            <div className="user-popover-presence"><i className={online ? "online" : ""} /><span>{online ? "Online agora" : "Offline"}</span></div>
+            {effectiveUser.statusMessage && <div className="user-popover-status">{effectiveUser.statusMessage}</div>}
+            <div className="user-popover-about"><strong>SOBRE MIM</strong><p>{effectiveUser.bio || "Este usuario ainda nao adicionou uma descricao."}</p></div>
+            {(effectiveRole || effectiveJoinedAt) && <div className="user-popover-server"><strong>NESTE ESPACO</strong>{effectiveRole && <span>{roleLabel[effectiveRole]}</span>}{effectiveJoinedLabel && <span>Membro desde {effectiveJoinedLabel}</span>}</div>}
+            {data && sharedGuilds.length > 0 && <div className="user-popover-shared"><strong>{sharedGuilds.length}</strong><span>espaco{sharedGuilds.length === 1 ? "" : "s"} em comum</span></div>}
+          </>
+        )}
+        {error && !isSystemIdentity && <div className="profile-card-error">{error}</div>}
+        {isHumanIdentity && <div className="user-popover-actions">
           {isSelf ? (
             <button className="primary-button" onClick={() => { onClose(); onEditProfile(); }}><Settings size={16} /> Editar perfil</button>
           ) : (
             <button className="primary-button" disabled={busy || !data || Boolean(data.block) || (friendship?.status !== "ACCEPTED" && sharedGuilds.length === 0)} onClick={() => void messageUser()}><MessageCircle size={16} /> Mensagem</button>
           )}
           <button className="secondary-button" onClick={() => { onClose(); onOpenProfile(effectiveUser); }}><ExternalLink size={16} /> Ver perfil</button>
-        </div>
-        {!isSelf && (
+        </div>}
+        {!isSelf && isHumanIdentity && (
           <div className="user-popover-friendship">
             {data?.block?.blockedViewer && !data.block.blockedByViewer ? <span className="profile-blocked-note">Este usuario bloqueou voce.</span> : null}
             {!data?.block?.blockedViewer && (friendship?.status === "ACCEPTED" ? (

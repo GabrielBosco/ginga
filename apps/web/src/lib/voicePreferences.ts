@@ -27,6 +27,7 @@ export type PersistedVoiceSession = {
   serverDeafened?: boolean;
   desiredMicEnabled?: boolean;
   recovering?: boolean;
+  mediaPermissions?: { canShareScreen: boolean; canUseVideo: boolean };
 };
 
 declare global {

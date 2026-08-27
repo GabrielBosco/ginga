@@ -37,9 +37,11 @@ const botInstallSchema = z.object({
   permissions: z.array(z.enum(botPermissionValues)).max(botPermissionValues.length).default(["VIEW_CHANNELS", "SEND_MESSAGES", "READ_HISTORY"])
 });
 const webhookSchema = z.object({
-  guildId: z.string().min(1),
-  channelId: z.string().min(1),
-  name: z.string().trim().min(2).max(64)
+  guildId: z.string().min(1, "Selecione o servidor onde o webhook sera criado"),
+  channelId: z.string().min(1, "Escolha o canal que vai receber as mensagens"),
+  name: z.string().trim()
+    .min(2, "Digite um nome com pelo menos 2 caracteres")
+    .max(64, "O nome do webhook pode ter no maximo 64 caracteres")
 });
 const webhookMessageSchema = z.object({
   content: z.string().trim().min(1).max(4000),
@@ -305,7 +307,16 @@ developerRouter.post("/developers/webhooks", requireAuth, asyncHandler(async (re
   const data = webhookSchema.parse(req.body);
   await requireGuildCapability(req.auth!.sub, data.guildId, "manageWebhooks");
   const { channel } = await requireChannelCapability(req.auth!.sub, data.channelId, "view");
-  if (channel.guildId !== data.guildId || !["TEXT", "ANNOUNCEMENT"].includes(channel.type)) throw new HttpError(400, "Webhook precisa usar um canal de texto ou anuncios deste espaco");
+  if (channel.guildId !== data.guildId) {
+    throw new HttpError(400, "O canal escolhido nao pertence a este servidor", { field: "channelId" });
+  }
+  if (!["TEXT", "ANNOUNCEMENT"].includes(channel.type)) {
+    throw new HttpError(400, "Escolha um canal de texto ou anuncios para receber o webhook", { field: "channelId" });
+  }
+  const webhookCount = await prisma.webhook.count({ where: { guildId: data.guildId } });
+  if (webhookCount >= 50) {
+    throw new HttpError(409, "Este servidor atingiu o limite de 50 webhooks. Remova um webhook antigo antes de criar outro.");
+  }
   const token = secureToken("nxw");
   const prefix = tokenPrefix(token);
   const webhook = await prisma.$transaction(async (tx) => {

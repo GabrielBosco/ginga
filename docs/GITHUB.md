@@ -23,7 +23,7 @@ Crie um repositório vazio no GitHub, sem adicionar README ou licença pelo site
 ```bash
 git init
 git add .
-git commit -m "feat: primeira versão pública 0.2.0"
+git commit -m "feat: primeira versão pública 0.3.1"
 git branch -M main
 git remote add origin git@github.com:SEU_USUARIO/ginga.git
 git push -u origin main
@@ -32,8 +32,8 @@ git push -u origin main
 Crie a tag da versão:
 
 ```bash
-git tag -a v0.2.0 -m "Ginga 0.2.0"
-git push origin v0.2.0
+git tag -a v0.3.1 -m "Ginga 0.3.1"
+git push origin v0.3.1
 ```
 
 Se preferir autenticação HTTPS:
@@ -60,7 +60,7 @@ Depois:
 
 ```bash
 git add .
-git commit -m "release: Ginga 0.2.0"
+git commit -m "release: Ginga 0.3.1"
 git push origin main
 ```
 
@@ -107,6 +107,6 @@ Não coloque instaladores `.exe` ou `.apk` diretamente no histórico Git. Publiq
 Exemplos:
 
 ```text
-Ginga-Setup-0.2.0-x64.exe
-Ginga-0.2.0-debug.apk
+Ginga-Setup-0.3.1-x64.exe
+Ginga-0.3.1-debug.apk
 ```

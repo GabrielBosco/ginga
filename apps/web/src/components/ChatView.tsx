@@ -578,7 +578,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
   useEffect(() => {
     const onSearchShortcut = (event: Event) => {
       const keyboardEvent = event as globalThis.KeyboardEvent;
-      if (!(keyboardEvent.ctrlKey || keyboardEvent.metaKey) || keyboardEvent.key.toLowerCase() !== "f") return;
+      if (!(keyboardEvent.ctrlKey || keyboardEvent.metaKey) || keyboardEvent.shiftKey || keyboardEvent.key.toLowerCase() !== "f") return;
       const target = keyboardEvent.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable='true']") && !searchOpen) return;
       keyboardEvent.preventDefault();
@@ -588,6 +588,25 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
     window.addEventListener("keydown", onSearchShortcut);
     return () => window.removeEventListener("keydown", onSearchShortcut);
   }, [searchOpen]);
+
+  useEffect(() => {
+    const openMessage = (detail?: { channelId?: string; messageId?: string }) => {
+      if (!detail?.messageId || detail.channelId !== channel.id) return;
+      try { sessionStorage.removeItem("ginga.pendingMessageJump"); } catch {}
+      void jumpToMessage(detail.messageId);
+    };
+    const onJumpMessage = (event: Event) => openMessage((event as CustomEvent<{ channelId?: string; messageId?: string }>).detail);
+    window.addEventListener("ginga:jump-message", onJumpMessage as EventListener);
+    try {
+      const raw = sessionStorage.getItem("ginga.pendingMessageJump");
+      if (raw) {
+        const pending = JSON.parse(raw) as { channelId?: string; messageId?: string; at?: number };
+        if (typeof pending.at === "number" && Date.now() - pending.at > 10_000) sessionStorage.removeItem("ginga.pendingMessageJump");
+        else if (pending.channelId === channel.id && pending.messageId) window.setTimeout(() => openMessage(pending), 80);
+      }
+    } catch { /* armazenamento de sessao e apenas um fallback de navegacao */ }
+    return () => window.removeEventListener("ginga:jump-message", onJumpMessage as EventListener);
+  }, [channel.id]);
 
   function selectCommand(command: ChannelCommand) {
     setContent(`/${command.name} `);
@@ -1184,7 +1203,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
         <button onClick={()=>void createTaskFromMessage(messageMenu.message)}><ListTodo size={15}/> Criar tarefa</button>
         {permissions.canPinMessages && <button onClick={()=>{void pinMessage(messageMenu.message);setMessageMenu(null);}}><Pin size={15}/> {messageMenu.message.isPinned ? "Desafixar" : "Fixar"}</button>}
         {messageMenu.message.authorId === currentUser.id && <button onClick={()=>beginEditMessage(messageMenu.message)}><Pencil size={15}/> Editar</button>}
-        {messageMenu.message.authorId !== currentUser.id && onModerateMember && (permissions.canManageMembers || permissions.canKickMembers || permissions.canBanMembers) && <><div className="context-menu-separator"/><div className="context-menu-label">MODERAR AUTOR</div>
+        {messageMenu.message.authorId !== currentUser.id && (messageMenu.message.author.accountType === undefined || messageMenu.message.author.accountType === "HUMAN") && onModerateMember && (permissions.canManageMembers || permissions.canKickMembers || permissions.canBanMembers) && <><div className="context-menu-separator"/><div className="context-menu-label">MODERAR AUTOR</div>
           {(permissions.canManageMembers || permissions.canKickMembers) && <button onClick={()=>{const target=messageMenu.message.author;setMessageMenu(null);onModerateMember("timeout",target);}}><Clock3 size={15}/> Aplicar timeout</button>}
           {permissions.canKickMembers && <button className="danger" onClick={()=>{const target=messageMenu.message.author;setMessageMenu(null);onModerateMember("kick",target);}}><UserMinus size={15}/> Expulsar autor</button>}
           {permissions.canBanMembers && <button className="danger" onClick={()=>{const target=messageMenu.message.author;setMessageMenu(null);onModerateMember("ban",target);}}><Ban size={15}/> Banir autor</button>}

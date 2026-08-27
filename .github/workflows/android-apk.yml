@@ -54,12 +54,12 @@ jobs:
       - name: Renomear APK
         run: |
           mkdir -p dist/android
-          cp apps/android/app/build/outputs/apk/debug/app-debug.apk dist/android/Ginga-0.2.0-debug.apk
+          cp apps/android/app/build/outputs/apk/debug/app-debug.apk dist/android/Ginga-0.3.1-debug.apk
 
       - name: Publicar artefato do APK
         uses: actions/upload-artifact@v4
         with:
-          name: Ginga-0.2.0-Android-debug
-          path: dist/android/Ginga-0.2.0-debug.apk
+          name: Ginga-0.3.1-Android-debug
+          path: dist/android/Ginga-0.3.1-debug.apk
           if-no-files-found: error
           retention-days: 14

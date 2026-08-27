@@ -8,6 +8,7 @@ import { routeParam } from "../utils.js";
 import { GINGA_VERSION } from "../version.js";
 import { listAuthSessions, revokeAllAuthSessions, revokeAuthSession } from "../authSessions.js";
 import { isUserOnlineNow } from "../socket.js";
+import { readSystemHealth } from "../systemHealth.js";
 
 export const platformRouter = Router();
 
@@ -42,6 +43,12 @@ platformRouter.get("/platform/announcements", requireAuth, asyncHandler(async (_
     include: { createdBy: { select: { id: true, username: true, displayName: true, avatarColor: true, systemRole: true, platformOwner: true, accountType: true } } }
   });
   res.json({ announcements });
+}));
+
+platformRouter.get("/platform/admin/system-health", requireAuth, asyncHandler(async (req, res) => {
+  await requirePlatformAdmin(req.auth!.sub);
+  const io = req.app.get("io") as { engine?: { clientsCount?: number } } | undefined;
+  res.json(await readSystemHealth(io?.engine?.clientsCount ?? 0));
 }));
 
 platformRouter.get("/platform/admin/overview", requireAuth, asyncHandler(async (req, res) => {
@@ -179,6 +186,7 @@ platformRouter.delete("/platform/admin/users/:userId", requireAuth, asyncHandler
   await revokeAllAuthSessions(userId);
   await prisma.$executeRawUnsafe(`DELETE FROM "GingaAuthSession" WHERE user_id=$1`, userId);
   await prisma.$executeRawUnsafe(`DELETE FROM "GingaTwoFactorLoginChallenge" WHERE user_id=$1`, userId);
+  await prisma.$executeRawUnsafe(`DELETE FROM "GingaTwoFactorTrustedDevice" WHERE user_id=$1`, userId);
   await prisma.$executeRawUnsafe(`DELETE FROM "GingaTwoFactor" WHERE user_id=$1`, userId);
   await prisma.user.delete({ where: { id: userId } });
   res.status(204).end();

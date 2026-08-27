@@ -1,4 +1,4 @@
-# Ginga Desktop 0.2.0
+# Ginga Desktop 0.3.1
 
 Cliente Windows/Electron do Ginga.
 
@@ -21,7 +21,7 @@ A configuração persistida fica no perfil do usuário Windows em `Ginga/server.
 - permissões de mídia limitadas ao servidor configurado;
 - IPC de configuração e tela limitado às páginas locais autorizadas.
 
-## Atualizador da versão 0.2.0
+## Atualizador da versão 0.3.1
 
 Antes de aceitar uma atualização, o Desktop:
 

@@ -112,6 +112,10 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     volumes:
       - ./updates:/usr/share/nginx/html/updates:ro
     depends_on:

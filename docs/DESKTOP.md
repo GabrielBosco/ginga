@@ -13,7 +13,7 @@ O caminho mais simples em Linux é usar o ambiente de compilação preparado pel
 Saída esperada:
 
 ```text
-apps/desktop/dist/Ginga-Setup-0.2.0-x64.exe
+apps/desktop/dist/Ginga-Setup-0.3.1-x64.exe
 ```
 
 ## Servidor padrão
