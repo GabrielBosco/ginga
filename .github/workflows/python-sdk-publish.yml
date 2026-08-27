@@ -1,0 +1,71 @@
+name: Publicar Ginga Bot SDK
+
+on:
+  push:
+    tags:
+      - "sdk-python-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar ferramentas de build
+        run: python -m pip install --upgrade build twine
+
+      - name: Validar versao da tag
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#sdk-python-v}"
+          PACKAGE_VERSION="$(python - <<'PY'
+          import tomllib
+          with open('sdk/python/pyproject.toml', 'rb') as f:
+              print(tomllib.load(f)['project']['version'])
+          PY
+          )"
+          test "$TAG_VERSION" = "$PACKAGE_VERSION" || {
+            echo "Tag $TAG_VERSION diferente do pacote $PACKAGE_VERSION"
+            exit 1
+          }
+
+      - name: Gerar pacote
+        working-directory: sdk/python
+        run: python -m build
+
+      - name: Validar pacote
+        working-directory: sdk/python
+        run: python -m twine check dist/*
+
+      - name: Guardar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: ginga-bot-python
+          path: sdk/python/dist/*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Baixar artefato
+        uses: actions/download-artifact@v4
+        with:
+          name: ginga-bot-python
+          path: dist
+
+      - name: Publicar no PyPI com Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

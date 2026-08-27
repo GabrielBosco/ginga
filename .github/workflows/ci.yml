@@ -40,5 +40,23 @@ jobs:
           node --check apps/desktop/src/preload.cjs
           if [ -f apps/desktop/src/game-overlay-preload.cjs ]; then node --check apps/desktop/src/game-overlay-preload.cjs; fi
 
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validar Ginga Bot SDK
+        run: |
+          python -m compileall -q sdk/python/gingabot
+          python -m pip install --no-cache-dir -e ./sdk/python
+          python - <<'PY'
+          import gingabot
+          assert gingabot.__version__ == "0.1.0"
+          assert gingabot.Bot
+          assert gingabot.Intents
+          print("Ginga Bot SDK", gingabot.__version__, "OK")
+          PY
+          python -m unittest discover -s sdk/python/tests -v
+
       - name: Verificar repositório
         run: bash ./scripts/prepare-github.sh

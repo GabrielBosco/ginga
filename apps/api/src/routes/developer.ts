@@ -93,7 +93,7 @@ function publicApplication<T extends {
     publicBot: application.publicBot,
     messageContentIntent: application.messageContentIntent,
     runtime: "PYTHON" as const,
-    sdk: "ginga.py",
+    sdk: "ginga-bot",
     botUserId: application.botUserId,
     tokenPrefix: application.botTokenPrefix,
     createdAt: application.createdAt,

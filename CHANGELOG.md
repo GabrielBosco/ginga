@@ -6,6 +6,12 @@ O projeto segue versionamento semântico enquanto avança para a versão `1.0.0`
 
 ## [0.3.1] - 2026-08-27
 
+### Adicionado
+
+- Ginga Bot SDK oficial para Python, distribuido como `ginga-bot` e importado com `gingabot`, com Bot, Intents, comandos, eventos, cache de canais/cargos, rate limit e reconexao;
+- documentacao de bots Python no README, Portal do Desenvolvedor e Base de Conhecimento;
+- pipeline de validacao e publicacao do SDK Python preparado para PyPI Trusted Publishing.
+
 ### Corrigido
 
 - identidade interna `SISTEMA` nao exibe acoes humanas de amizade, DM, timeout, expulsao ou banimento, com bloqueio equivalente tambem no backend;

@@ -1,16 +1,15 @@
 import os
 
-import ginga
-from ginga.ext import commands
+import gingabot
 from googleapiclient.discovery import build
 
 TOKEN = os.environ["GINGA_BOT_TOKEN"]
 SERVER = os.getenv("GINGA_SERVER", "http://127.0.0.1")
 YOUTUBE_API_KEY = os.environ["YOUTUBE_API_KEY"]
 
-intents = ginga.Intents.default()
+intents = gingabot.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents, server_url=SERVER)
+bot = gingabot.Bot(command_prefix="!", intents=intents, server_url=SERVER)
 
 
 @bot.command(description="Pesquisa um video no YouTube")

@@ -10,10 +10,14 @@ type Audience = "user" | "dev";
 type Article = { id:string; audience:Audience; category:string; title:string; summary:string; keywords:string[]; icon:ReactNode; content:ReactNode };
 
 const botStarter = `import os
-from ginga.ext import commands
+import gingabot
 
-bot = commands.Bot(
+intents = gingabot.Intents.default()
+intents.message_content = True
+
+bot = gingabot.Bot(
     command_prefix="!",
+    intents=intents,
     server_url=os.environ["GINGA_SERVER"],
 )
 
@@ -101,8 +105,8 @@ const articles:Article[] = [
       <li><b>5</b><div><strong>Rode o bot</strong><span>Use Python em processo, VM ou container. Token nunca vai no frontend.</span></div></li>
     </Steps>
   </> },
-  { id:"bot-python", audience:"dev", category:"Bots", title:"Bot Python basico", summary:"Exemplo minimo com ginga.py e comando !ping.", keywords:["python","ginga.py","ping","sdk"], icon:<TerminalSquare size={18}/>, content:<>
-    <h2>Variaveis</h2><CodeBlock code={`GINGA_SERVER=https://chat.example.com\nGINGA_BOT_TOKEN=cole_o_token_aqui`}/>
+  { id:"bot-python", audience:"dev", category:"Bots", title:"Bot Python basico", summary:"Exemplo minimo com o Ginga Bot SDK e comando !ping.", keywords:["python","gingabot","ginga-bot","ping","sdk"], icon:<TerminalSquare size={18}/>, content:<>
+    <h2>Instale o SDK</h2><CodeBlock code={`python -m pip install -U ginga-bot`}/><p>O pacote e <code>ginga-bot</code> e o import Python e <code>gingabot</code>. O nome <code>ginga</code> nao e usado porque ja existe outro pacote Python com esse namespace.</p><h2>Variaveis</h2><CodeBlock code={`GINGA_SERVER=https://chat.example.com\nGINGA_BOT_TOKEN=cole_o_token_aqui`}/>
     <h2>Codigo</h2><CodeBlock code={botStarter}/>
     <p>O token pertence ao bot. Nao use token de usuario e nao envie o token para GitHub, navegador ou log.</p>
   </> },

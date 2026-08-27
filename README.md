@@ -49,7 +49,7 @@ A documentação oficial do projeto é mantida em **português do Brasil**.
 - convites, comunidades públicas, fóruns, eventos e anúncios;
 - autenticação em duas etapas (TOTP), códigos de recuperação e sessões revogáveis;
 - redefinição segura de senha por e-mail;
-- Portal do Desenvolvedor, bots, webhooks e SDK para Python;
+- Portal do Desenvolvedor, bots, webhooks e **Ginga Bot SDK** para Python;
 - Ginga Music opcional;
 - cliente Web responsivo;
 - cliente Windows com Electron;
@@ -177,6 +177,28 @@ EMAIL_FROM="Ginga <nao-responda@exemplo.com>"
 ```
 
 Todas as opções estão em [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+
+## Ginga Bot SDK
+
+O SDK oficial de bots usa o pacote **`ginga-bot`** e o modulo Python **`gingabot`**. O namespace `ginga` nao e utilizado porque ja pertence a outro projeto no ecossistema Python.
+
+```bash
+pip install -U ginga-bot
+```
+
+```python
+import gingabot
+
+bot = gingabot.Bot(command_prefix="!")
+```
+
+Durante o desenvolvimento pelo proprio repositorio:
+
+```bash
+pip install -e ./sdk/python
+```
+
+Consulte [docs/BOTS-PYTHON.md](docs/BOTS-PYTHON.md) para intents, eventos, comandos, IDs, seguranca e publicacao do SDK.
 
 ## Estrutura do projeto
 

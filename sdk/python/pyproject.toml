@@ -3,17 +3,39 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ginga-sdk"
-version = "2.1.0"
-description = "SDK Python oficial para bots do Ginga Self-Hosted"
+name = "ginga-bot"
+version = "0.1.0"
+description = "SDK Python oficial para bots do Ginga"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Ginga Contributors" }
+]
+keywords = ["ginga", "bot", "chat", "sdk", "websocket", "socketio"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Communications :: Chat",
+  "Topic :: Software Development :: Libraries :: Python Modules"
+]
 dependencies = [
   "aiohttp>=3.10,<4",
-  "python-socketio[client]>=5.12,<6",
-  "requests>=2.32,<3"
+  "python-socketio[client]>=5.12,<6"
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "twine>=5,<7"
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ginga*", "nexora*"]
+include = ["gingabot*"]

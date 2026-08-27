@@ -1,15 +1,14 @@
 import os
 
-import ginga
-from ginga.ext import commands
+import gingabot
 
 TOKEN = os.environ["GINGA_BOT_TOKEN"]
 SERVER = os.getenv("GINGA_SERVER", "http://127.0.0.1")
 
-intents = ginga.Intents.default()
+intents = gingabot.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents, server_url=SERVER)
+bot = gingabot.Bot(command_prefix="!", intents=intents, server_url=SERVER)
 
 
 @bot.event

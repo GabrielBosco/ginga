@@ -39,3 +39,12 @@ apps/android/app/build/
 dist/android/
 *.jks
 *.keystore
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+**/*.egg-info/
+.venv/
+venv/

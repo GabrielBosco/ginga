@@ -68,6 +68,29 @@ DESKTOP_VERSION=$(node -p "require('./apps/desktop/package.json').version")
   || fail "versoes divergentes: api=$API_VERSION web=$WEB_VERSION desktop=$DESKTOP_VERSION"
 ok "versoes sincronizadas em $API_VERSION"
 
+if [[ -f sdk/python/pyproject.toml ]]; then
+  command -v python3 >/dev/null 2>&1 || fail "SDK Python requer python3 para o preflight"
+  SDK_NAME=$(python3 - <<'PY'
+import tomllib
+with open('sdk/python/pyproject.toml', 'rb') as f:
+    print(tomllib.load(f)['project']['name'])
+PY
+)
+  SDK_VERSION=$(python3 - <<'PY'
+import tomllib
+with open('sdk/python/pyproject.toml', 'rb') as f:
+    print(tomllib.load(f)['project']['version'])
+PY
+)
+  [[ "$SDK_NAME" == "ginga-bot" ]] || fail "nome inesperado do SDK Python: $SDK_NAME"
+  [[ -f sdk/python/gingabot/__init__.py ]] || fail "modulo gingabot ausente"
+  if grep -R -nE '(^|[[:space:]])(import[[:space:]]+ginga([[:space:]]|$)|from[[:space:]]+ginga([[:space:].]|$))' sdk/python examples/python-bot 2>/dev/null; then
+    fail "namespace Python 'ginga' reapareceu; use gingabot"
+  fi
+  python3 -m compileall -q sdk/python/gingabot
+  ok "Ginga Bot SDK $SDK_VERSION usa pacote ginga-bot/import gingabot"
+fi
+
 for f in apps/desktop/src/*.cjs scripts/*.cjs; do
   [[ -f "$f" ]] || continue
   node --check "$f" >/dev/null
