@@ -1,0 +1,41 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+!.env.production.example
+secrets/
+*.key
+*.p12
+*.pfx
+
+# Dependencies and builds
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vite/
+*.tsbuildinfo
+
+# Runtime data
+backups/
+data/
+updates/windows/
+.release-backups/
+*.log
+
+# Generated LiveKit config
+infra/livekit/livekit.yaml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Android
+apps/android/.gradle/
+apps/android/local.properties
+apps/android/app/build/
+dist/android/
+*.jks
+*.keystore

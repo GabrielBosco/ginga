@@ -1,0 +1,51 @@
+name: Relatar bug
+description: Relate um problema reproduzível no Ginga
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Não cole `.env`, tokens, senhas ou dados pessoais. Para vulnerabilidades, use o fluxo descrito em SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Versão do Ginga
+      placeholder: 0.2.0
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Componente
+      options:
+        - Web
+        - API
+        - Desktop
+        - Android
+        - Voz/LiveKit
+        - Docker/implantação
+        - SDK/Bots
+        - Outro
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Como reproduzir
+      description: Passos mínimos e objetivos.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Resultado esperado
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Resultado atual e logs
+      description: Remova tokens, endereços privados e dados pessoais.
+    validations:
+      required: true

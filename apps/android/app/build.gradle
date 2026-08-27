@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+}
+
+def configuredUrl = project.findProperty("GINGA_SERVER_URL") ?: System.getenv("GINGA_SERVER_URL")
+if (configuredUrl == null || !configuredUrl.toString().startsWith("https://")) {
+    throw new GradleException("GINGA_SERVER_URL e obrigatoria e deve comecar com https://")
+}
+
+def escapedUrl = configuredUrl.toString().replace('\\', '\\\\').replace('"', '\\"')
+
+android {
+    namespace 'com.ginga.mobile'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.ginga.mobile'
+        minSdk 26
+        targetSdk 35
+        versionCode 2
+        versionName '0.2.0'
+        buildConfigField 'String', 'GINGA_SERVER_URL', '"' + escapedUrl + '"'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}

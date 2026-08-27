@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src 'self' data:; object-src 'none'; base-uri 'none'" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Servidor Ginga</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;background:#0f191f;color:#edf7f5}*{box-sizing:border-box}body{margin:0;padding:28px;background:#0f191f}.brand{font-size:12px;letter-spacing:.16em;color:#64d5c2;font-weight:800}.card{margin-top:12px;padding:24px;border:1px solid #294048;border-radius:18px;background:#14232a}h1{font-size:24px;margin:0 0 8px}p{color:#91a7ad;line-height:1.5}label{display:block;font-size:12px;color:#a9bdc3;margin:20px 0 8px}input{width:100%;padding:13px 14px;border-radius:11px;border:1px solid #35505a;background:#0c171c;color:#fff;font:14px Consolas,monospace;outline:none}input:focus{border-color:#64d5c2}.status{min-height:42px;margin-top:14px;padding:10px 12px;border-radius:10px;background:#0c171c;color:#9bb0b6;font-size:12px}.warn{color:#f6c76b}.ok{color:#71d8b8}.err{color:#ff8989}.row{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}button{border:0;border-radius:11px;padding:11px 16px;font-weight:800;cursor:pointer;background:#263941;color:#dce9e7}.primary{background:#64d5c2;color:#071114}
+</style>
+</head>
+<body>
+<div class="brand">GINGA DESKTOP</div>
+<div class="card">
+<h1>Conexao com o servidor</h1>
+<p>Troque o IP ou endereco do Ginga sem recompilar o aplicativo. Ao salvar, o Desktop reinicia.</p>
+<label for="url">Servidor</label>
+<input id="url" spellcheck="false" placeholder="https://chat.seudominio.com" />
+<div id="status" class="status">Carregando configuracao...</div>
+<div class="row"><button id="test">Testar conexao</button><button id="save" class="primary">Salvar e reiniciar</button></div>
+</div>
+<script>
+const url=document.getElementById('url'),status=document.getElementById('status'),test=document.getElementById('test'),save=document.getElementById('save');
+function show(text,kind=''){status.className='status '+kind;status.textContent=text}
+window.gingaServerSettings.get().then(v=>{url.value=v.serverUrl;show(v.secure?'Conexao segura/local.':'HTTP por IP: funcional para laboratorio, sem criptografia de transporte.',v.secure?'ok':'warn')}).catch(e=>show(e.message,'err'));
+test.onclick=async()=>{show('Testando...');try{const r=await window.gingaServerSettings.test(url.value);show(`Ginga Server ${r.version} respondeu em ${r.serverUrl}.`+(r.secure?'':' Trafego HTTP sem TLS.'),r.secure?'ok':'warn')}catch(e){show(e.message||String(e),'err')}};
+save.onclick=async()=>{save.disabled=true;show('Validando e salvando...');try{await window.gingaServerSettings.test(url.value);await window.gingaServerSettings.save(url.value);show('Salvo. Reiniciando o Ginga...','ok')}catch(e){save.disabled=false;show(e.message||String(e),'err')}};
+</script>
+</body>
+</html>

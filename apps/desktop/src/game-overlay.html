@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Ginga Overlay</title>
+<style>
+  *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;color:#f1f3f7;font-family:Inter,"Segoe UI",system-ui,sans-serif;user-select:none}
+  #root{width:100%;height:100%;display:flex;align-items:flex-start;justify-content:flex-start;padding:0}
+  .card{width:340px;max-height:280px;overflow:hidden;border:1px solid rgba(255,255,255,.09);border-radius:13px;background:rgba(17,20,27,.91);box-shadow:0 18px 50px rgba(0,0,0,.35);backdrop-filter:blur(15px)}
+  .head{display:flex;align-items:center;gap:9px;padding:11px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
+  .logo{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#7668e8,#5146a9);font-size:14px;font-weight:900}
+  .headcopy{min-width:0;display:flex;flex-direction:column;gap:1px}.headcopy small{font-size:8px;font-weight:900;letter-spacing:.11em;color:#8f86df}.headcopy strong{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hotkey{margin-left:auto;color:#767d8b;font-size:8.5px}
+  .game{display:flex;align-items:center;gap:9px;padding:10px 12px;background:rgba(119,105,235,.055)}.gameicon{width:27px;height:27px;border-radius:8px;display:grid;place-items:center;background:rgba(124,111,239,.13);color:#b6afff;font-size:14px}.game div{min-width:0;display:flex;flex-direction:column}.game small{font-size:8px;color:#7f789d;font-weight:900;letter-spacing:.07em}.game strong{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .voice{padding:9px 10px 10px}.voicehead{display:flex;align-items:center;gap:7px;padding:0 2px 7px}.voicehead strong{font-size:10px}.voicehead span{color:#747b88;font-size:8.5px}.statuspill{margin-left:auto;padding:3px 6px;border-radius:999px;background:rgba(255,255,255,.055);color:#89909d;font-size:8px}.statuspill.live{background:rgba(52,167,112,.12);color:#82d8ad}
+  .participants{display:flex;flex-direction:column;gap:3px}.person{height:31px;display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:8px;border:1px solid transparent}.person.speaking{background:rgba(54,176,113,.095);border-color:rgba(76,208,139,.19)}.avatar{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#333947;color:#d8dce6;font-size:8.5px;font-weight:800;position:relative}.person.speaking .avatar{box-shadow:0 0 0 2px #3fbd7b}.name{min-width:0;flex:1;font-size:9.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.self{color:#777f8d;font-size:8px}.mic{font-size:9px;color:#838b97}.mic.off{color:#d07179}.ptt{padding:7px 10px 8px;border-top:1px solid rgba(255,255,255,.055);display:flex;align-items:center;justify-content:space-between;color:#7d8491;font-size:8.5px}.ptt kbd{font:700 8px Inter,"Segoe UI",sans-serif;padding:3px 6px;border-radius:5px;background:rgba(255,255,255,.06);color:#c5c9d2;border:1px solid rgba(255,255,255,.07)}
+  .empty{padding:14px 12px;color:#808793;font-size:9.5px;line-height:1.4}
+</style>
+</head>
+<body><div id="root"></div>
+<script>
+(function(){
+  const root=document.getElementById('root');
+  const esc=(v)=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const initial=(name)=>String(name||'?').trim().slice(0,1).toUpperCase();
+  function render(state){
+    const settings=state?.settings||{}; const game=state?.game; const voice=state?.voice;
+    let html='<section class="card"><header class="head"><div class="logo">G</div><div class="headcopy"><small>GINGA OVERLAY</small><strong>'+(state?.preview?'Prévia da sobreposição':'Em jogo')+'</strong></div><span class="hotkey">Ctrl + Shift + O</span></header>';
+    if(settings.showGame!==false && game?.name){html+='<div class="game"><div class="gameicon">◈</div><div><small>JOGANDO</small><strong>'+esc(game.name)+'</strong></div></div>'}
+    if(settings.showVoice!==false){
+      if(voice?.connected){
+        const parts=Array.isArray(voice.participants)?voice.participants:[];
+        html+='<div class="voice"><div class="voicehead"><strong>'+esc(voice.channelName||'Canal de voz')+'</strong><span>'+parts.length+' conectado'+(parts.length===1?'':'s')+'</span><i class="statuspill live">AO VIVO</i></div><div class="participants">';
+        for(const p of parts){html+='<div class="person '+(p.speaking?'speaking':'')+'"><div class="avatar">'+esc(initial(p.name))+'</div><span class="name">'+esc(p.name)+'</span>'+(p.local?'<span class="self">você</span>':'')+'<span class="mic '+(p.microphoneEnabled?'':'off')+'">'+(p.microphoneEnabled?'●':'×')+'</span></div>'}
+        html+='</div></div>';
+        html+='<div class="ptt"><span>'+(voice.deafened?'Som desativado':voice.muted?'Microfone silenciado':voice.inputMode==='ptt'?'Push-to-Talk':'Atividade de voz')+'</span>'+(voice.inputMode==='ptt'?'<kbd>'+esc(voice.pushToTalkLabel||'PTT')+'</kbd>':'')+'</div>';
+      } else if(settings.showOnlyInVoice!==true){ html+='<div class="empty">Você não está em uma chamada de voz agora.</div>'; }
+    }
+    html+='</section>'; root.innerHTML=html;
+  }
+  window.gingaGameOverlay?.onState?.(render);
+})();
+</script></body></html>

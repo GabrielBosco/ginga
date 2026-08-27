@@ -1,0 +1,66 @@
+{
+  "name": "@ginga/desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Cliente desktop auto-hospedado do Ginga",
+  "main": "src/main.cjs",
+  "author": "Ginga",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "node ../../scripts/update-signing.cjs ensure ../.. && electron-builder --win nsis --x64 --publish never",
+    "dist:portable": "node ../../scripts/update-signing.cjs ensure ../.. && electron-builder --win portable --x64 --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.6.2"
+  },
+  "devDependencies": {
+    "electron": "43.4.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "br.com.ginga.desktop",
+    "productName": "Ginga",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "config.json",
+      "package.json",
+      "update-public.pem"
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "http://127.0.0.1/updates/windows"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Ginga-Setup-${version}-${arch}.${ext}",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ginga",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
+    },
+    "detectUpdateChannel": false
+  }
+}

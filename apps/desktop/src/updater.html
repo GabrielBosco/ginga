@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ginga</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, "Segoe UI", system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #0b0e12; color: #eef1f5; }
+    body { display: grid; place-items: center; user-select: none; }
+    .shell {
+      position: relative; width: 100%; height: 100%; overflow: hidden;
+      padding: 28px 32px 25px; border: 1px solid rgba(255,255,255,.07);
+      background:
+        radial-gradient(circle at 82% 12%, rgba(109,106,246,.20), transparent 32%),
+        radial-gradient(circle at 10% 94%, rgba(91,170,188,.10), transparent 35%),
+        linear-gradient(145deg, #10141b, #0b0e12 62%);
+    }
+    .ambient { position: absolute; inset: 0; pointer-events: none; opacity: .55; }
+    .ambient::before, .ambient::after { content: ""; position: absolute; border-radius: 999px; filter: blur(1px); }
+    .ambient::before { width: 260px; height: 260px; right: -120px; top: -150px; border: 1px solid rgba(140,136,255,.18); animation: orbit 12s linear infinite; }
+    .ambient::after { width: 160px; height: 160px; right: -30px; top: -85px; border: 1px dashed rgba(140,136,255,.14); animation: orbit 18s linear infinite reverse; }
+    @keyframes orbit { to { transform: rotate(360deg); } }
+    .brand { position: relative; display: flex; align-items: center; gap: 11px; margin-bottom: 24px; }
+    .mark { position: relative; width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; background: linear-gradient(145deg, rgba(110,106,248,.20), rgba(32,201,151,.18)); box-shadow: 0 11px 34px rgba(26,32,46,.30); border: 1px solid rgba(255,255,255,.08); }
+    .mark::after { content:""; position:absolute; inset:-7px; border:1px solid rgba(151,147,255,.15); border-radius:18px; animation:pulse 2.2s ease-in-out infinite; }
+    .mark-orbit { position:absolute; inset:5px; border-radius:12px; border:2px solid rgba(110,106,248,.38); }
+    .mark-bubble { position:relative; width:22px; height:18px; border-radius:8px; background: linear-gradient(135deg, #f9fbff, #dce7ff); box-shadow: 0 4px 14px rgba(0,0,0,.22); }
+    .mark-bubble::after { content:""; position:absolute; left:4px; bottom:-4px; width:8px; height:8px; background: inherit; border-bottom-left-radius: 7px; transform: skewY(26deg) rotate(18deg); }
+    .mark-bubble span { position:absolute; top:6px; width:4px; height:4px; border-radius:50%; }
+    .mark-bubble span:first-child { left:5px; background:#6e6af8; }
+    .mark-bubble span:last-child { right:5px; background:#20c997; }
+    @keyframes pulse { 0%,100% { transform: scale(.94); opacity:.25; } 50% { transform: scale(1.06); opacity:.7; } }
+    .brand-copy { display: flex; flex-direction: column; gap: 2px; }
+    .brand-copy strong { font-size: 15px; letter-spacing: -.015em; }
+    .brand-copy span { color: #7f8997; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+    .status { position: relative; min-height: 73px; }
+    h1 { margin: 0; font-size: 22px; line-height: 1.15; letter-spacing: -.035em; font-weight: 760; }
+    #message { margin: 8px 0 0; color: #a5adb8; font-size: 12px; line-height: 1.45; }
+    .progress-wrap { position: relative; margin-top: 16px; }
+    .progress-track { position: relative; width: 100%; height: 8px; overflow: hidden; border-radius: 999px; background: #1b2028; box-shadow: inset 0 0 0 1px rgba(255,255,255,.035); }
+    .progress-fill { position: absolute; inset: 0 auto 0 0; width: 8%; border-radius: inherit; background: linear-gradient(90deg, #5f66eb, #8c72ef, #65b9cf); transition: width .32s cubic-bezier(.2,.8,.2,1); box-shadow: 0 0 16px rgba(116,111,246,.25); overflow: hidden; }
+    .progress-fill::after { content:""; position:absolute; inset:0; width:70px; transform:translateX(-100%); background:linear-gradient(90deg,transparent,rgba(255,255,255,.38),transparent); animation:shimmer 1.25s linear infinite; }
+    @keyframes shimmer { to { transform: translateX(520px); } }
+    .progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 9px; color: #7f8997; font-size: 10px; font-variant-numeric: tabular-nums; }
+    .progress-meta strong { color: #c7cdd5; font-weight: 650; }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 15px; }
+    .metric { min-width: 0; padding: 9px 10px; border: 1px solid rgba(255,255,255,.055); border-radius: 9px; background: rgba(255,255,255,.022); }
+    .metric span { display: block; color: #697482; font-size: 8px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .metric strong { display: block; margin-top: 4px; color: #cbd1d9; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+    #detail { position: absolute; left: 32px; right: 32px; bottom: 14px; color: #596472; font-size: 8.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="ambient"></div>
+    <div class="brand">
+      <div class="mark" aria-hidden="true"><span class="mark-orbit"></span><span class="mark-bubble"><span></span><span></span></span></div>
+      <div class="brand-copy"><strong>Ginga</strong><span>Desktop</span></div>
+    </div>
+    <section class="status">
+      <h1 id="title">Iniciando Ginga</h1>
+      <p id="message">Preparando o aplicativo...</p>
+    </section>
+    <section class="progress-wrap">
+      <div class="progress-track"><div class="progress-fill" id="progress"></div></div>
+      <div class="progress-meta"><strong id="percent">8%</strong><span id="size">Preparando...</span></div>
+    </section>
+    <section class="metrics">
+      <div class="metric"><span>Versão</span><strong id="version">-</strong></div>
+      <div class="metric"><span>Velocidade</span><strong id="speed">-</strong></div>
+      <div class="metric"><span>Restante</span><strong id="eta">-</strong></div>
+    </section>
+    <div id="detail">Inicializando...</div>
+  </main>
+  <script>
+    const el = (id) => document.getElementById(id);
+    const bytes = (value) => {
+      const n = Number(value || 0);
+      if (!n) return '0 MB';
+      if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+      return `${(n / 1024 / 1024).toFixed(1)} MB`;
+    };
+    const eta = (total, transferred, bps) => {
+      const remaining = Math.max(0, Number(total || 0) - Number(transferred || 0));
+      const speed = Number(bps || 0);
+      if (!remaining || !speed) return '-';
+      const seconds = Math.ceil(remaining / speed);
+      if (seconds < 60) return `${seconds}s`;
+      const minutes = Math.floor(seconds / 60);
+      const rest = seconds % 60;
+      return `${minutes}m ${rest}s`;
+    };
+    window.setUpdateState = (state = {}) => {
+      const percent = Math.max(0, Math.min(100, Number(state.percent || 0)));
+      el('title').textContent = state.title || 'Ginga';
+      el('message').textContent = state.message || '';
+      el('detail').textContent = state.detail || '';
+      el('progress').style.width = `${percent}%`;
+      el('percent').textContent = `${Math.round(percent)}%`;
+      const transferred = Number(state.transferred || 0);
+      const total = Number(state.total || 0);
+      el('size').textContent = total ? `${bytes(transferred)} / ${bytes(total)}` : (percent >= 100 ? 'Concluído' : 'Preparando...');
+      el('speed').textContent = Number(state.bytesPerSecond || 0) > 0 ? `${bytes(state.bytesPerSecond)}/s` : '-';
+      el('eta').textContent = eta(total, transferred, state.bytesPerSecond);
+      const current = state.currentVersion || '';
+      const target = state.targetVersion || '';
+      el('version').textContent = target && current && target !== current ? `${current} → ${target}` : (target || current || '-');
+    };
+  </script>
+</body>
+</html>

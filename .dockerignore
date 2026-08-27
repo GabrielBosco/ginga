@@ -1,0 +1,15 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+node_modules
+**/node_modules
+dist
+**/dist
+backups
+data
+updates/windows
+secrets
+*.log
+.DS_Store

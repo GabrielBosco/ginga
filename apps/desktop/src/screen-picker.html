@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Compartilhar tela</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,"Segoe UI",Arial,sans-serif;background:#0d171d;color:#edf8f6}*{box-sizing:border-box}body{margin:0;background:#0d171d;min-height:100vh;display:flex;flex-direction:column}.top{padding:22px 24px 14px;border-bottom:1px solid #20343a;background:#101e24}h1{font-size:20px;margin:0 0 6px}p{margin:0;color:#8fa8af;font-size:12px}.tabs{display:flex;gap:8px;padding:14px 24px 0}.tab{border:1px solid #294149;background:#14252b;color:#9db4ba;border-radius:9px;padding:8px 13px;font-weight:700;cursor:pointer}.tab.active{background:#1e3b40;color:#6bd9c6;border-color:#3e8177}.grid{padding:16px 24px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;overflow:auto;flex:1}.source{appearance:none;border:1px solid #263a42;background:#101a20;border-radius:13px;padding:8px;text-align:left;color:inherit;cursor:pointer;transition:.15s}.source:hover{border-color:#49706f;transform:translateY(-1px)}.source.selected{border-color:#63d4c1;box-shadow:0 0 0 2px #63d4c128}.thumb{height:150px;border-radius:9px;background:#090f13 center/contain no-repeat;border:1px solid #1c2d33}.label{display:flex;align-items:center;gap:8px;padding:9px 3px 2px;font-size:12px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.appicon{width:18px;height:18px;object-fit:contain}.footer{padding:14px 24px 20px;border-top:1px solid #20343a;display:flex;align-items:center;justify-content:space-between;background:#101e24}.audio{display:flex;align-items:center;gap:9px;color:#b7c9cd;font-size:12px}.actions{display:flex;gap:9px}.btn{border:1px solid #334b52;border-radius:9px;padding:9px 15px;background:#17282e;color:#dcebea;font-weight:750;cursor:pointer}.btn.primary{border-color:#63d4c1;background:#63d4c1;color:#071315}.btn:disabled{opacity:.45;cursor:not-allowed}.empty{grid-column:1/-1;padding:50px;text-align:center;color:#82979d}
+</style>
+</head>
+<body>
+<div class="top"><h1>O que voce quer compartilhar?</h1><p>Escolha uma tela inteira ou apenas uma janela.</p></div>
+<div class="tabs"><button class="tab active" data-tab="screen">Telas</button><button class="tab" data-tab="window">Janelas</button></div>
+<div id="grid" class="grid"><div class="empty">Carregando fontes...</div></div>
+<div class="footer"><label class="audio"><input id="audio" type="checkbox" checked /> Compartilhar som do sistema</label><div class="actions"><button id="cancel" class="btn">Cancelar</button><button id="share" class="btn primary" disabled>Compartilhar</button></div></div>
+<script>
+let allSources=[];let currentTab='screen';let selectedId='';let audioSupported=true;
+const grid=document.getElementById('grid');const share=document.getElementById('share');const audio=document.getElementById('audio');
+function render(){const sources=allSources.filter(s=>s.kind===currentTab);grid.innerHTML='';if(!sources.length){grid.innerHTML='<div class="empty">Nenhuma fonte encontrada.</div>';return;}sources.forEach(source=>{const button=document.createElement('button');button.className='source'+(source.id===selectedId?' selected':'');button.type='button';button.onclick=()=>{selectedId=source.id;share.disabled=false;render();};const thumb=document.createElement('div');thumb.className='thumb';if(source.thumbnail)thumb.style.backgroundImage=`url(${source.thumbnail})`;const label=document.createElement('div');label.className='label';if(source.icon){const icon=document.createElement('img');icon.className='appicon';icon.src=source.icon;label.appendChild(icon);}const text=document.createElement('span');text.textContent=source.name;label.appendChild(text);button.append(thumb,label);grid.appendChild(button);});}
+window.renderSources=(state)=>{allSources=Array.isArray(state.sources)?state.sources:[];audioSupported=Boolean(state.audioSupported);audio.disabled=!audioSupported;if(!audioSupported)audio.checked=false;if(!allSources.some(s=>s.kind===currentTab))currentTab=allSources[0]?.kind||'screen';document.querySelectorAll('.tab').forEach(tab=>tab.classList.toggle('active',tab.dataset.tab===currentTab));render();};
+document.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>{currentTab=tab.dataset.tab;selectedId='';share.disabled=true;document.querySelectorAll('.tab').forEach(item=>item.classList.toggle('active',item===tab));render();}));
+document.getElementById('cancel').onclick=()=>window.gingaScreenPicker.cancel();share.onclick=()=>{if(selectedId)window.gingaScreenPicker.select(selectedId,audioSupported&&audio.checked);};
+</script>
+</body>
+</html>

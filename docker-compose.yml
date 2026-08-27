@@ -1,0 +1,133 @@
+name: ginga
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [ginga]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command: ["/bin/sh", "-ec", 'if [ -n "$$REDIS_PASSWORD" ]; then exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"; else exec redis-server --appendonly yes; fi']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", 'if [ -n "$$REDIS_PASSWORD" ]; then redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping; else redis-cli ping; fi']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [ginga]
+
+  livekit-config:
+    image: alpine:3.22
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      LIVEKIT_NODE_IP: ${LIVEKIT_NODE_IP:-}
+      LIVEKIT_USE_EXTERNAL_IP: ${LIVEKIT_USE_EXTERNAL_IP:-false}
+      LIVEKIT_TURN_ENABLED: ${LIVEKIT_TURN_ENABLED:-false}
+      LIVEKIT_TURN_UDP_PORT: ${LIVEKIT_TURN_UDP_PORT:-3478}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    volumes:
+      - livekit_config:/out
+      - ./infra/livekit/generate.sh:/generate.sh:ro
+    command: ["/bin/sh", "/generate.sh"]
+    networks: [ginga]
+
+  livekit:
+    image: livekit/livekit-server:v1.13.5
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      livekit-config:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    command: ["--config", "/etc/livekit/livekit.yaml"]
+    volumes:
+      - livekit_config:/etc/livekit:ro
+    ports:
+      - "7880:7880/tcp"
+      - "${LIVEKIT_TCP_PORT:-7881}:7881/tcp"
+      - "${LIVEKIT_UDP_PORT:-7882}:7882/udp"
+      - "${LIVEKIT_TURN_UDP_PORT:-3478}:${LIVEKIT_TURN_UDP_PORT:-3478}/udp"
+    networks: [ginga]
+
+  api:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads_data:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [ginga]
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_GITHUB_REPOSITORY_URL: ${GITHUB_REPOSITORY_URL:-}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80/tcp"
+    volumes:
+      - ./updates:/usr/share/nginx/html/updates:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [ginga]
+
+networks:
+  ginga:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  livekit_config:
+  uploads_data:

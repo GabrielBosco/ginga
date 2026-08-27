@@ -1,0 +1,44 @@
+name: Validação do projeto
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Compilar API
+        working-directory: apps/api
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Compilar Web
+        working-directory: apps/web
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Validar sintaxe do Desktop
+        run: |
+          node --check apps/desktop/src/main.cjs
+          node --check apps/desktop/src/preload.cjs
+          if [ -f apps/desktop/src/game-overlay-preload.cjs ]; then node --check apps/desktop/src/game-overlay-preload.cjs; fi
+
+      - name: Verificar repositório
+        run: ./scripts/prepare-github.sh

@@ -1,0 +1,880 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GuildRole {
+  OWNER
+  ADMIN
+  MODERATOR
+  MEMBER
+}
+
+enum ChannelType {
+  TEXT
+  VOICE
+  ANNOUNCEMENT
+  FORUM
+  EVENT
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+}
+
+enum SystemRole {
+  USER
+  DEVELOPER
+  PLATFORM_ADMIN
+}
+
+enum AccountType {
+  HUMAN
+  BOT
+  WEBHOOK
+  SYSTEM
+}
+
+enum EventRsvpStatus {
+  INTERESTED
+  GOING
+  NOT_GOING
+}
+
+enum ScheduledMessageStatus {
+  PENDING
+  SENT
+  CANCELLED
+}
+
+enum ForumPostStatus {
+  OPEN
+  CLOSED
+}
+
+enum AutoModRuleType {
+  KEYWORDS
+  MENTION_SPAM
+  INVITE_SPAM
+  REPETITION
+}
+
+model User {
+  id                  String                     @id @default(cuid())
+  email               String                     @unique
+  username            String                     @unique
+  displayName         String
+  passwordHash        String
+  avatarColor         String
+  bio                 String                     @default("") @db.VarChar(240)
+  statusMessage       String                     @default("") @db.VarChar(80)
+  allowFriendRequests Boolean                    @default(true)
+  allowDirectMessages Boolean                    @default(true)
+  tokenVersion        Int                        @default(0)
+  failedLoginAttempts Int                        @default(0)
+  loginLockedUntil    DateTime?
+  lastLoginAt         DateTime?
+  accountDisabled     Boolean                    @default(false)
+  accountDisabledAt   DateTime?
+  accountDisabledReason String                   @default("") @db.VarChar(300)
+  systemRole          SystemRole                 @default(USER)
+  platformOwner       Boolean                    @default(false)
+  accountType         AccountType                @default(HUMAN)
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  memberships         GuildMember[]
+  customRoleAssignments GuildMemberCustomRole[]
+  ownedGuilds         Guild[]                    @relation("GuildOwner")
+  messages            Message[]                  @relation("MessageAuthor")
+  pinnedMessages      Message[]                  @relation("MessagePinnedBy")
+  messageReactions    MessageReaction[]
+  messageBookmarks    MessageBookmark[]
+  messageArchives     MessageArchive[]
+  personalTasks       PersonalTask[]
+  directMessages      DirectMessage[]
+  directMemberships   DirectConversationMember[]
+  attachments         Attachment[]
+  createdInvites      Invite[]                   @relation("InviteCreator")
+  sentFriendships     Friendship[]               @relation("FriendshipRequester")
+  receivedFriendships Friendship[]               @relation("FriendshipAddressee")
+  blocksMade          UserBlock[]                 @relation("UserBlocker")
+  blocksReceived      UserBlock[]                 @relation("UserBlocked")
+  bansReceived        GuildBan[]                  @relation("BannedUser")
+  bansIssued          GuildBan[]                  @relation("BanIssuer")
+  developerApplications DeveloperApplication[]   @relation("DeveloperApplicationOwner")
+  botApplication      DeveloperApplication?      @relation("ApplicationBotUser")
+  createdWebhooks     Webhook[]                   @relation("WebhookCreator")
+  webhookIdentity     Webhook?                    @relation("WebhookIdentity")
+  botInstalls         BotInstall[]                @relation("BotInstaller")
+  platformAnnouncements PlatformAnnouncement[]   @relation("AnnouncementAuthor")
+  platformAuditLogs   PlatformAuditLog[]          @relation("PlatformAuditActor")
+  forumPosts          ForumPost[]
+  forumComments       ForumComment[]
+  createdEvents       GuildEvent[]                @relation("EventCreator")
+  eventRsvps          GuildEventRsvp[]
+  scheduledMessages   ScheduledMessage[]
+  channelPermissionOverrides ChannelUserPermission[]
+  categoryPermissionOverrides CategoryUserPermission[]
+}
+
+model Friendship {
+  id          String           @id @default(cuid())
+  requesterId String
+  addresseeId String
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@index([requesterId, status])
+}
+
+model DirectConversation {
+  id        String                     @id @default(cuid())
+  directKey String                     @unique
+  members   DirectConversationMember[]
+  messages  DirectMessage[]
+  createdAt DateTime                   @default(now())
+  updatedAt DateTime                   @updatedAt
+}
+
+model DirectConversationMember {
+  conversationId String
+  userId         String
+  joinedAt       DateTime           @default(now())
+  conversation   DirectConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@index([userId, joinedAt])
+}
+
+model DirectMessage {
+  id             String             @id @default(cuid())
+  conversationId String
+  authorId       String
+  content        String             @db.Text
+  replyToId      String?
+  conversation   DirectConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author         User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  attachments    Attachment[]
+  createdAt      DateTime           @default(now())
+  editedAt       DateTime?
+
+  @@index([conversationId, createdAt])
+}
+
+model Guild {
+  id             String                @id @default(cuid())
+  name           String
+  iconColor      String
+  description    String                @default("") @db.VarChar(240)
+  welcomeMessage String                @default("") @db.VarChar(240)
+  rules          String                @default("") @db.Text
+  welcomeChannelId String?
+  memberJoinMessagesEnabled  Boolean   @default(true)
+  memberLeaveMessagesEnabled Boolean   @default(true)
+  memberSystemMessageChannelId String?
+  ownerId        String
+  owner          User                  @relation("GuildOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  members        GuildMember[]
+  customRoleAssignments GuildMemberCustomRole[]
+  rolePermissions GuildRolePermission[]
+  customRoles    GuildCustomRole[]
+  categories     ChannelCategory[]
+  channels       Channel[]
+  invites        Invite[]
+  bans           GuildBan[]
+  auditLogs      GuildAuditLog[]
+  botInstalls    BotInstall[]
+  webhooks       Webhook[]
+  forumTags      ForumTag[]
+  forumPosts     ForumPost[]
+  events         GuildEvent[]
+  automodRules   AutoModRule[]
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  securityPolicyVersion Int            @default(0)
+  afkEnabled          Boolean           @default(false)
+  afkChannelId        String?
+  afkTimeoutMinutes   Int               @default(15)
+  communityEnabled    Boolean           @default(false)
+  communityTags       String[]          @default([])
+  communityCategory   String            @default("Geral") @db.VarChar(32)
+  lockdownEnabled     Boolean           @default(false)
+  lockdownReason      String            @default("") @db.VarChar(160)
+  lockdownUpdatedAt   DateTime?
+  musicEnabled        Boolean           @default(false)
+  musicAllowMembers   Boolean           @default(true)
+  musicDefaultVolume  Int               @default(70)
+  musicDefaultVoiceChannelId String?
+}
+
+model GuildMember {
+  guildId       String
+  userId        String
+  role          GuildRole @default(MEMBER)
+  joinedAt      DateTime  @default(now())
+  timeoutUntil  DateTime?
+  timeoutReason String    @default("") @db.VarChar(300)
+  nickname      String    @default("") @db.VarChar(32)
+  serverMuted   Boolean   @default(false)
+  serverDeafened Boolean  @default(false)
+  guild         Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([guildId, userId])
+  @@index([userId])
+}
+
+model GuildRolePermission {
+  id                String    @id @default(cuid())
+  guildId           String
+  role              GuildRole
+  canManageChannels Boolean   @default(false)
+  canManageMessages Boolean   @default(false)
+  canManageMembers  Boolean   @default(false)
+  canManageServer   Boolean   @default(false)
+  canManageRoles    Boolean   @default(false)
+  canKickMembers    Boolean   @default(false)
+  canMoveMembers    Boolean   @default(false)
+  canMuteMembers    Boolean   @default(false)
+  canDeafenMembers  Boolean   @default(false)
+  canManageNicknames Boolean  @default(false)
+  canBanMembers     Boolean   @default(false)
+  canViewAuditLog   Boolean   @default(false)
+  canCreateInvites  Boolean   @default(false)
+  canManageInvites  Boolean   @default(false)
+  canManageWebhooks Boolean   @default(false)
+  canManageBots     Boolean   @default(false)
+  canManageEvents   Boolean   @default(false)
+  canManageForums   Boolean   @default(false)
+  canManageAutoMod  Boolean   @default(false)
+  canPinMessages    Boolean   @default(false)
+  canScheduleMessages Boolean @default(false)
+  canMentionEveryone Boolean  @default(false)
+  canShareScreen    Boolean   @default(true)
+  canUseVideo       Boolean   @default(true)
+  guild             Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([guildId, role])
+  @@index([guildId])
+}
+
+model GuildCustomRole {
+  id          String   @id @default(cuid())
+  guildId     String
+  name        String   @db.VarChar(48)
+  color       String   @default("#8b93a7") @db.VarChar(7)
+  icon        String   @default("") @db.VarChar(16)
+  description String   @default("") @db.VarChar(160)
+  position    Int      @default(0)
+  permissions String[] @default([])
+  hoist       Boolean  @default(false)
+  mentionable Boolean  @default(false)
+  managed     Boolean  @default(false)
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  assignments GuildMemberCustomRole[]
+  channelPermissions ChannelCustomRolePermission[]
+  categoryPermissions CategoryCustomRolePermission[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([guildId, name])
+  @@index([guildId, position])
+}
+
+model GuildMemberCustomRole {
+  guildId String
+  userId  String
+  roleId  String
+  guild   Guild           @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    GuildCustomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@id([guildId, userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+model ChannelCategory {
+  id          String               @id @default(cuid())
+  guildId     String
+  name        String
+  position    Int                  @default(0)
+  guild       Guild                @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  channels    Channel[]
+  permissions CategoryPermission[]
+  customRolePermissions CategoryCustomRolePermission[]
+  userPermissions CategoryUserPermission[]
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@unique([guildId, name])
+  @@index([guildId, position])
+}
+
+model CategoryPermission {
+  id              String          @id @default(cuid())
+  categoryId      String
+  role            GuildRole
+  canView         Boolean         @default(true)
+  canSendMessages Boolean         @default(true)
+  canConnect      Boolean         @default(true)
+  category        ChannelCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([categoryId, role])
+  @@index([categoryId])
+}
+
+model CategoryCustomRolePermission {
+  id              String          @id @default(cuid())
+  categoryId      String
+  roleId          String
+  canView         Boolean?
+  canSendMessages Boolean?
+  canConnect      Boolean?
+  category        ChannelCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  role            GuildCustomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([categoryId, roleId])
+  @@index([roleId])
+}
+
+model Channel {
+  id                          String              @id @default(cuid())
+  guildId                     String
+  categoryId                  String?
+  name                        String
+  type                        ChannelType
+  topic                       String              @default("") @db.VarChar(1024)
+  slowModeSeconds             Int                 @default(0)
+  position                    Int                 @default(0)
+  syncPermissionsWithCategory Boolean             @default(true)
+  guild                       Guild               @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  category                    ChannelCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  messages                    Message[]
+  permissions                 ChannelPermission[]
+  customRolePermissions       ChannelCustomRolePermission[]
+  userPermissions             ChannelUserPermission[]
+  webhooks                    Webhook[]
+  forumTags                   ForumTag[]
+  forumPosts                  ForumPost[]
+  events                      GuildEvent[]
+  scheduledMessages           ScheduledMessage[]
+  createdAt                   DateTime            @default(now())
+  updatedAt                   DateTime            @updatedAt
+
+  @@unique([guildId, name])
+  @@index([guildId, categoryId, position])
+}
+
+model ChannelPermission {
+  id              String    @id @default(cuid())
+  channelId       String
+  role            GuildRole
+  canView         Boolean   @default(true)
+  canSendMessages Boolean   @default(true)
+  canConnect      Boolean   @default(true)
+  channel         Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([channelId, role])
+  @@index([channelId])
+}
+
+model CategoryUserPermission {
+  id              String          @id @default(cuid())
+  categoryId      String
+  userId          String
+  canView         Boolean?
+  canSendMessages Boolean?
+  canConnect      Boolean?
+  category        ChannelCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([categoryId, userId])
+  @@index([userId])
+}
+
+model ChannelUserPermission {
+  id              String    @id @default(cuid())
+  channelId       String
+  userId          String
+  canView         Boolean?
+  canSendMessages Boolean?
+  canConnect      Boolean?
+  channel         Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([channelId, userId])
+  @@index([userId])
+}
+
+model ChannelCustomRolePermission {
+  id              String          @id @default(cuid())
+  channelId       String
+  roleId          String
+  canView         Boolean?
+  canSendMessages Boolean?
+  canConnect      Boolean?
+  channel         Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  role            GuildCustomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([channelId, roleId])
+  @@index([roleId])
+}
+
+model Message {
+  id          String       @id @default(cuid())
+  channelId   String
+  authorId    String
+  content     String       @db.Text
+  replyToId   String?
+  isPinned    Boolean      @default(false)
+  pinnedAt    DateTime?
+  pinnedById  String?
+  channel     Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author      User         @relation("MessageAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  replyTo     Message?     @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     Message[]    @relation("MessageReplies")
+  pinnedBy    User?        @relation("MessagePinnedBy", fields: [pinnedById], references: [id], onDelete: SetNull)
+  reactions   MessageReaction[]
+  bookmarks   MessageBookmark[]
+  archives    MessageArchive[]
+  tasks       PersonalTask[]
+  attachments Attachment[]
+  createdAt   DateTime     @default(now())
+  editedAt    DateTime?
+
+  @@index([channelId, createdAt])
+  @@index([replyToId])
+  @@index([channelId, isPinned])
+}
+
+model MessageReaction {
+  messageId String
+  userId    String
+  emoji     String   @db.VarChar(64)
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([messageId, userId, emoji])
+  @@index([messageId])
+}
+
+model MessageBookmark {
+  messageId String
+  userId    String
+  note      String   @default("") @db.VarChar(160)
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([messageId, userId])
+  @@index([userId, createdAt])
+}
+
+
+model MessageArchive {
+  messageId String
+  userId    String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([messageId, userId])
+  @@index([userId, createdAt])
+}
+
+model PersonalTask {
+  id              String   @id @default(cuid())
+  userId          String
+  sourceMessageId String?
+  title           String   @db.VarChar(240)
+  completed       Boolean  @default(false)
+  dueAt           DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceMessage   Message? @relation(fields: [sourceMessageId], references: [id], onDelete: SetNull)
+
+  @@index([userId, completed, createdAt])
+  @@index([sourceMessageId])
+}
+
+model ScheduledMessage {
+  id          String                 @id @default(cuid())
+  channelId   String
+  authorId    String
+  content     String                 @db.Text
+  scheduledFor DateTime
+  status      ScheduledMessageStatus @default(PENDING)
+  sentMessageId String?
+  channel     Channel                @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author      User                   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@index([status, scheduledFor])
+  @@index([authorId, scheduledFor])
+}
+
+model Attachment {
+  id              String         @id @default(cuid())
+  messageId       String?
+  directMessageId String?
+  uploaderId      String
+  originalName    String
+  storedName      String         @unique
+  accessKey       String         @unique
+  mimeType        String
+  size            Int
+  url             String
+  message         Message?       @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  directMessage   DirectMessage? @relation(fields: [directMessageId], references: [id], onDelete: Cascade)
+  uploader        User           @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
+
+  @@index([messageId])
+  @@index([directMessageId])
+  @@index([uploaderId, createdAt])
+}
+
+model Invite {
+  code        String   @id @db.VarChar(16)
+  guildId     String
+  createdById String
+  expiresAt   DateTime?
+  maxUses     Int?
+  uses        Int      @default(0)
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  createdBy   User     @relation("InviteCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@index([guildId])
+}
+
+model GuildBan {
+  id         String   @id @default(cuid())
+  guildId    String
+  userId     String
+  bannedById String
+  reason     String   @default("") @db.VarChar(500)
+  expiresAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  guild      Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  user       User     @relation("BannedUser", fields: [userId], references: [id], onDelete: Cascade)
+  bannedBy   User     @relation("BanIssuer", fields: [bannedById], references: [id], onDelete: Restrict)
+
+  @@unique([guildId, userId])
+  @@index([guildId, expiresAt])
+  @@index([userId])
+}
+
+model GuildAuditLog {
+  id           String   @id @default(cuid())
+  guildId      String
+  actorId      String?
+  action       String   @db.VarChar(64)
+  targetType   String?  @db.VarChar(32)
+  targetId     String?  @db.VarChar(128)
+  targetUserId String?
+  metadata     Json?
+  ipHash       String?  @db.VarChar(64)
+  createdAt    DateTime @default(now())
+  guild        Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, createdAt])
+  @@index([targetUserId])
+}
+
+model DeveloperApplication {
+  id             String    @id @default(cuid())
+  clientId       String    @unique @default(uuid())
+  ownerId        String
+  name           String    @db.VarChar(64)
+  description    String    @default("") @db.VarChar(240)
+  iconColor      String    @default("#7667f5") @db.VarChar(7)
+  publicBot      Boolean   @default(false)
+  messageContentIntent Boolean @default(false)
+  botUserId      String?   @unique
+  botTokenHash   String?
+  botTokenPrefix String?   @unique @db.VarChar(24)
+  owner          User      @relation("DeveloperApplicationOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  botUser        User?     @relation("ApplicationBotUser", fields: [botUserId], references: [id], onDelete: SetNull)
+  installs       BotInstall[]
+  commands       ApplicationCommand[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([ownerId, createdAt])
+}
+
+model ApplicationCommand {
+  id            String               @id @default(cuid())
+  applicationId String
+  name          String               @db.VarChar(32)
+  description   String               @db.VarChar(100)
+  application   DeveloperApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@unique([applicationId, name])
+}
+
+model BotInstall {
+  id            String               @id @default(cuid())
+  guildId       String
+  applicationId String
+  installedById String
+  permissions   String[]             @default([])
+  scopes        String[]             @default(["bot"])
+  guild         Guild                @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  application   DeveloperApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  installedBy   User                 @relation("BotInstaller", fields: [installedById], references: [id], onDelete: Restrict)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@unique([guildId, applicationId])
+  @@index([applicationId])
+}
+
+model Webhook {
+  id          String   @id @default(cuid())
+  guildId     String
+  channelId   String
+  createdById String
+  userId      String   @unique
+  name        String   @db.VarChar(64)
+  tokenHash   String
+  tokenPrefix String   @unique @db.VarChar(24)
+  enabled     Boolean  @default(true)
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  createdBy   User     @relation("WebhookCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  user        User     @relation("WebhookIdentity", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([guildId, channelId])
+}
+
+model PlatformAnnouncement {
+  id          String   @id @default(cuid())
+  title       String   @db.VarChar(120)
+  body        String   @db.Text
+  severity    String   @default("INFO") @db.VarChar(16)
+  published   Boolean  @default(true)
+  createdById String
+  createdBy   User     @relation("AnnouncementAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([published, createdAt])
+}
+
+model PlatformAuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String   @db.VarChar(64)
+  targetType String? @db.VarChar(32)
+  targetId  String?  @db.VarChar(128)
+  metadata  Json?
+  createdAt DateTime @default(now())
+  actor     User?    @relation("PlatformAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+}
+
+model ForumTag {
+  id        String   @id @default(cuid())
+  guildId   String
+  channelId String
+  name      String   @db.VarChar(32)
+  color     String   @default("#8b93a7") @db.VarChar(7)
+  guild     Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  posts     ForumPostTag[]
+  createdAt DateTime @default(now())
+
+  @@unique([channelId, name])
+  @@index([guildId])
+}
+
+model ForumPost {
+  id             String          @id @default(cuid())
+  guildId        String
+  channelId      String
+  authorId       String
+  title          String          @db.VarChar(120)
+  content        String          @db.Text
+  status         ForumPostStatus @default(OPEN)
+  pinned         Boolean         @default(false)
+  lastActivityAt DateTime        @default(now())
+  guild          Guild           @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  channel        Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author         User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  tags           ForumPostTag[]
+  comments       ForumComment[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([channelId, pinned, lastActivityAt])
+}
+
+model ForumPostTag {
+  postId String
+  tagId  String
+  post   ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag    ForumTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+}
+
+model ForumComment {
+  id        String    @id @default(cuid())
+  postId    String
+  authorId  String
+  content   String    @db.Text
+  post      ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  editedAt  DateTime?
+
+  @@index([postId, createdAt])
+}
+
+model GuildEvent {
+  id          String   @id @default(cuid())
+  guildId     String
+  channelId   String?
+  createdById String
+  title       String   @db.VarChar(120)
+  description String   @default("") @db.VarChar(1000)
+  location    String   @default("") @db.VarChar(240)
+  startsAt    DateTime
+  endsAt      DateTime?
+  capacity    Int?
+  cancelledAt DateTime?
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  channel     Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  createdBy   User     @relation("EventCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  rsvps       GuildEventRsvp[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([guildId, startsAt])
+  @@index([channelId])
+}
+
+model GuildEventRsvp {
+  eventId   String
+  userId    String
+  status    EventRsvpStatus @default(INTERESTED)
+  event     GuildEvent      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt DateTime        @updatedAt
+
+  @@id([eventId, userId])
+  @@index([userId])
+}
+
+model AutoModRule {
+  id             String          @id @default(cuid())
+  guildId        String
+  name           String          @db.VarChar(64)
+  type           AutoModRuleType
+  enabled        Boolean         @default(true)
+  blockedTerms   String[]        @default([])
+  mentionLimit   Int?
+  repetitionLimit Int?
+  blockMessage   Boolean         @default(true)
+  alertChannelId String?
+  exemptRoleIds  String[]        @default([])
+  exemptChannelIds String[]      @default([])
+  guild          Guild           @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([guildId, enabled])
+}
+
+
+model UserBlock {
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+  blocker   User     @relation("UserBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("UserBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId, createdAt])
+}
+
+model GingaGamingProfile {
+  userId             String    @id @map("user_id")
+  avatarUrl          String?   @map("avatar_url")
+  avatarAttachmentId String?   @map("avatar_attachment_id")
+  avatarBlob         Bytes?    @map("avatar_blob")
+  avatarMime         String?   @map("avatar_mime") @db.VarChar(40)
+  avatarEtag         String?   @map("avatar_etag") @db.VarChar(64)
+  bio                String?   @db.VarChar(280)
+  customStatus       String?   @map("custom_status") @db.VarChar(120)
+  presenceMode       String    @default("ONLINE") @map("presence_mode") @db.VarChar(16)
+  autoAway           Boolean   @default(true) @map("auto_away")
+  idle               Boolean   @default(false)
+  showGameActivity   Boolean   @default(false) @map("show_game_activity")
+  autoDetectGame     Boolean   @default(false) @map("auto_detect_game")
+  gameName           String?   @map("game_name") @db.VarChar(100)
+  gameDetails        String?   @map("game_details") @db.VarChar(120)
+  gameSource         String    @default("NONE") @map("game_source") @db.VarChar(16)
+  gameStartedAt      DateTime? @map("game_started_at")
+  gameLastSeenAt     DateTime? @map("game_last_seen_at")
+  lastSeenAt         DateTime? @map("last_seen_at")
+  updatedAt          DateTime  @default(now()) @map("updated_at")
+
+  @@map("GingaGamingProfile")
+}
+
+model GingaDirectCall {
+  id          String    @id
+  pairKey     String    @map("pair_key")
+  callerId    String    @map("caller_id")
+  calleeId    String    @map("callee_id")
+  state       String    @db.VarChar(16)
+  startedAt   DateTime  @default(now()) @map("started_at")
+  answeredAt  DateTime? @map("answered_at")
+  endedAt     DateTime? @map("ended_at")
+  durationMs  Int?      @map("duration_ms")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @map("updated_at")
+
+  @@index([pairKey, startedAt])
+  @@index([callerId, calleeId, startedAt])
+  @@map("GingaDirectCall")
+}

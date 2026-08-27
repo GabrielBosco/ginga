@@ -1,0 +1,23 @@
+name: Sugerir recurso
+description: Sugira uma melhoria ou nova funcionalidade para o Ginga
+title: "[Melhoria]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema que você quer resolver
+      description: Explique primeiro o caso de uso.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposta
+      description: Como você imagina o comportamento?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas

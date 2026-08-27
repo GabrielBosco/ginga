@@ -1,0 +1,65 @@
+name: Gerar APK Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "URL HTTPS do servidor Ginga (ex.: https://ginga.exemplo.com)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-debug-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar plataforma Android
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Validar URL do servidor
+        env:
+          GINGA_SERVER_URL: ${{ inputs.server_url }}
+        run: |
+          case "$GINGA_SERVER_URL" in
+            https://*) ;;
+            *) echo "server_url precisa usar HTTPS" >&2; exit 1 ;;
+          esac
+
+      - name: Compilar APK de teste
+        working-directory: apps/android
+        env:
+          GINGA_SERVER_URL: ${{ inputs.server_url }}
+        run: gradle --no-daemon clean assembleDebug -PGINGA_SERVER_URL="$GINGA_SERVER_URL"
+
+      - name: Renomear APK
+        run: |
+          mkdir -p dist/android
+          cp apps/android/app/build/outputs/apk/debug/app-debug.apk dist/android/Ginga-0.2.0-debug.apk
+
+      - name: Publicar artefato do APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ginga-0.2.0-Android-debug
+          path: dist/android/Ginga-0.2.0-debug.apk
+          if-no-files-found: error
+          retention-days: 14
