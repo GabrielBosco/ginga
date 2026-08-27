@@ -12,7 +12,7 @@
     "dist:portable": "node ../../scripts/update-signing.cjs ensure ../.. && electron-builder --win portable --x64 --publish never"
   },
   "dependencies": {
-    "electron-updater": "6.6.2"
+    "electron-updater": "6.8.9"
   },
   "devDependencies": {
     "electron": "43.4.0",
