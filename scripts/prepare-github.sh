@@ -87,8 +87,19 @@ PY
   if grep -R -nE '(^|[[:space:]])(import[[:space:]]+ginga([[:space:]]|$)|from[[:space:]]+ginga([[:space:].]|$))' sdk/python examples/python-bot 2>/dev/null; then
     fail "namespace Python 'ginga' reapareceu; use gingabot"
   fi
-  python3 -m compileall -q sdk/python/gingabot
-  ok "Ginga Bot SDK $SDK_VERSION usa pacote ginga-bot/import gingabot"
+  python3 - <<'PYSDK'
+from pathlib import Path
+for path in Path('sdk/python/gingabot').rglob('*.py'):
+    compile(path.read_text(encoding='utf-8'), str(path), 'exec')
+for path in Path('sdk/python/examples').rglob('*.py'):
+    compile(path.read_text(encoding='utf-8'), str(path), 'exec')
+PYSDK
+  grep -q 'python -m pip install -U ginga-bot' docs/BOTS-PYTHON.md || fail "documentacao sem instalacao oficial do SDK"
+  grep -q -- '--index-url https://pypi.org/simple' docs/BOTS-PYTHON.md || fail "documentacao sem troubleshooting do indice PyPI"
+  grep -q 'id:"bot-python-install"' apps/web/src/components/KnowledgeBase.tsx || fail "Base de Conhecimento sem guia de instalacao do SDK"
+  grep -q 'https://pypi.org/project/ginga-bot/' apps/web/src/components/DeveloperPortal.tsx || fail "Developer Portal sem link oficial do PyPI"
+  grep -q 'skip-existing: true' .github/workflows/python-sdk-publish.yml || fail "workflow PyPI sem protecao para rerun de release existente"
+  ok "Ginga Bot SDK $SDK_VERSION usa pacote ginga-bot/import gingabot e possui documentacao completa"
 fi
 
 for f in apps/desktop/src/*.cjs scripts/*.cjs; do

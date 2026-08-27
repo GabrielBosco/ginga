@@ -443,18 +443,26 @@ class Bot:
 
     def _wire_socket(self) -> None:
         @self.socket.event
-        async def connect() -> None:
+        async def connect(*_args: Any) -> None:
+            # Algumas versoes do python-socketio podem anexar metadados ao
+            # callback de conexao. Eles nao fazem parte da API publica do SDK.
             self.log.info("Gateway do Ginga conectado")
             await self._dispatch("connect")
 
         @self.socket.event
-        async def disconnect() -> None:
+        async def disconnect(*_args: Any) -> None:
+            # Aceita motivo/metadados opcionais sem quebrar a aplicacao do bot.
             self._ready.clear()
             await self._dispatch("disconnect")
 
         @self.socket.on("bot:ready")
-        async def bot_ready(payload: dict[str, Any]) -> None:
-            effective_intents = set(payload.get("intents") or []) if isinstance(payload, dict) else set()
+        async def bot_ready(payload: Any = None, *_extra: Any) -> None:
+            # Socket.IO pode entregar argumentos adicionais dependendo da versao
+            # do cliente/servidor ou de metadados anexados ao evento. O payload
+            # oficial do Ginga e sempre o primeiro objeto JSON; argumentos extras
+            # sao ignorados para manter compatibilidade entre versoes.
+            payload = payload if isinstance(payload, dict) else {}
+            effective_intents = set(payload.get("intents") or [])
             if self.intents.message_content and "MESSAGE_CONTENT" not in effective_intents:
                 self.log.warning(
                     "MESSAGE_CONTENT foi solicitado pelo codigo, mas esta desabilitado no Developer Portal. "
@@ -470,7 +478,10 @@ class Bot:
             await self._dispatch("ready")
 
         @self.socket.on("message:new")
-        async def message_new(payload: dict[str, Any]) -> None:
+        async def message_new(payload: Any = None, *_extra: Any) -> None:
+            if not isinstance(payload, dict):
+                self.log.warning("Evento message:new recebido sem payload JSON valido")
+                return
             message = Message(self, payload)
             if self.user and message.author.id == self.user.id:
                 return
@@ -478,11 +489,17 @@ class Bot:
             await self.process_commands(message)
 
         @self.socket.on("guild:message:new")
-        async def guild_message_new(payload: dict[str, Any]) -> None:
+        async def guild_message_new(payload: Any = None, *_extra: Any) -> None:
+            if not isinstance(payload, dict):
+                self.log.warning("Evento guild:message:new recebido sem payload JSON valido")
+                return
             await self._dispatch("guild_message", payload)
 
         @self.socket.on("voice:presence")
-        async def voice_presence(payload: dict[str, Any]) -> None:
+        async def voice_presence(payload: Any = None, *_extra: Any) -> None:
+            if not isinstance(payload, dict):
+                self.log.warning("Evento voice:presence recebido sem payload JSON valido")
+                return
             await self._dispatch("voice_state_update", payload)
 
     async def start(self, token: str) -> None:

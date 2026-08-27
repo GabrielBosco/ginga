@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ginga-bot"
-version = "0.1.0"
+version = "0.1.1"
 description = "SDK Python oficial para bots do Ginga"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,6 +22,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Communications :: Chat",
   "Topic :: Software Development :: Libraries :: Python Modules"
 ]

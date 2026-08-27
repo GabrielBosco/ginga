@@ -400,11 +400,71 @@ export function DeveloperPortal({ user, onExit }: { user: User; onExit: () => vo
         </div>
       </div>}
 
-      {section === "sdk" && <div className="developer-sdk-page"><div className="developer-sdk-grid"><section className="portal-card"><header><TerminalSquare/><div><h2>Ginga Bot SDK</h2><p>SDK Python oficial para bots do Ginga. O pacote e <code>ginga-bot</code> e o import e <code>gingabot</code>, evitando conflito com o pacote Python <code>ginga</code> que ja existe.</p></div></header><div className="sdk-step"><strong>1. Instale o SDK</strong><code>pip install -U ginga-bot</code></div><div className="sdk-step"><strong>2. Habilite o intent se o bot ler mensagens</strong><span>Em Bots Python, ative <b>Conteudo de mensagens</b> para comandos como !ping.</span></div><div className="sdk-step"><strong>3. Guarde o token no ambiente</strong><code>set GINGA_BOT_TOKEN=seu_token</code></div><div className="sdk-step"><strong>4. Crie o bot</strong><pre><code>{pythonExample}</code></pre></div><button className="secondary-button" onClick={() => void copyText(pythonExample, "Exemplo Python copiado")}><Copy size={16}/> Copiar exemplo</button></section><section className="portal-card"><header><ExternalLink/><div><h2>Gateway e Intents</h2><p>REST para acoes explicitas e Gateway Socket.IO para eventos em tempo real.</p></div></header><ul className="developer-capability-list"><li><strong>Pacote oficial</strong><span><code>pip install ginga-bot</code> e <code>import gingabot</code>. Para desenvolver o proprio SDK pelo repo, use <code>pip install -e ./sdk/python</code>.</span></li><li><strong>Intents</strong><span>O bot declara GUILDS, GUILD_MESSAGES, MESSAGE_CONTENT e VOICE_STATES conforme a necessidade.</span></li><li><strong>Decorators</strong><span><code>@bot.command</code> sincroniza o catalogo de comandos automaticamente.</span></li><li><strong>Menor privilegio</strong><span>Intents nao substituem as permissoes aprovadas na instalacao nem a ACL do canal.</span></li><li><strong>Reconexao</strong><span>O SDK cuida da sessao do Gateway e separa token de bot da conta humana.</span></li></ul></section></div></div>}
+      {section === "sdk" && <div className="developer-sdk-page">
+        <section className="portal-card developer-docs-hero">
+          <header><TerminalSquare/><div><h2>Ginga Bot SDK para Python</h2><p>SDK oficial publicado como <code>ginga-bot</code>. No codigo, use <code>import gingabot</code>. Requer Python 3.10+.</p></div></header>
+          <div className="developer-docs-steps">
+            <article><b>01</b><div><strong>Crie o bot</strong><p>Abra Bots Python, crie a identidade e copie o token exibido uma unica vez.</p></div></article>
+            <article><b>02</b><div><strong>Instale no servidor</strong><p>Revise permissoes e conclua a autorizacao no servidor onde o bot vai operar.</p></div></article>
+            <article><b>03</b><div><strong>Instale o SDK</strong><p><code>python -m pip install -U ginga-bot</code></p></div></article>
+            <article><b>04</b><div><strong>Configure o ambiente</strong><p>Defina <code>GINGA_SERVER</code> e <code>GINGA_BOT_TOKEN</code>. Nunca salve token no codigo.</p></div></article>
+            <article><b>05</b><div><strong>Execute e teste</strong><p>Rode <code>python bot.py</code> e teste <code>!ping</code> em um canal permitido.</p></div></article>
+          </div>
+          <div className="portal-action-row"><a className="secondary-button" href="https://pypi.org/project/ginga-bot/" target="_blank" rel="noreferrer"><ExternalLink size={16}/> Abrir ginga-bot no PyPI</a><a className="secondary-button" href="/knowledge?article=bot-python-install"><BookOpen size={16}/> Guia completo</a></div>
+        </section>
+
+        <div className="developer-sdk-grid">
+          <section className="portal-card">
+            <header><TerminalSquare/><div><h2>1. Instalar</h2><p>Use sempre o mesmo Python para instalar e executar o bot.</p></div></header>
+            <div className="sdk-step"><strong>Instalacao padrao</strong><code>python -m pip install -U ginga-bot</code></div>
+            <div className="sdk-step"><strong>Confirmar versao</strong><code>python -c "import gingabot; print(gingabot.__version__)"</code></div>
+            <button className="secondary-button" onClick={() => void copyText('python -m pip install -U ginga-bot', 'Comando de instalacao copiado')}><Copy size={16}/> Copiar instalacao</button>
+          </section>
+          <section className="portal-card">
+            <header><ShieldCheck/><div><h2>pip nao encontrou?</h2><p>Isso normalmente indica Python antigo, cache ou um indice/mirror configurado na maquina.</p></div></header>
+            <div className="sdk-step"><strong>Confira o Python</strong><code>python --version</code></div>
+            <div className="sdk-step"><strong>Forcar PyPI oficial</strong><code>python -m pip install --no-cache-dir --index-url https://pypi.org/simple ginga-bot</code></div>
+            <button className="secondary-button" onClick={() => void copyText('python -m pip install --no-cache-dir --index-url https://pypi.org/simple ginga-bot', 'Comando de diagnostico copiado')}><Copy size={16}/> Copiar diagnostico</button>
+          </section>
+        </div>
+
+        <div className="developer-sdk-grid">
+          <section className="portal-card">
+            <header><KeyRound/><div><h2>2. Credenciais</h2><p>O token do bot deve existir apenas no ambiente do processo.</p></div></header>
+            <div className="sdk-step"><strong>Windows PowerShell</strong><code>$env:GINGA_SERVER="{location.origin}"{`\n`}$env:GINGA_BOT_TOKEN="seu_token"</code></div>
+            <div className="sdk-step"><strong>Linux</strong><code>export GINGA_SERVER="{location.origin}"{`\n`}export GINGA_BOT_TOKEN="seu_token"</code></div>
+            <div className="inline-alert info"><KeyRound size={16}/><div><strong>Nunca cole o token no codigo</strong><span>Se a credencial vazar, rotacione no Portal Developer antes de voltar o bot para producao.</span></div></div>
+          </section>
+          <section className="portal-card">
+            <header><Code2/><div><h2>3. MESSAGE_CONTENT</h2><p>Comandos como <code>!ping</code> dependem do conteudo das mensagens.</p></div></header>
+            <ul className="developer-capability-list"><li><strong>No Python</strong><span><code>intents.message_content = True</code></span></li><li><strong>No Ginga Developer</strong><span>Ative <b>Conteudo de mensagens</b> na configuracao do bot.</span></li><li><strong>No servidor</strong><span>O bot ainda precisa das permissoes e da ACL efetiva do canal.</span></li></ul>
+          </section>
+        </div>
+
+        <div className="developer-sdk-grid">
+          <section className="portal-card">
+            <header><Bot/><div><h2>4. Primeiro bot</h2><p>Exemplo funcional com evento de ready e comando <code>!ping</code>.</p></div></header>
+            <pre><code>{pythonExample}</code></pre>
+            <button className="secondary-button" onClick={() => void copyText(pythonExample, "Exemplo Python copiado")}><Copy size={16}/> Copiar bot.py</button>
+          </section>
+          <section className="portal-card">
+            <header><ExternalLink/><div><h2>Gateway, comandos e objetos</h2><p>REST para acoes e Socket.IO para eventos em tempo real.</p></div></header>
+            <ul className="developer-capability-list"><li><strong>Intents</strong><span>GUILDS, GUILD_MESSAGES, MESSAGE_CONTENT e VOICE_STATES.</span></li><li><strong>Decorators</strong><span><code>@bot.event</code> e <code>@bot.command</code>.</span></li><li><strong>Objetos</strong><span>Bot, Context, Message, User, Member, Channel e Role.</span></li><li><strong>Argumentos</strong><span>Conversao automatica de <code>str</code>, <code>int</code>, <code>float</code> e <code>bool</code>.</span></li><li><strong>Rate limit</strong><span>Retry limitado respeitando <code>Retry-After</code>.</span></li><li><strong>Reconexao</strong><span>O cliente Socket.IO tenta recuperar a sessao automaticamente.</span></li><li><strong>ACL</strong><span>O SDK nao ignora permissoes do servidor nem do canal.</span></li></ul>
+          </section>
+        </div>
+      </div>}
 
       {section === "docs" && <div className="developer-docs-page">
-        <section className="portal-card developer-docs-hero"><header><BookOpen/><div><h2>Fluxo oficial do Ginga Developer</h2><p>Um guia curto para nao depender de tentativa e erro.</p></div></header><div className="developer-docs-steps"><article><b>01</b><div><strong>Aplicacao</strong><p>Crie um projeto e defina nome, descricao e visibilidade.</p></div></article><article><b>02</b><div><strong>Credencial</strong><p>Copie o token apenas no momento da criacao ou rotacao.</p></div></article><article><b>03</b><div><strong>Permissoes</strong><p>Escolha menor privilegio. ACL de servidor e canal continua valendo.</p></div></article><article><b>04</b><div><strong>Instalacao</strong><p>Autorize o bot no servidor correto e revise o que foi solicitado.</p></div></article><article><b>05</b><div><strong>Runtime Python</strong><p>Rode o bot Python em processo, VM ou container. Nunca no frontend.</p></div></article></div><div className="portal-action-row"><a className="secondary-button" href="/knowledge?article=bot-python"><BookOpen size={16}/> Abrir Base de Conhecimento <ExternalLink size={13}/></a></div></section>
-        <div className="developer-docs-grid"><section className="portal-card"><h3>Checklist de producao</h3><ul className="developer-doc-checklist"><li><Check size={15}/> HTTPS/WSS para acesso externo.</li><li><Check size={15}/> Token fora do Git, frontend e logs.</li><li><Check size={15}/> Retry com backoff e timeout nas chamadas.</li><li><Check size={15}/> Nao responder ao proprio bot em loop.</li><li><Check size={15}/> Rotacionar segredo imediatamente em caso de exposicao.</li></ul></section><section className="portal-card"><h3>Quando usar webhook</h3><p className="developer-doc-copy">Use webhook quando seu sistema so precisa publicar mensagens, como CI/CD, monitoramento ou alertas. Use um bot conectado quando precisar receber eventos, comandos e manter estado em tempo real.</p><button className="secondary-button" onClick={() => setSection("webhooks")}><Webhook size={16}/> Gerenciar webhooks</button></section></div>
+        <section className="portal-card developer-docs-hero">
+          <header><BookOpen/><div><h2>Documentacao oficial do Ginga Developer</h2><p>Do primeiro <code>pip install</code> ate operacao 24/7, sem depender de tentativa e erro.</p></div></header>
+          <div className="developer-docs-steps"><article><b>01</b><div><strong>Criar o bot</strong><p>Identidade, token e instalacao por servidor.</p></div></article><article><b>02</b><div><strong>Instalar o SDK</strong><p><code>python -m pip install -U ginga-bot</code> e <code>import gingabot</code>.</p></div></article><article><b>03</b><div><strong>Intents + permissoes</strong><p>Receber um evento nao significa ter permissao para executar a acao.</p></div></article><article><b>04</b><div><strong>Comandos + eventos</strong><p>Decorators, argumentos, Context, Message e Gateway.</p></div></article><article><b>05</b><div><strong>Producao</strong><p>Secrets, logs, rate limit, reconexao e restart controlado.</p></div></article></div>
+          <div className="portal-action-row"><a className="secondary-button" href="/knowledge?article=dev-primeiros-passos"><BookOpen size={16}/> Comecar do zero</a><a className="secondary-button" href="/knowledge?article=bot-python-install"><TerminalSquare size={16}/> Instalar SDK</a><a className="secondary-button" href="https://pypi.org/project/ginga-bot/" target="_blank" rel="noreferrer"><ExternalLink size={16}/> PyPI</a></div>
+        </section>
+        <div className="developer-docs-grid">
+          <section className="portal-card"><h3>Guias recomendados</h3><ul className="developer-capability-list"><li><strong>Primeiro bot</strong><span><a href="/knowledge?article=bot-python">Token, ambiente, bot.py e !ping.</a></span></li><li><strong>Comandos e eventos</strong><span><a href="/knowledge?article=bot-python-comandos">Decorators, argumentos tipados e handlers.</a></span></li><li><strong>IDs e objetos</strong><span><a href="/knowledge?article=dev-ids">Channel ID, Role ID, User ID e Guild ID.</a></span></li><li><strong>Intents e permissoes</strong><span><a href="/knowledge?article=dev-permissoes">ACL, menor privilegio e MESSAGE_CONTENT.</a></span></li><li><strong>Erros comuns</strong><span><a href="/knowledge?article=bot-python-erros">pip, 401, 403, WebSocket e bot sem responder.</a></span></li></ul></section>
+          <section className="portal-card"><h3>Checklist de producao</h3><ul className="developer-doc-checklist"><li><Check size={15}/> Python 3.10+ e ambiente isolado.</li><li><Check size={15}/> HTTPS/WSS para acesso externo.</li><li><Check size={15}/> Token fora do Git, frontend e logs.</li><li><Check size={15}/> Intents e permissoes minimas.</li><li><Check size={15}/> Retry, timeout e rate limit tratados.</li><li><Check size={15}/> Restart controlado com systemd/container.</li><li><Check size={15}/> Rotacao imediata se a credencial vazar.</li></ul></section>
+        </div>
+        <div className="developer-docs-grid"><section className="portal-card"><h3>Bot ou webhook?</h3><p className="developer-doc-copy">Use <b>webhook</b> quando um sistema externo so precisa publicar mensagens, como CI/CD e monitoramento. Use <b>Ginga Bot SDK</b> quando voce precisa receber eventos, responder comandos, consultar recursos e manter uma conexao em tempo real.</p><div className="portal-action-row"><button className="secondary-button" onClick={() => setSection("webhooks")}><Webhook size={16}/> Webhooks</button><button className="secondary-button" onClick={() => setSection("sdk")}><Bot size={16}/> SDK Python</button></div></section><section className="portal-card"><h3>Publicacao do SDK</h3><p className="developer-doc-copy">A versao do SDK e independente da versao do servidor. Releases do PyPI sao imutaveis: codigo novo exige uma nova versao do pacote. O repositorio usa Trusted Publishing via GitHub Actions.</p><code>sdk/python/PUBLISHING.md</code></section></div>
       </div>}
     </section>
 

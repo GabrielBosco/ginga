@@ -1,21 +1,58 @@
-# Ginga Bot SDK para Python
+# Ginga Bot SDK
 
-`ginga-bot` e o SDK Python oficial para bots do Ginga. O pacote publicado no PyPI usa o nome **`ginga-bot`** e o modulo Python usa **`gingabot`**.
-
-> O nome `ginga` nao e usado como modulo porque ja existe outro projeto Python com esse namespace no PyPI.
-
-## Instalacao
-
-Quando o pacote estiver publicado no PyPI:
+SDK Python oficial para bots do Ginga.
 
 ```bash
 python -m pip install -U ginga-bot
 ```
 
-Durante o desenvolvimento a partir do repositorio do Ginga:
+```python
+import gingabot
+```
+
+- distribuicao PyPI: `ginga-bot`
+- modulo: `gingabot`
+- Python: `3.10+`
+- versao atual: `0.1.1`
+
+> O modulo `ginga` nao e usado porque esse namespace ja pertence a outro projeto Python. O import oficial deste SDK e `gingabot`.
+
+
+## 0.1.1 — compatibilidade do Gateway
+
+- corrige handlers Socket.IO quando o servidor/cliente entrega argumentos adicionais em eventos;
+- `bot:ready`, `message:new`, `guild:message:new` e `voice:presence` agora toleram metadados extras;
+- evita `TypeError: ... takes 1 positional argument but 2 were given`;
+- payloads invalidos sao ignorados com log de aviso em vez de derrubar o processo.
+
+## Quickstart
+
+Crie um bot no **Ginga Developer -> Bots Python**, copie o token, instale o bot em um servidor e habilite apenas as permissoes/intents necessarias.
+
+### Windows PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -U ginga-bot
+python -c "import gingabot; print(gingabot.__version__)"
+```
+
+### Linux
 
 ```bash
-python -m pip install -e ./sdk/python
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -U ginga-bot
+python -c "import gingabot; print(gingabot.__version__)"
+```
+
+Se sua maquina usa outro indice/mirror do pip:
+
+```bash
+python -m pip install --no-cache-dir --index-url https://pypi.org/simple ginga-bot
 ```
 
 ## Primeiro bot
@@ -30,7 +67,7 @@ intents.message_content = True
 bot = gingabot.Bot(
     command_prefix="!",
     intents=intents,
-    server_url=os.getenv("GINGA_SERVER", "http://127.0.0.1"),
+    server_url=os.environ["GINGA_SERVER"],
 )
 
 @bot.event
@@ -44,58 +81,35 @@ async def ping(ctx):
 bot.run(os.environ["GINGA_BOT_TOKEN"])
 ```
 
-Se voce gosta da leitura `ginga.Bot(...)`, pode usar um alias local sem conflitar com o pacote astronomico existente:
+Variaveis no PowerShell:
 
-```python
-import gingabot as ginga
-
-bot = ginga.Bot(...)
+```powershell
+$env:GINGA_SERVER="https://seu-servidor-ginga.exemplo"
+$env:GINGA_BOT_TOKEN="seu_token"
+python .\bot.py
 ```
 
-## Como funciona
+Linux:
 
-O SDK usa:
+```bash
+export GINGA_SERVER="https://seu-servidor-ginga.exemplo"
+export GINGA_BOT_TOKEN="seu_token"
+python bot.py
+```
 
-- REST para buscar recursos e executar acoes explicitas;
-- Socket.IO para eventos em tempo real;
-- token exclusivo de bot criado no Portal do Desenvolvedor;
-- Intents para limitar quais classes de eventos o processo recebe;
-- permissoes de instalacao e ACLs do servidor/canal no lado do servidor.
+## MESSAGE_CONTENT
 
-## Intents
+Comandos baseados em mensagens precisam de duas configuracoes:
 
 ```python
-intents = gingabot.Intents.default()
 intents.message_content = True
-intents.voice_states = True
 ```
 
-`message_content` fica desligado por padrao. Para ler o texto das mensagens, ele precisa estar habilitado no codigo **e** no Portal do Desenvolvedor.
+E no Portal Developer:
 
-Intents disponiveis no Gateway atual:
-
-- `GUILDS`
-- `GUILD_MESSAGES`
-- `MESSAGE_CONTENT`
-- `VOICE_STATES`
-
-## Eventos
-
-```python
-@bot.event
-async def on_ready():
-    ...
-
-@bot.event
-async def on_message(message):
-    print(message.author, message.content)
-
-@bot.event
-async def on_voice_state_update(payload):
-    print(payload)
+```text
+Conteudo de mensagens = habilitado
 ```
-
-O SDK reconecta o Gateway automaticamente e nao entrega para o handler de mensagem as mensagens produzidas pelo proprio bot.
 
 ## Comandos
 
@@ -105,39 +119,37 @@ async def somar(ctx, a: int, b: int):
     await ctx.reply(str(a + b))
 ```
 
-Os decorators registram os comandos no Ginga. O bot pode aceitar o prefixo configurado e `/comando` quando `accept_slash_commands=True`.
+Tipos basicos convertidos automaticamente:
 
-Argumentos basicos recebem conversao automatica para `str`, `int`, `float` e `bool`.
+- `str`
+- `int`
+- `float`
+- `bool`
 
-## IDs fixos
-
-Use IDs em integracoes persistentes. Nome de servidor, canal, cargo ou usuario pode mudar.
+## Eventos
 
 ```python
-CANAL_LOGS = "cm123..."
-CARGO_STAFF = "cm456..."
+@bot.event
+async def on_message(message):
+    print(message.author, message.content)
 
-@bot.command()
-async def ids(ctx):
-    channel = bot.get_channel(CANAL_LOGS) or await bot.fetch_channel(CANAL_LOGS)
-    role = bot.get_role(CARGO_STAFF) or await bot.fetch_role(ctx.guild_id, CARGO_STAFF)
-    await ctx.reply(f"canal={channel.name} cargo={role.name}")
+@bot.event
+async def on_voice_state_update(payload):
+    print(payload)
 ```
 
-Ative **Configuracoes > Desenvolvedor > Modo Desenvolvedor** no cliente para liberar `Copiar ID` nos menus de contexto.
-
-## API de alto nivel
+## Recursos por ID
 
 ```python
-await bot.fetch_guilds()
-channel = await bot.fetch_channel(CHANNEL_ID)
-role = await bot.fetch_role(GUILD_ID, ROLE_ID)
+channel = bot.get_channel(CHANNEL_ID) or await bot.fetch_channel(CHANNEL_ID)
+role = bot.get_role(ROLE_ID) or await bot.fetch_role(GUILD_ID, ROLE_ID)
 user = await bot.fetch_user(USER_ID)
 member = await bot.fetch_member(GUILD_ID, USER_ID)
-message = await bot.send_message(CHANNEL_ID, "Ola!")
 ```
 
-## Tratamento de erros de comando
+Use IDs em configuracoes persistentes. Nomes podem mudar.
+
+## Tratamento de erros
 
 ```python
 @bot.event
@@ -145,41 +157,54 @@ async def on_command_error(ctx, error):
     await ctx.reply(f"Nao consegui executar: {error}")
 ```
 
-Erros HTTP, autenticacao, permissao e rate limit levantam `gingabot.GingaError`. O SDK respeita `Retry-After` em respostas `429` e tenta novamente antes de falhar.
+O SDK expoe `GingaError` e erros especificos de comandos.
+
+## Rate limit e reconexao
+
+O cliente:
+
+- reconecta o Gateway automaticamente;
+- respeita `Retry-After` em `429`;
+- limita retries;
+- usa timeout nas chamadas REST.
 
 ## Seguranca
 
-Nunca coloque o token no codigo, no Git ou no frontend.
+Nunca versione tokens.
 
-Linux/macOS:
+Use variavel de ambiente, secret manager, Docker Secret ou arquivo protegido fora do repositorio.
+
+Se o token vazar, rotacione imediatamente no Portal Developer.
+
+## Documentacao completa
+
+No repositorio principal:
+
+```text
+docs/BOTS-PYTHON.md
+```
+
+Exemplos:
+
+```text
+sdk/python/examples/
+```
+
+Publicacao/manutencao:
+
+```text
+sdk/python/PUBLISHING.md
+```
+
+## Desenvolvimento local
 
 ```bash
-export GINGA_SERVER="https://seu-ginga.exemplo"
-export GINGA_BOT_TOKEN="seu_token"
-python bot.py
+python -m pip install -e ./sdk/python
 ```
 
-PowerShell:
-
-```powershell
-$env:GINGA_SERVER="https://seu-ginga.exemplo"
-$env:GINGA_BOT_TOKEN="seu_token"
-python .\bot.py
-```
-
-Se um token vazar, rotacione a credencial imediatamente no Portal do Desenvolvedor.
-
-## Publicacao do SDK
-
-A versao do SDK e independente da versao do servidor Ginga. O primeiro release oficial e `ginga-bot 0.1.0`.
-
-Build local:
+Testes:
 
 ```bash
 cd sdk/python
-python -m pip install -U build twine
-python -m build
-python -m twine check dist/*
+python -m unittest discover -s tests -v
 ```
-
-A publicacao no PyPI deve ser feita preferencialmente pelo workflow de Trusted Publishing do GitHub, sem armazenar senha ou API token do PyPI no repositorio.

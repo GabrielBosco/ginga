@@ -96,19 +96,48 @@ const articles:Article[] = [
     </Steps>
   </> },
 
-  { id:"dev-primeiros-passos", audience:"dev", category:"Comece aqui", title:"Comecando com bots", summary:"Do Portal Developer ate o primeiro bot online.", keywords:["bot","developer","token","python"], icon:<Bot size={18}/>, content:<>
-    <h2>Fluxo recomendado</h2><Steps>
-      <li><b>1</b><div><strong>Crie uma aplicacao</strong><span>No Portal Developer, informe nome e descricao.</span></div></li>
-      <li><b>2</b><div><strong>Copie o token</strong><span>Ele aparece uma unica vez. Guarde em variavel de ambiente ou cofre.</span></div></li>
-      <li><b>3</b><div><strong>Escolha intents</strong><span>Ative somente os eventos que seu bot realmente usa.</span></div></li>
-      <li><b>4</b><div><strong>Instale no servidor</strong><span>O administrador revisa as permissoes antes de autorizar.</span></div></li>
-      <li><b>5</b><div><strong>Rode o bot</strong><span>Use Python em processo, VM ou container. Token nunca vai no frontend.</span></div></li>
+  { id:"dev-primeiros-passos", audience:"dev", category:"Comece aqui", title:"Criar um bot do zero", summary:"Da criacao no Portal Developer ate o primeiro processo Python conectado.", keywords:["bot","developer","token","python","instalar","quickstart"], icon:<Bot size={18}/>, content:<>
+    <h2>Fluxo oficial</h2><Steps>
+      <li><b>1</b><div><strong>Abra Ginga Developer</strong><span>No Ginga, entre no Portal Developer e abra <b>Bots Python</b>.</span></div></li>
+      <li><b>2</b><div><strong>Crie o bot</strong><span>Informe nome, descricao e escolha um preset inicial. As permissoes podem ser revisadas antes da instalacao.</span></div></li>
+      <li><b>3</b><div><strong>Copie o token</strong><span>O token aparece apenas na criacao ou rotacao. Guarde em variavel de ambiente ou secret manager.</span></div></li>
+      <li><b>4</b><div><strong>Instale no servidor</strong><span>Escolha o servidor e autorize somente as permissoes necessarias.</span></div></li>
+      <li><b>5</b><div><strong>Configure os intents</strong><span>Se o bot usa comandos por texto, habilite Conteudo de mensagens no Portal e no codigo.</span></div></li>
+      <li><b>6</b><div><strong>Instale o SDK</strong><span>Use <code>python -m pip install -U ginga-bot</code>. O import oficial e <code>gingabot</code>.</span></div></li>
+      <li><b>7</b><div><strong>Execute o processo</strong><span>Rode o bot em Python, VM ou container. Depois teste <code>!ping</code> em um canal acessivel.</span></div></li>
     </Steps>
+    <div className="kb-callout"><Check size={17}/><div><strong>SDK oficial</strong><span>Distribuicao: <code>ginga-bot</code>. Modulo: <code>gingabot</code>. Python 3.10 ou superior.</span></div></div>
   </> },
-  { id:"bot-python", audience:"dev", category:"Bots", title:"Bot Python basico", summary:"Exemplo minimo com o Ginga Bot SDK e comando !ping.", keywords:["python","gingabot","ginga-bot","ping","sdk"], icon:<TerminalSquare size={18}/>, content:<>
-    <h2>Instale o SDK</h2><CodeBlock code={`python -m pip install -U ginga-bot`}/><p>O pacote e <code>ginga-bot</code> e o import Python e <code>gingabot</code>. O nome <code>ginga</code> nao e usado porque ja existe outro pacote Python com esse namespace.</p><h2>Variaveis</h2><CodeBlock code={`GINGA_SERVER=https://chat.example.com\nGINGA_BOT_TOKEN=cole_o_token_aqui`}/>
-    <h2>Codigo</h2><CodeBlock code={botStarter}/>
-    <p>O token pertence ao bot. Nao use token de usuario e nao envie o token para GitHub, navegador ou log.</p>
+  { id:"bot-python-install", audience:"dev", category:"Bots", title:"Instalar o Ginga Bot SDK", summary:"Windows, Linux, validacao e solucao para No matching distribution found.", keywords:["pip","pypi","instalar","gingabot","ginga-bot","no matching distribution"], icon:<TerminalSquare size={18}/>, content:<>
+    <h2>Requisito</h2><CodeBlock code={`python --version`}/><p>O SDK exige <b>Python 3.10+</b>. Prefira um ambiente virtual por bot.</p>
+    <h3>Windows PowerShell</h3><CodeBlock code={`python -m venv .venv\n.\\.venv\\Scripts\\Activate.ps1\npython -m pip install --upgrade pip\npython -m pip install -U ginga-bot`}/>
+    <h3>Linux</h3><CodeBlock code={`python3 -m venv .venv\nsource .venv/bin/activate\npython -m pip install --upgrade pip\npython -m pip install -U ginga-bot`}/>
+    <h3>Confirme o modulo instalado</h3><CodeBlock code={`python -c "import gingabot; print(gingabot.__version__)"`}/>
+    <h3>Se o pip nao encontrar o pacote</h3><p>Algumas maquinas usam mirror, indice corporativo ou configuracao global diferente do PyPI oficial.</p><CodeBlock code={`python -m pip config list\npython -m pip install --no-cache-dir --index-url https://pypi.org/simple ginga-bot`}/>
+    <div className="kb-callout warning"><ShieldCheck size={17}/><div><strong>Nao instale o pacote chamado apenas ginga</strong><span>O SDK do chat e <code>ginga-bot</code> e o import e <code>gingabot</code>. O namespace Python <code>ginga</code> pertence a outro projeto.</span></div></div>
+  </> },
+  { id:"bot-python", audience:"dev", category:"Bots", title:"Primeiro bot: !ping", summary:"Token, variaveis de ambiente, MESSAGE_CONTENT e um bot funcional.", keywords:["python","gingabot","ginga-bot","ping","sdk","token","message_content"], icon:<TerminalSquare size={18}/>, content:<>
+    <h2>Variaveis de ambiente</h2><p><code>GINGA_SERVER</code> aponta para a URL base do seu Ginga. Nao acrescente <code>/api</code>.</p>
+    <h3>PowerShell</h3><CodeBlock code={`$env:GINGA_SERVER="https://seu-servidor-ginga.exemplo"\n$env:GINGA_BOT_TOKEN="cole_o_token_aqui"`}/>
+    <h3>Linux</h3><CodeBlock code={`export GINGA_SERVER="https://seu-servidor-ginga.exemplo"\nexport GINGA_BOT_TOKEN="cole_o_token_aqui"`}/>
+    <h2>bot.py</h2><CodeBlock code={botStarter}/>
+    <h2>Execute</h2><CodeBlock code={`python bot.py`}/><p>Depois envie <code>!ping</code> em um canal onde o bot tenha acesso. A resposta esperada e <code>Pong!</code>.</p>
+    <div className="kb-callout warning"><ShieldCheck size={17}/><div><strong>MESSAGE_CONTENT precisa dos dois lados</strong><span>Use <code>intents.message_content = True</code> no Python e habilite <b>Conteudo de mensagens</b> no Portal Developer.</span></div></div>
+    <p>O token pertence ao bot. Nao use token de usuario e nunca envie a credencial para GitHub, frontend, screenshot ou log.</p>
+  </> },
+  { id:"bot-python-comandos", audience:"dev", category:"Bots", title:"Comandos e eventos no Python", summary:"Decorators, argumentos tipados, mensagens e eventos do Gateway.", keywords:["command","event","on_message","on_ready","ctx","argumentos"], icon:<Code2 size={18}/>, content:<>
+    <h2>Comandos</h2><CodeBlock code={`@bot.command(description="Soma dois numeros")\nasync def somar(ctx, a: int, b: int):\n    await ctx.reply(str(a + b))`}/><p>O SDK converte automaticamente <code>str</code>, <code>int</code>, <code>float</code> e <code>bool</code>.</p>
+    <h3>Texto restante</h3><CodeBlock code={`@bot.command()\nasync def falar(ctx, *, texto: str):\n    await ctx.send(texto)`}/>
+    <h2>Eventos</h2><CodeBlock code={`@bot.event\nasync def on_ready():\n    print(bot.user)\n\n@bot.event\nasync def on_message(message):\n    print(message.author, message.content)\n\n@bot.event\nasync def on_voice_state_update(payload):\n    print(payload)`}/>
+    <h3>Erro de comando</h3><CodeBlock code={`@bot.event\nasync def on_command_error(ctx, error):\n    await ctx.reply(f"Nao consegui executar: {error}")`}/>
+  </> },
+  { id:"bot-python-erros", audience:"dev", category:"Bots", title:"Erros comuns do Ginga Bot SDK", summary:"Checklist para pip, token, permissao, MESSAGE_CONTENT e reconexao.", keywords:["erro","401","403","pip","pypi","token","reconexao","websocket"], icon:<Wrench size={18}/>, content:<>
+    <h2>ModuleNotFoundError: gingabot</h2><CodeBlock code={`python -m pip show ginga-bot\npython -c "import sys; print(sys.executable)"`}/><p>Instale e execute usando o mesmo Python/ambiente virtual.</p>
+    <h2>No matching distribution found</h2><CodeBlock code={`python --version\npython -m pip install --no-cache-dir --index-url https://pypi.org/simple ginga-bot`}/><p>Confirme Python 3.10+ e se a maquina usa um indice privado.</p>
+    <h2>HTTP 401</h2><p>Token ausente, invalido ou rotacionado. Atualize <code>GINGA_BOT_TOKEN</code>.</p>
+    <h2>HTTP 403</h2><p>O bot autenticou, mas nao tem permissao efetiva. Revise instalacao, permissoes, cargo e ACL do canal.</p>
+    <h2>Bot conecta mas !ping nao responde</h2><ul className="kb-feature-list"><li><code>intents.message_content = True</code> no codigo.</li><li><b>Conteudo de mensagens</b> habilitado no Portal Developer.</li><li>Bot instalado no servidor correto.</li><li>Canal visivel para o bot.</li><li>Permissoes de leitura e envio.</li><li>Prefixo correto.</li></ul>
+    <h2>Reconexao constante</h2><p>Confira <code>GINGA_SERVER</code>, HTTPS/WSS, WebSocket no proxy/firewall e logs da API.</p>
   </> },
   { id:"dev-ids", audience:"dev", category:"Bots", title:"IDs e objetos", summary:"Use IDs para nao quebrar integracoes quando nomes mudarem.", keywords:["id","guild","channel","role","user"], icon:<Code2 size={18}/>, content:<>
     <h2>Ative o Modo Desenvolvedor</h2><p>Em <b>Configuracoes → Desenvolvedor</b>, ative o modo e use o menu de contexto para copiar IDs.</p>

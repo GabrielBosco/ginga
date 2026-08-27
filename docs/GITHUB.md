@@ -110,3 +110,31 @@ Exemplos:
 Ginga-Setup-0.3.1-x64.exe
 Ginga-0.3.1-debug.apk
 ```
+
+## Publicacao do Ginga Bot SDK
+
+O pacote Python usa um ciclo de versao separado do servidor:
+
+```text
+Servidor/Desktop: 0.3.1
+SDK Python:       0.1.0
+```
+
+O workflow de publicacao fica em:
+
+```text
+.github/workflows/python-sdk-publish.yml
+```
+
+A publicacao usa **PyPI Trusted Publishing**, sem senha ou API token do PyPI salvo no repositorio.
+
+Uma versao do SDK e publicada com uma tag propria:
+
+```bash
+git tag -a sdk-python-v0.1.0 -m "Ginga Bot SDK 0.1.0"
+git push origin sdk-python-v0.1.0
+```
+
+O PyPI nao permite substituir arquivos de uma versao que ja foi publicada. Para alterar o codigo do SDK, incremente a versao do pacote antes de criar outra tag.
+
+Consulte `sdk/python/PUBLISHING.md` para o processo completo e `docs/BOTS-PYTHON.md` para a documentacao de uso.

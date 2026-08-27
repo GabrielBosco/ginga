@@ -8,7 +8,7 @@ from gingabot.ext.commands import Command, MissingRequiredArgument
 
 class PublicSurfaceTests(unittest.TestCase):
     def test_public_surface(self):
-        self.assertEqual(gingabot.__version__, "0.1.0")
+        self.assertEqual(gingabot.__version__, "0.1.1")
         self.assertTrue(gingabot.Bot)
         self.assertTrue(gingabot.Intents)
         self.assertTrue(gingabot.Message)
@@ -47,6 +47,47 @@ class CommandTests(unittest.IsolatedAsyncioTestCase):
         ctx = SimpleNamespace(args_text="")
         with self.assertRaises(MissingRequiredArgument):
             await command.invoke(ctx)
+
+
+class GatewayCompatibilityTests(unittest.IsolatedAsyncioTestCase):
+    async def test_bot_ready_accepts_extra_socketio_arguments(self):
+        bot = gingabot.Bot(command_prefix="!")
+
+        async def fake_me():
+            return {
+                "application": {
+                    "botUser": {
+                        "id": "bot-user-1",
+                        "username": "TesteBot",
+                    }
+                }
+            }
+
+        async def fake_fetch_guilds():
+            return []
+
+        async def fake_sync():
+            return None
+
+        dispatched = []
+
+        async def fake_dispatch(name, *args):
+            dispatched.append((name, args))
+
+        bot.me = fake_me
+        bot.fetch_guilds = fake_fetch_guilds
+        bot._sync_application_commands = fake_sync
+        bot._dispatch = fake_dispatch
+
+        handler = bot.socket.handlers["/"]["bot:ready"]
+        await handler(
+            {"applicationId": "app-1", "intents": ["GUILDS"]},
+            {"transport": "websocket"},
+        )
+
+        self.assertTrue(bot._ready.is_set())
+        self.assertEqual(bot.user.id, "bot-user-1")
+        self.assertIn(("ready", ()), dispatched)
 
 
 if __name__ == "__main__":

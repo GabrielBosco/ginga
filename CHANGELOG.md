@@ -1,5 +1,12 @@
 # Histórico de versões
 
+### Ginga Bot SDK 0.1.1
+
+- Corrige compatibilidade dos handlers Socket.IO com eventos que incluem argumentos adicionais.
+- Evita falha no `bot:ready` com `TypeError: ... takes 1 positional argument but 2 were given`.
+- Mantem a versao do Ginga Server/Desktop independente da versao do SDK Python.
+
+
 As mudanças relevantes do Ginga são registradas neste arquivo.
 
 O projeto segue versionamento semântico enquanto avança para a versão `1.0.0`.
@@ -10,6 +17,8 @@ O projeto segue versionamento semântico enquanto avança para a versão `1.0.0`
 
 - Ginga Bot SDK oficial para Python, distribuido como `ginga-bot` e importado com `gingabot`, com Bot, Intents, comandos, eventos, cache de canais/cargos, rate limit e reconexao;
 - documentacao de bots Python no README, Portal do Desenvolvedor e Base de Conhecimento;
+- quickstart profissional do SDK com instalacao Windows/Linux, validacao, primeiro `!ping`, intents, comandos, eventos, IDs, producao e troubleshooting;
+- exemplos oficiais em `sdk/python/examples/`;
 - pipeline de validacao e publicacao do SDK Python preparado para PyPI Trusted Publishing.
 
 ### Corrigido

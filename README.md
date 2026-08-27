@@ -180,25 +180,73 @@ Todas as opções estão em [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ## Ginga Bot SDK
 
-O SDK oficial de bots usa o pacote **`ginga-bot`** e o modulo Python **`gingabot`**. O namespace `ginga` nao e utilizado porque ja pertence a outro projeto no ecossistema Python.
+O **Ginga Bot SDK** e o SDK Python oficial para bots. O pacote publico no PyPI se chama **`ginga-bot`** e o modulo Python e **`gingabot`**. O namespace `ginga` nao e utilizado porque ja pertence a outro projeto do ecossistema Python.
+
+Requisitos:
+
+- Python 3.10+;
+- bot criado no **Ginga Developer**;
+- token exclusivo de bot;
+- bot instalado no servidor com as permissoes necessarias.
+
+Instalacao:
 
 ```bash
-pip install -U ginga-bot
+python -m pip install -U ginga-bot
 ```
+
+Validacao:
+
+```bash
+python -c "import gingabot; print(gingabot.__version__)"
+```
+
+Se a maquina usa mirror/indice privado e o `pip` nao encontrar o pacote:
+
+```bash
+python -m pip install --no-cache-dir --index-url https://pypi.org/simple ginga-bot
+```
+
+Primeiro bot:
 
 ```python
+import os
 import gingabot
 
-bot = gingabot.Bot(command_prefix="!")
+intents = gingabot.Intents.default()
+intents.message_content = True
+
+bot = gingabot.Bot(
+    command_prefix="!",
+    intents=intents,
+    server_url=os.environ["GINGA_SERVER"],
+)
+
+@bot.event
+async def on_ready():
+    print(f"Online como {bot.user}")
+
+@bot.command(description="Testa o bot")
+async def ping(ctx):
+    await ctx.reply("Pong!")
+
+bot.run(os.environ["GINGA_BOT_TOKEN"])
 ```
+
+Para comandos baseados em mensagens, habilite `intents.message_content = True` **e** a opcao **Conteudo de mensagens** no Portal Developer.
+
+Documentacao completa:
+
+- [Bots Python / Quickstart / troubleshooting](docs/BOTS-PYTHON.md)
+- [README do pacote Python](sdk/python/README.md)
+- [Publicacao e manutencao do SDK](sdk/python/PUBLISHING.md)
+- [Exemplos prontos](sdk/python/examples/)
 
 Durante o desenvolvimento pelo proprio repositorio:
 
 ```bash
-pip install -e ./sdk/python
+python -m pip install -e ./sdk/python
 ```
-
-Consulte [docs/BOTS-PYTHON.md](docs/BOTS-PYTHON.md) para intents, eventos, comandos, IDs, seguranca e publicacao do SDK.
 
 ## Estrutura do projeto
 
