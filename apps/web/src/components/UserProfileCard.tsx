@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { Ban, Check, ExternalLink, MessageCircle, Settings, ShieldCheck, UserPlus, X } from "lucide-react";
+import { Ban, Check, Crown, ExternalLink, Gamepad2, MessageCircle, Settings, ShieldCheck, UserPlus, X } from "lucide-react";
 import { api } from "../lib/api";
-import type { GuildRole, User, UserProfilePayload } from "../types";
+import type { CustomRole, GuildRole, User, UserProfilePayload } from "../types";
 import { Avatar } from "./Avatar";
 import { UserBadges } from "./UserBadges";
 
@@ -24,6 +24,8 @@ interface UserProfileCardProps {
   anchor: ProfileAnchor;
   role?: GuildRole;
   joinedAt?: string;
+  topRole?: CustomRole;
+  guildOwner?: boolean;
   onClose: () => void;
   onMessage: (userId: string) => Promise<void>;
   onOpenProfile: (user: User) => void;
@@ -45,7 +47,7 @@ function safeProfileDate(value?: string | null) {
   try { return new Intl.DateTimeFormat("pt-BR").format(date); } catch { return ""; }
 }
 
-export function UserProfileCard({ user, currentUser, guildId, online, anchor, role, joinedAt, onClose, onMessage, onOpenProfile, onEditProfile, onSocialRefresh }: UserProfileCardProps) {
+export function UserProfileCard({ user, currentUser, guildId, online, anchor, role, joinedAt, topRole, guildOwner = false, onClose, onMessage, onOpenProfile, onEditProfile, onSocialRefresh }: UserProfileCardProps) {
   const [data, setData] = useState<UserProfilePayload | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -53,6 +55,11 @@ export function UserProfileCard({ user, currentUser, guildId, online, anchor, ro
   const isSelf = user.id === currentUser.id;
 
   const effectiveUser = data?.profile ?? user;
+  const gamingProfile = data?.gamingProfile ?? null;
+  const profileAppearance = gamingProfile?.appearance;
+  const profileAccent = profileAppearance?.accentColor || effectiveUser.avatarColor || "#7867e8";
+  const profileAccent2 = profileAppearance?.secondaryColor || "#2c74ff";
+  const profileTheme = profileAppearance?.profileTheme || "AURORA";
   const effectiveRole = data?.guildMembership?.role ?? role;
   const effectiveJoinedAt = data?.guildMembership?.joinedAt ?? joinedAt;
   const sharedGuilds = Array.isArray(data?.sharedGuilds) ? data.sharedGuilds : [];
@@ -156,12 +163,12 @@ export function UserProfileCard({ user, currentUser, guildId, online, anchor, ro
   const friendship = data?.friendship;
 
   const card = (
-    <div className="user-popover" ref={cardRef} style={cardStyle}>
+    <div className={`user-popover personalized-profile theme-${profileTheme.toLowerCase()}`} ref={cardRef} style={{ ...cardStyle, "--profile-accent": profileAccent, "--profile-accent-2": profileAccent2 } as CSSProperties}>
       <button className="user-popover-close" onClick={onClose}><X size={16} /></button>
-      <div className="user-popover-banner" style={{ background: effectiveUser.avatarColor }} />
-      <div className="user-popover-avatar"><Avatar user={effectiveUser} size="xl" status={online ? "online" : "offline"} /></div>
+      <div className="user-popover-banner" style={{ background: `linear-gradient(135deg, ${profileAccent}, ${profileAccent2})` }}>{gamingProfile?.bannerUrl && <img src={gamingProfile.bannerUrl} alt="" style={{ objectPosition: `50% ${profileAppearance?.bannerPosition ?? 50}%` }}/>}</div>
+      <div className="user-popover-avatar"><Avatar user={effectiveUser} size="xl" status={online ? "online" : "offline"} imageUrl={gamingProfile?.avatarUrl ?? undefined} /></div>
       <div className="user-popover-content">
-        <div className="user-popover-name"><h3>{effectiveUser.displayName} <UserBadges user={effectiveUser} compact /></h3><span>@{effectiveUser.username}</span></div>
+        <div className="user-popover-name"><h3 className="role-colored-name" style={topRole?.color ? { color: topRole.color } : undefined}>{effectiveUser.displayName}{guildOwner && <Crown size={15} className="guild-owner-crown" aria-label="Criador do servidor" />} <UserBadges user={effectiveUser} compact /></h3><span>@{effectiveUser.username}{profileAppearance?.pronouns ? ` · ${profileAppearance.pronouns}` : ""}</span></div>
         {isSystemIdentity ? (
           <div className="user-popover-system-identity">
             <span className="system-identity-icon"><ShieldCheck size={18}/></span>
@@ -170,9 +177,11 @@ export function UserProfileCard({ user, currentUser, guildId, online, anchor, ro
         ) : (
           <>
             <div className="user-popover-presence"><i className={online ? "online" : ""} /><span>{online ? "Online agora" : "Offline"}</span></div>
-            {effectiveUser.statusMessage && <div className="user-popover-status">{effectiveUser.statusMessage}</div>}
-            <div className="user-popover-about"><strong>SOBRE MIM</strong><p>{effectiveUser.bio || "Este usuario ainda nao adicionou uma descricao."}</p></div>
-            {(effectiveRole || effectiveJoinedAt) && <div className="user-popover-server"><strong>NESTE ESPACO</strong>{effectiveRole && <span>{roleLabel[effectiveRole]}</span>}{effectiveJoinedLabel && <span>Membro desde {effectiveJoinedLabel}</span>}</div>}
+            {(gamingProfile?.customStatus || effectiveUser.statusMessage) && <div className="user-popover-status">{gamingProfile?.customStatus || effectiveUser.statusMessage}</div>}
+            {gamingProfile?.activity?.name && <div className="user-popover-activity"><Gamepad2 size={14}/><span>{gamingProfile.activity.name}</span></div>}
+            <div className="user-popover-about"><strong>SOBRE MIM</strong><p>{effectiveUser.bio || gamingProfile?.bio || "Este usuario ainda nao adicionou uma descricao."}</p></div>
+            {profileAppearance?.links?.length ? <div className="user-popover-links">{profileAppearance.links.map((link) => <a key={`${link.label}-${link.url}`} href={link.url} target="_blank" rel="noreferrer noopener" onClick={(event) => event.stopPropagation()}><ExternalLink size={12}/>{link.label}</a>)}</div> : null}
+            {(topRole || (effectiveRole && effectiveRole !== "OWNER") || effectiveJoinedAt) && <div className="user-popover-server"><strong>NESTE ESPACO</strong>{topRole && <span className="profile-role-chip" style={{ color: topRole.color, borderColor: `${topRole.color}66`, background: `${topRole.color}14` }}>{topRole.icon ? `${topRole.icon} ` : ""}{topRole.name}</span>}{!topRole && effectiveRole && effectiveRole !== "OWNER" && <span>{roleLabel[effectiveRole]}</span>}{effectiveJoinedLabel && <span>Membro desde {effectiveJoinedLabel}</span>}</div>}
             {data && sharedGuilds.length > 0 && <div className="user-popover-shared"><strong>{sharedGuilds.length}</strong><span>espaco{sharedGuilds.length === 1 ? "" : "s"} em comum</span></div>}
           </>
         )}

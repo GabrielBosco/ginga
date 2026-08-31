@@ -9,7 +9,8 @@ import { prisma } from "./db.js";
 import { HttpError } from "./errors.js";
 import { requireChannelCapability, requireDirectMember, requireGuildCapability, requireGuildMember, requireModerationTarget } from "./permissions.js";
 import { removeUserFromGuildMedia } from "./mediaAdmin.js";
-import { EVERYONE_MENTION_PATTERN, extractGuildMentions, validateGuildMentions } from "./mentions.js";
+import { emitNewGuildMessage } from "./guildMessageEvents.js";
+import { EVERYONE_MENTION_PATTERN, validateGuildMentions } from "./mentions.js";
 import { secretMatches, tokenPrefix } from "./secretTokens.js";
 import { observableUserIds, presenceAudienceUserIds, presenceModeHidden } from "./socialPrivacy.js";
 
@@ -21,6 +22,7 @@ const voiceSyncSchema = voiceStateSchema;
 const voiceMoveSchema = z.object({ targetUserId: z.string().min(1), targetChannelId: z.string().min(1) });
 const voiceDisconnectSchema = z.object({ guildId: z.string().min(1), targetUserId: z.string().min(1) });
 const voiceAfkSchema = z.object({ guildId: z.string().min(1) });
+const voiceStreamWatchSchema = z.object({ channelId: z.string().min(1), broadcasterId: z.string().min(1) });
 const presenceQuerySchema = z.object({ userIds: z.array(z.string().min(1)).max(300) });
 const directSchema = z.object({ conversationId: z.string().min(1) });
 const messageSchema = z.object({
@@ -56,63 +58,6 @@ export function onlineUserCountForIds(userIds: readonly string[]) {
 }
 
 export function isUserOnlineNow(userId: string) { return (onlineCounts.get(userId) ?? 0) > 0; }
-
-async function usersWhoCanViewChannel(userIds: string[], channelId: string) {
-  const checks = await Promise.all(userIds.map(async (targetUserId) => {
-    try {
-      await requireChannelCapability(targetUserId, channelId, "view");
-      return targetUserId;
-    } catch {
-      return null;
-    }
-  }));
-  return checks.filter((value): value is string => Boolean(value));
-}
-
-async function emitMentionNotifications(
-  io: Server,
-  input: {
-    channel: { id: string; guildId: string; name: string };
-    message: { id: string; authorId: string; content: string; author: { id: string; username: string; displayName: string; avatarColor: string } };
-  }
-) {
-  const mentions = extractGuildMentions(input.message.content);
-  if (!mentions.mentionEveryone && mentions.usernames.length === 0) return;
-
-  const directMembers = mentions.usernames.length > 0
-    ? await prisma.guildMember.findMany({
-        where: { guildId: input.channel.guildId, user: { username: { in: mentions.usernames } } },
-        select: { userId: true }
-      })
-    : [];
-
-  const directIds = new Set<string>(directMembers.map((member: { userId: string }) => member.userId));
-  let candidateIds: string[] = Array.from(directIds);
-  if (mentions.mentionEveryone) {
-    const allMembers = await prisma.guildMember.findMany({ where: { guildId: input.channel.guildId }, select: { userId: true } });
-    candidateIds = Array.from(new Set<string>([...candidateIds, ...allMembers.map((member: { userId: string }) => member.userId)]));
-  }
-  candidateIds = candidateIds.filter((targetUserId) => targetUserId !== input.message.authorId);
-  if (candidateIds.length === 0) return;
-
-  const allowedIds = await usersWhoCanViewChannel(candidateIds, input.channel.id);
-  if (allowedIds.length === 0) return;
-  const guild = await prisma.guild.findUnique({ where: { id: input.channel.guildId }, select: { name: true } });
-
-  for (const targetUserId of allowedIds) {
-    io.to(`user:${targetUserId}`).emit("notification:message", {
-      kind: directIds.has(targetUserId) ? "MENTION" : "EVERYONE",
-      messageId: input.message.id,
-      channelId: input.channel.id,
-      channelName: input.channel.name,
-      guildId: input.channel.guildId,
-      guildName: guild?.name ?? "Espaco",
-      content: input.message.content,
-      author: input.message.author
-    });
-  }
-}
-
 
 function consumeSocketBudget(socket: { data: Record<string, any> }, key: string, limit: number, windowMs: number) {
   const now = Date.now();
@@ -196,23 +141,103 @@ export function setupSocket(server: HttpServer) {
 
   const voiceSessions = new Map<string, VoiceSession>();
   const voicePresenceRevisions = new Map<string, number>();
+  const streamWatchers = new Map<string, { guildId: string; channelId: string; broadcasterId: string; viewers: Map<string, string> }>();
+
+  const streamWatchKey = (channelId: string, broadcasterId: string) => `${channelId}:${broadcasterId}`;
+
+  function emitStreamViewerCount(group: { guildId: string; channelId: string; broadcasterId: string; viewers: Map<string, string> }) {
+    const count = new Set(group.viewers.values()).size;
+    const payload = { channelId: group.channelId, broadcasterId: group.broadcasterId, count };
+    const audience = new Set<string>([group.broadcasterId, ...group.viewers.values()]);
+    for (const session of voiceSessions.values()) if (session.channelId === group.channelId) audience.add(session.userId);
+    for (const audienceUserId of audience) io.to(`user:${audienceUserId}`).emit("voice:stream-viewers", payload);
+  }
+
+  function clearSocketStreamWatches(socketId: string) {
+    for (const [key, group] of streamWatchers) {
+      if (!group.viewers.delete(socketId)) continue;
+      if (group.viewers.size === 0) streamWatchers.delete(key);
+      emitStreamViewerCount(group);
+    }
+  }
+
+  function clearBroadcasterStream(channelId: string, broadcasterId: string, guildId: string) {
+    const key = streamWatchKey(channelId, broadcasterId);
+    const group = streamWatchers.get(key) ?? { guildId, channelId, broadcasterId, viewers: new Map<string, string>() };
+    streamWatchers.delete(key);
+    group.viewers.clear();
+    emitStreamViewerCount(group);
+  }
 
   function currentVoicePresenceRevision(guildId: string) {
     return voicePresenceRevisions.get(guildId) ?? 0;
+  }
+
+  async function filterVoicePresenceForUser(userId: string, payload: ReturnType<typeof buildVoicePresence>) {
+    const channelIds = Object.keys(payload.channels);
+    if (channelIds.length === 0) return payload;
+    const checks = await Promise.all(channelIds.map(async (channelId) => {
+      try {
+        await requireChannelCapability(userId, channelId, "view");
+        return channelId;
+      } catch {
+        return null;
+      }
+    }));
+    const allowed = new Set(checks.filter((channelId): channelId is string => Boolean(channelId)));
+    return {
+      ...payload,
+      channels: Object.fromEntries(Object.entries(payload.channels).filter(([channelId]) => allowed.has(channelId)))
+    };
   }
 
   function emitVoicePresence(guildId: string) {
     const revision = currentVoicePresenceRevision(guildId) + 1;
     voicePresenceRevisions.set(guildId, revision);
     const payload = buildVoicePresence(voiceSessions, guildId, revision);
-    io.to(`guild:${guildId}`).emit("voice:presence", payload);
-    io.to(`botvoice:${guildId}`).emit("voice:presence", payload);
+
+    void (async () => {
+      // Nao envie a lista completa de voz para o room do servidor: um membro
+      // pode nao ter permissao para visualizar um dos canais de voz privados.
+      const humanSockets = await io.in(`guild:${guildId}`).fetchSockets();
+      const humanByUser = new Map<string, (typeof humanSockets)[number][]>();
+      for (const target of humanSockets) {
+        const targetUserId = typeof target.data.auth?.sub === "string" ? target.data.auth.sub : "";
+        if (!targetUserId || target.data.bot) continue;
+        const list = humanByUser.get(targetUserId) ?? [];
+        list.push(target);
+        humanByUser.set(targetUserId, list);
+      }
+      for (const [targetUserId, sockets] of humanByUser) {
+        const filtered = await filterVoicePresenceForUser(targetUserId, payload);
+        for (const target of sockets) target.emit("voice:presence", filtered);
+      }
+
+      // Bots tambem recebem somente canais visiveis e apenas enquanto a
+      // instalacao atual ainda permite visualizar canais neste servidor.
+      const botSockets = await io.in(`botvoice:${guildId}`).fetchSockets();
+      for (const target of botSockets) {
+        const bot = target.data.bot as { applicationId?: string; botUserId?: string; intents?: string[] } | undefined;
+        if (!bot?.applicationId || !bot.botUserId || !(bot.intents ?? []).includes("VOICE_STATES")) continue;
+        const install = await prisma.botInstall.findUnique({
+          where: { guildId_applicationId: { guildId, applicationId: bot.applicationId } },
+          select: { permissions: true, application: { select: { botUserId: true } } }
+        });
+        if (!install?.permissions.includes("VIEW_CHANNELS") || install.application.botUserId !== bot.botUserId) continue;
+        const filtered = await filterVoicePresenceForUser(bot.botUserId, payload);
+        target.emit("voice:presence", filtered);
+      }
+    })().catch((error) => console.warn("Falha ao publicar presenca de voz filtrada", error));
   }
 
   (io as GingaSocketServer).gingaRemoveUserFromGuildVoice = (guildId: string, userId: string, reason = "MODERATION") => {
     const targetSessions = Array.from(voiceSessions.entries()).filter(([, session]) => session.guildId === guildId && session.userId === userId);
     if (targetSessions.length === 0) return false;
-    for (const [socketId] of targetSessions) voiceSessions.delete(socketId);
+    for (const [socketId, session] of targetSessions) {
+      voiceSessions.delete(socketId);
+      clearSocketStreamWatches(socketId);
+      if (session.streaming) clearBroadcasterStream(session.channelId, session.userId, session.guildId);
+    }
     emitVoicePresence(guildId);
     io.to(`user:${userId}`).emit("voice:disconnected", { guildId, reason });
     return true;
@@ -237,6 +262,8 @@ export function setupSocket(server: HttpServer) {
     for (const [socketId, session] of voiceSessions.entries()) {
       if (socketId === ownerSocketId || session.userId !== userId) continue;
       voiceSessions.delete(socketId);
+      clearSocketStreamWatches(socketId);
+      if (session.streaming) clearBroadcasterStream(session.channelId, session.userId, session.guildId);
       affectedGuildIds.add(session.guildId);
       io.to(socketId).emit("voice:session-replaced", {
         channelId: session.channelId,
@@ -325,7 +352,7 @@ export function setupSocket(server: HttpServer) {
           if (!["TEXT", "ANNOUNCEMENT", "FORUM", "EVENT"].includes(channel.type)) continue;
           try {
             await requireChannelCapability(bot.botUserId, channel.id, "view");
-            await socket.join(`channel:${channel.id}`);
+            // A entrega de mensagens de bot e autorizada dinamicamente por evento.
           } catch {
             // A permissao de instalacao nunca ignora os ACLs reais do canal.
           }
@@ -399,7 +426,8 @@ export function setupSocket(server: HttpServer) {
 
         await socket.join(`guild:${guildId}`);
         socket.data.guildId = guildId;
-        socket.emit("voice:presence", buildVoicePresence(voiceSessions, guildId, currentVoicePresenceRevision(guildId)));
+        const initialVoicePresence = buildVoicePresence(voiceSessions, guildId, currentVoicePresenceRevision(guildId));
+        socket.emit("voice:presence", await filterVoicePresenceForUser(userId, initialVoicePresence));
         ack?.({ ok: true });
       } catch (error) {
         ack?.({ ok: false, error: errorMessage(error) });
@@ -420,6 +448,10 @@ export function setupSocket(server: HttpServer) {
         if (!user) throw new HttpError(401, "Usuario nao encontrado");
 
         const previous = voiceSessions.get(socket.id);
+        if (previous) {
+          clearSocketStreamWatches(socket.id);
+          if (previous.streaming) clearBroadcasterStream(previous.channelId, previous.userId, previous.guildId);
+        }
         // Uma conta possui somente uma sessao de voz ativa. Isso elimina sessoes
         // fantasma quando Web/Desktop ficam abertos ao mesmo tempo e evita estado
         // divergente de canal/mute entre clientes da mesma conta.
@@ -453,10 +485,12 @@ export function setupSocket(server: HttpServer) {
         const nextMicMuted = current.serverMuted || current.serverDeafened ? true : data.micMuted;
         const nextDeafened = current.serverDeafened ? true : data.deafened;
         const nextStreaming = typeof data.streaming === "boolean" ? data.streaming : current.streaming;
+        const wasStreaming = current.streaming;
         const changed = current.micMuted !== nextMicMuted || current.deafened !== nextDeafened || current.streaming !== nextStreaming;
         current.micMuted = nextMicMuted;
         current.deafened = nextDeafened;
         current.streaming = nextStreaming;
+        if (wasStreaming && !nextStreaming) clearBroadcasterStream(current.channelId, current.userId, current.guildId);
         voiceSessions.set(socket.id, current);
         if (changed) emitVoicePresence(current.guildId);
         ack?.({ ok: true });
@@ -478,10 +512,12 @@ export function setupSocket(server: HttpServer) {
           const nextMicMuted = existing.serverMuted || existing.serverDeafened ? true : data.micMuted;
           const nextDeafened = existing.serverDeafened ? true : data.deafened;
           const nextStreaming = typeof data.streaming === "boolean" ? data.streaming : existing.streaming;
+          const wasStreaming = existing.streaming;
           const changed = existing.micMuted !== nextMicMuted || existing.deafened !== nextDeafened || existing.streaming !== nextStreaming;
           existing.micMuted = nextMicMuted;
           existing.deafened = nextDeafened;
           existing.streaming = nextStreaming;
+          if (wasStreaming && !nextStreaming) clearBroadcasterStream(existing.channelId, existing.userId, existing.guildId);
           claimVoiceSession(socket.id, userId, data.channelId);
           voiceSessions.set(socket.id, existing);
           if (changed) emitVoicePresence(existing.guildId);
@@ -506,6 +542,10 @@ export function setupSocket(server: HttpServer) {
         if (!user) throw new HttpError(401, "Usuario nao encontrado");
 
         const previousGuildId = existing?.guildId;
+        if (existing) {
+          clearSocketStreamWatches(socket.id);
+          if (existing.streaming) clearBroadcasterStream(existing.channelId, existing.userId, existing.guildId);
+        }
         claimVoiceSession(socket.id, userId, channel.id);
         voiceSessions.set(socket.id, {
           userId,
@@ -527,6 +567,39 @@ export function setupSocket(server: HttpServer) {
     });
 
 
+    socket.on("voice:stream-watch", async (payload: unknown, ack?: Ack) => {
+      try {
+        consumeSocketBudget(socket, "voice-stream-watch", 30, 10_000);
+        const data = voiceStreamWatchSchema.parse(payload);
+        const viewerSession = Array.from(voiceSessions.values()).find((session) => session.userId === userId && session.channelId === data.channelId);
+        if (!viewerSession) throw new HttpError(409, "Entre na sala de voz antes de assistir a transmissao");
+        const broadcaster = Array.from(voiceSessions.values()).find((session) => session.userId === data.broadcasterId && session.channelId === data.channelId && session.streaming);
+        if (!broadcaster) throw new HttpError(409, "Esta transmissao nao esta mais ativa");
+        await requireChannelCapability(userId, data.channelId, "view");
+        clearSocketStreamWatches(socket.id);
+        const key = streamWatchKey(data.channelId, data.broadcasterId);
+        const group = streamWatchers.get(key) ?? { guildId: broadcaster.guildId, channelId: data.channelId, broadcasterId: data.broadcasterId, viewers: new Map<string, string>() };
+        // O proprio transmissor nao conta como espectador.
+        if (userId !== data.broadcasterId) group.viewers.set(socket.id, userId);
+        streamWatchers.set(key, group);
+        emitStreamViewerCount(group);
+        ack?.({ ok: true, count: new Set(group.viewers.values()).size });
+      } catch (error) {
+        ack?.({ ok: false, error: errorMessage(error) });
+      }
+    });
+
+    socket.on("voice:stream-unwatch", (payload: unknown, ack?: Ack) => {
+      try {
+        voiceStreamWatchSchema.partial().parse(payload ?? {});
+        clearSocketStreamWatches(socket.id);
+        ack?.({ ok: true });
+      } catch (error) {
+        ack?.({ ok: false, error: errorMessage(error) });
+      }
+    });
+
+
     socket.on("voice:move-member", async (payload: unknown, ack?: Ack) => {
       try {
         consumeSocketBudget(socket, "voice-moderation", 20, 10_000);
@@ -538,7 +611,11 @@ export function setupSocket(server: HttpServer) {
         const targetSessions = Array.from(voiceSessions.entries()).filter(([, session]) => session.userId === targetUserId && session.guildId === channel.guildId);
         if (targetSessions.length === 0) throw new HttpError(409, "Este usuario nao esta conectado em uma sala de voz");
         const previousChannelId = targetSessions[0][1].channelId;
-        for (const [socketId, session] of targetSessions) voiceSessions.set(socketId, { ...session, channelId: targetChannelId });
+        for (const [socketId, session] of targetSessions) {
+          clearSocketStreamWatches(socketId);
+          if (session.streaming) clearBroadcasterStream(session.channelId, session.userId, session.guildId);
+          voiceSessions.set(socketId, { ...session, channelId: targetChannelId, streaming: false });
+        }
         emitVoicePresence(channel.guildId);
         io.to(`user:${targetUserId}`).emit("voice:moved", { guildId: channel.guildId, fromChannelId: previousChannelId, channelId: targetChannelId, movedBy: userId, reason: "MODERATION" });
         ack?.({ ok: true });
@@ -554,7 +631,11 @@ export function setupSocket(server: HttpServer) {
         await requireModerationTarget(userId, guildId, targetUserId, "moveMembers");
         const targetSessions = Array.from(voiceSessions.entries()).filter(([, session]) => session.userId === targetUserId && session.guildId === guildId);
         if (targetSessions.length === 0) throw new HttpError(409, "Este usuario nao esta conectado em uma sala de voz");
-        for (const [socketId] of targetSessions) voiceSessions.delete(socketId);
+        for (const [socketId, session] of targetSessions) {
+          voiceSessions.delete(socketId);
+          clearSocketStreamWatches(socketId);
+          if (session.streaming) clearBroadcasterStream(session.channelId, session.userId, session.guildId);
+        }
         await removeUserFromGuildMedia(guildId, targetUserId).catch(() => undefined);
         emitVoicePresence(guildId);
         io.to(`user:${targetUserId}`).emit("voice:disconnected", { guildId, disconnectedBy: userId, reason: "MODERATION" });
@@ -576,7 +657,11 @@ export function setupSocket(server: HttpServer) {
         if (ownSessions.length === 0) throw new HttpError(409, "Voce nao esta conectado em voz neste servidor");
         const previousChannelId = ownSessions[0][1].channelId;
         if (previousChannelId === guild.afkChannelId) return ack?.({ ok: true });
-        for (const [socketId, session] of ownSessions) voiceSessions.set(socketId, { ...session, channelId: guild.afkChannelId! });
+        for (const [socketId, session] of ownSessions) {
+          clearSocketStreamWatches(socketId);
+          if (session.streaming) clearBroadcasterStream(session.channelId, session.userId, session.guildId);
+          voiceSessions.set(socketId, { ...session, channelId: guild.afkChannelId!, streaming: false });
+        }
         emitVoicePresence(guildId);
         io.to(`user:${userId}`).emit("voice:moved", { guildId, fromChannelId: previousChannelId, channelId: guild.afkChannelId, movedBy: userId, reason: "AFK" });
         ack?.({ ok: true });
@@ -591,6 +676,8 @@ export function setupSocket(server: HttpServer) {
         const current = voiceSessions.get(socket.id);
         if (current && current.channelId === channelId) {
           voiceSessions.delete(socket.id);
+          clearSocketStreamWatches(socket.id);
+          if (current.streaming) clearBroadcasterStream(current.channelId, current.userId, current.guildId);
           emitVoicePresence(current.guildId);
         }
         ack?.({ ok: true });
@@ -680,30 +767,14 @@ export function setupSocket(server: HttpServer) {
             include: {
               author: { select: { id: true, username: true, displayName: true, avatarColor: true, systemRole: true, platformOwner: true, accountType: true } },
               attachments: { orderBy: { createdAt: "asc" } },
-              reactions: { include: { user: { select: { id: true, displayName: true } } } },
+              reactions: { include: { user: { select: { id: true, username: true, displayName: true } } } },
               replyTo: { include: { author: { select: { id: true, displayName: true, username: true } } } }
             }
           });
         });
 
-        io.to(`channel:${data.channelId}`).emit("message:new", message);
-        const guildMessageEvent = {
-          messageId: message.id,
-          channelId: channel.id,
-          channelName: channel.name,
-          guildId: channel.guildId,
-          authorId: message.authorId,
-          author: message.author,
-          content: message.content,
-          hasAttachments: message.attachments.length > 0,
-          createdAt: message.createdAt
-        };
-        io.to(`guild:${channel.guildId}`).emit("guild:message:new", guildMessageEvent);
-        io.to(`botguild:${channel.guildId}`).emit("guild:message:new", guildMessageEvent);
-        void emitMentionNotifications(io, {
-          channel: { id: channel.id, guildId: channel.guildId, name: channel.name },
-          message
-        }).catch((error) => console.error("Falha ao entregar notificacao de mencao", error));
+        void emitNewGuildMessage(io, { id: channel.id, guildId: channel.guildId, name: channel.name }, message)
+          .catch((error) => console.error("Falha ao entregar mensagem/atividade/notificacao", error));
         ack?.({ ok: true, message });
       } catch (error) {
         ack?.({ ok: false, error: errorMessage(error) });
@@ -806,8 +877,10 @@ export function setupSocket(server: HttpServer) {
       const current = voiceSessions.get(socket.id);
       if (current) {
         voiceSessions.delete(socket.id);
+        if (current.streaming) clearBroadcasterStream(current.channelId, current.userId, current.guildId);
         emitVoicePresence(current.guildId);
       }
+      clearSocketStreamWatches(socket.id);
       setUserOnline(userId, false);
     });
   });

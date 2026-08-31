@@ -45,9 +45,10 @@ services:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
       LIVEKIT_NODE_IP: ${LIVEKIT_NODE_IP:-}
-      LIVEKIT_USE_EXTERNAL_IP: ${LIVEKIT_USE_EXTERNAL_IP:-false}
-      LIVEKIT_TURN_ENABLED: ${LIVEKIT_TURN_ENABLED:-false}
+      LIVEKIT_USE_EXTERNAL_IP: ${LIVEKIT_USE_EXTERNAL_IP:-true}
+      LIVEKIT_TURN_ENABLED: ${LIVEKIT_TURN_ENABLED:-true}
       LIVEKIT_TURN_UDP_PORT: ${LIVEKIT_TURN_UDP_PORT:-3478}
+      LIVEKIT_LOG_LEVEL: ${LIVEKIT_LOG_LEVEL:-warn}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     volumes:
       - livekit_config:/out
@@ -69,7 +70,7 @@ services:
     volumes:
       - livekit_config:/etc/livekit:ro
     ports:
-      - "7880:7880/tcp"
+      - "${LIVEKIT_SIGNAL_BIND:-127.0.0.1}:${LIVEKIT_SIGNAL_PORT:-7880}:7880/tcp"
       - "${LIVEKIT_TCP_PORT:-7881}:7881/tcp"
       - "${LIVEKIT_UDP_PORT:-7882}:7882/udp"
       - "${LIVEKIT_TURN_UDP_PORT:-3478}:${LIVEKIT_TURN_UDP_PORT:-3478}/udp"
@@ -113,17 +114,65 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    ulimits:
-      nofile:
-        soft: 65535
-        hard: 65535
     ports:
-      - "80:80/tcp"
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-3090}:80"
     volumes:
       - ./updates:/usr/share/nginx/html/updates:ro
     depends_on:
       api:
         condition: service_healthy
+    networks: [ginga]
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["production"]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      LIVEKIT_DOMAIN: ${LIVEKIT_DOMAIN}
+    volumes:
+      - ./infra/caddy/Caddyfile.public:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    depends_on:
+      web:
+        condition: service_started
+      livekit:
+        condition: service_started
+    networks: [ginga]
+
+  caddy-lan:
+    image: caddy:2-alpine
+    profiles: ["lan"]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      LIVEKIT_DOMAIN: ${LIVEKIT_DOMAIN}
+    volumes:
+      - ./infra/caddy/Caddyfile.lan:/etc/caddy/Caddyfile:ro
+      - caddy_lan_data:/data
+      - caddy_lan_config:/config
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    depends_on:
+      web:
+        condition: service_started
+      livekit:
+        condition: service_started
     networks: [ginga]
 
 networks:
@@ -135,3 +184,7 @@ volumes:
   redis_data:
   livekit_config:
   uploads_data:
+  caddy_data:
+  caddy_config:
+  caddy_lan_data:
+  caddy_lan_config:

@@ -1,79 +1,133 @@
 # Publicando o Ginga no GitHub
 
-## Antes do primeiro envio
+Repositório oficial:
 
-Execute a verificação de segurança do repositório:
+```text
+https://github.com/GabrielBosco/ginga
+```
+
+## Gate antes do push
 
 ```bash
 ./scripts/prepare-github.sh
 ```
 
-Para também compilar API e Web:
+Para também compilar API e Web com Docker:
 
 ```bash
 ./scripts/prepare-github.sh --build
 ```
 
-O comando deve terminar sem `FAIL`.
+O comando deve terminar com:
 
-## Criar um repositório novo
-
-Crie um repositório vazio no GitHub, sem adicionar README ou licença pelo site. Depois:
-
-```bash
-git init
-git add .
-git commit -m "feat: primeira versão pública 0.3.1"
-git branch -M main
-git remote add origin git@github.com:SEU_USUARIO/ginga.git
-git push -u origin main
+```text
+Repositorio pronto para publicacao no GitHub.
 ```
 
-Crie a tag da versão:
+## Atualizar um clone existente
 
-```bash
-git tag -a v0.3.1 -m "Ginga 0.3.1"
-git push origin v0.3.1
-```
-
-Se preferir autenticação HTTPS:
-
-```bash
-git remote add origin https://github.com/SEU_USUARIO/ginga.git
-```
-
-## Repositório existente
-
-Confira o endereço remoto:
+Entre no clone que contém `.git` e confirme o remote:
 
 ```bash
 git remote -v
+git branch --show-current
+git status
 ```
 
-Para trocar:
+O remote esperado é:
 
-```bash
-git remote set-url origin git@github.com:SEU_USUARIO/ginga.git
+```text
+https://github.com/GabrielBosco/ginga.git
 ```
 
-Depois:
+Se precisar corrigir:
 
 ```bash
-git add .
-git commit -m "release: Ginga 0.3.1"
+git remote set-url origin https://github.com/GabrielBosco/ginga.git
+```
+
+Sincronize o histórico antes de copiar uma árvore nova:
+
+```bash
+git pull --rebase origin main
+```
+
+Depois substitua o conteúdo do clone pela árvore limpa, preservando somente `.git/`:
+
+```bash
+rsync -av --delete \
+  --exclude='.git/' \
+  /caminho/Ginga-v0.4.5-GITHUB-READY/ \
+  /caminho/do/clone/ginga/
+```
+
+Revise:
+
+```bash
+cd /caminho/do/clone/ginga
+./scripts/prepare-github.sh
+git status
+git diff --stat
+git diff
+```
+
+Commit e push:
+
+```bash
+git add -A
+git commit -m "release: Ginga v0.4.5"
 git push origin main
+```
+
+## Tag 0.4.5
+
+Crie a tag somente depois que o commit correto estiver em `main`:
+
+```bash
+git tag -a v0.4.5 -m "Ginga v0.4.5"
+git push origin v0.4.5
+```
+
+Se `v0.4.5` já existir, não sobrescreva uma tag pública sem revisar o histórico.
+
+## O que não entra no Git
+
+- `.env`;
+- `secrets/`;
+- chave privada do updater;
+- `node_modules/`;
+- `dist/` e `out/`;
+- uploads/banco/backups;
+- `.patch-backups/`, `.release-backups/`, `.security-backup/` e `.ginga-hotfix-backup/`;
+- binários gerados em `updates/`.
+
+A chave **pública** `apps/desktop/update-public.pem` pode e deve acompanhar o cliente que valida a cadeia existente.
+
+## GitHub Releases
+
+Não versione instaladores no histórico do Git. Publique-os em **Releases** e/ou no feed `/updates/` do servidor.
+
+Para a `0.4.5`, os artefatos Desktop esperados são:
+
+```text
+Ginga-Setup-0.4.5-x64.exe
+Ginga-0.4.5-linux-x64.AppImage
+Ginga-0.4.5-linux-x64.deb
+Ginga-0.4.5-linux-x64.rpm
+Ginga-0.4.5-linux-arm64.AppImage
+Ginga-0.4.5-linux-arm64.deb
 ```
 
 ## Configurações recomendadas no GitHub
 
-Ative, quando disponíveis:
+Ative quando disponíveis:
 
 - Issues;
-- Discussions para a comunidade;
-- relato privado de vulnerabilidades;
-- alertas do Dependabot;
-- proteção contra envio de segredos;
-- regras de proteção para a branch `main` quando houver mais contribuidores.
+- Discussions;
+- Private vulnerability reporting;
+- Dependabot alerts;
+- secret scanning/push protection;
+- proteção da branch `main` quando houver mais contribuidores.
 
 Tópicos sugeridos:
 
@@ -98,43 +152,15 @@ docker
 
 Descrição curta sugerida:
 
-> Plataforma brasileira, de código aberto e auto-hospedada para comunidades, com chat em tempo real, voz, vídeo, moderação, bots e clientes Desktop/Android.
+> Plataforma brasileira, open source e auto-hospedada para comunidades, com chat em tempo real, voz, vídeo, moderação, bots e clientes Desktop/Web.
 
-## Releases
+## Ginga Bot SDK
 
-Não coloque instaladores `.exe` ou `.apk` diretamente no histórico Git. Publique esses binários na área **Releases** do GitHub.
-
-Exemplos:
-
-```text
-Ginga-Setup-0.3.1-x64.exe
-Ginga-0.3.1-debug.apk
-```
-
-## Publicacao do Ginga Bot SDK
-
-O pacote Python usa um ciclo de versao separado do servidor:
-
-```text
-Servidor/Desktop: 0.3.1
-SDK Python:       0.1.0
-```
-
-O workflow de publicacao fica em:
-
-```text
-.github/workflows/python-sdk-publish.yml
-```
-
-A publicacao usa **PyPI Trusted Publishing**, sem senha ou API token do PyPI salvo no repositorio.
-
-Uma versao do SDK e publicada com uma tag propria:
+O SDK Python tem versão independente. Exemplo para `0.1.0`:
 
 ```bash
 git tag -a sdk-python-v0.1.0 -m "Ginga Bot SDK 0.1.0"
 git push origin sdk-python-v0.1.0
 ```
 
-O PyPI nao permite substituir arquivos de uma versao que ja foi publicada. Para alterar o codigo do SDK, incremente a versao do pacote antes de criar outra tag.
-
-Consulte `sdk/python/PUBLISHING.md` para o processo completo e `docs/BOTS-PYTHON.md` para a documentacao de uso.
+A publicação é feita pelo workflow `.github/workflows/python-sdk-publish.yml` usando PyPI Trusted Publishing.

@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import { prisma } from "../db.js";
@@ -72,7 +72,10 @@ async function assertCanAssignRolesToTarget(actorUserId: string, guildId: string
   const { membership: actor } = await effectiveGuildPermissionsForUser(actorUserId, guildId);
   const target = await prisma.guildMember.findUnique({ where: { guildId_userId: { guildId, userId: targetUserId } } });
   if (!target) throw new HttpError(404, "Membro nao encontrado");
-  if (actorUserId === targetUserId) throw new HttpError(403, "Voce nao pode alterar seus proprios cargos");
+  // Quem possui manageRoles pode gerenciar os proprios cargos personalizados.
+  // As validacoes de cada cargo continuam sendo feitas em assertRoleManageableByActor,
+  // evitando que um membro comum conceda a si mesmo permissoes acima das que possui.
+  if (actorUserId === targetUserId) return target;
   if (actor.role === "OWNER") return target;
 
   const actorRank = fixedRoleRank[actor.role];
@@ -102,6 +105,10 @@ async function assertCanManageUserOverride(actorUserId: string, guildId: string,
 }
 function overrideIsEmpty(data: z.infer<typeof overrideSchema>) { return data.canView == null && data.canSendMessages == null && data.canConnect == null; }
 
+function emitGuildStructure(req: Request, guildId: string) {
+  req.app.get("io")?.to?.(`guild:${guildId}`)?.emit?.("guild:structure:changed", { guildId, at: new Date().toISOString() });
+}
+
 rolesRouter.get("/guilds/:guildId/custom-roles", requireAuth, asyncHandler(async (req, res) => {
   const guildId = routeParam(req.params.guildId, "guildId");
   await requireGuildMember(req.auth!.sub, guildId);
@@ -130,6 +137,7 @@ rolesRouter.post("/guilds/:guildId/custom-roles", requireAuth, asyncHandler(asyn
     }
   })();
   await writeAudit({ guildId, actorId: req.auth!.sub, action: "CUSTOM_ROLE_CREATE", targetType: "ROLE", targetId: role.id, metadata: { name: role.name, permissions: role.permissions }, request: req });
+  emitGuildStructure(req, guildId);
   res.status(201).json({ role });
 }));
 
@@ -145,6 +153,7 @@ rolesRouter.patch("/guilds/:guildId/custom-roles/:roleId", requireAuth, asyncHan
   if (data.permissions) await assertRolePermissionsSubset(req.auth!.sub, guildId, data.permissions);
   const updated = await prisma.guildCustomRole.update({ where: { id: roleId }, data });
   await writeAudit({ guildId, actorId: req.auth!.sub, action: "CUSTOM_ROLE_UPDATE", targetType: "ROLE", targetId: roleId, metadata: data, request: req });
+  emitGuildStructure(req, guildId);
   res.json({ role: updated });
 }));
 
@@ -158,6 +167,7 @@ rolesRouter.delete("/guilds/:guildId/custom-roles/:roleId", requireAuth, asyncHa
   await assertRoleManageableByActor(req.auth!.sub, guildId, role);
   await prisma.guildCustomRole.delete({ where: { id: roleId } });
   await writeAudit({ guildId, actorId: req.auth!.sub, action: "CUSTOM_ROLE_DELETE", targetType: "ROLE", targetId: roleId, metadata: { name: role.name }, request: req });
+  emitGuildStructure(req, guildId);
   res.status(204).end();
 }));
 
@@ -170,6 +180,7 @@ rolesRouter.put("/guilds/:guildId/custom-roles/reorder", requireAuth, asyncHandl
   if (count !== data.items.length) throw new HttpError(400, "Um ou mais cargos nao pertencem ao espaco");
   await prisma.$transaction(data.items.map((item) => prisma.guildCustomRole.update({ where: { id: item.id }, data: { position: item.position } })));
   await writeAudit({ guildId, actorId: req.auth!.sub, action: "CUSTOM_ROLE_REORDER", targetType: "ROLE", metadata: { count: data.items.length }, request: req });
+  emitGuildStructure(req, guildId);
   res.status(204).end();
 }));
 
@@ -189,6 +200,7 @@ rolesRouter.put("/guilds/:guildId/members/:userId/custom-roles", requireAuth, as
     if (roles.length) await tx.guildMemberCustomRole.createMany({ data: roles.map((role) => ({ guildId, userId, roleId: role.id })), skipDuplicates: true });
   });
   await writeAudit({ guildId, actorId: req.auth!.sub, action: "MEMBER_CUSTOM_ROLES_UPDATE", targetType: "USER", targetId: userId, targetUserId: userId, metadata: { roleIds }, request: req });
+  emitGuildStructure(req, guildId);
   res.status(204).end();
 }));
 
@@ -204,6 +216,7 @@ rolesRouter.put("/channels/:channelId/custom-role-permissions/:roleId", requireA
     where: { channelId_roleId: { channelId, roleId } }, update: data, create: { channelId, roleId, ...data }
   });
   await writeAudit({ guildId: channel.guildId, actorId: req.auth!.sub, action: "CHANNEL_CUSTOM_ROLE_PERMISSION_UPDATE", targetType: "CHANNEL", targetId: channelId, metadata: { roleId, ...data }, request: req });
+  emitGuildStructure(req, channel.guildId);
   res.json({ permission });
 }));
 
@@ -219,6 +232,7 @@ rolesRouter.put("/categories/:categoryId/custom-role-permissions/:roleId", requi
     where: { categoryId_roleId: { categoryId, roleId } }, update: data, create: { categoryId, roleId, ...data }
   });
   await writeAudit({ guildId: category.guildId, actorId: req.auth!.sub, action: "CATEGORY_CUSTOM_ROLE_PERMISSION_UPDATE", targetType: "CATEGORY", targetId: categoryId, metadata: { roleId, ...data }, request: req });
+  emitGuildStructure(req, category.guildId);
   res.json({ permission });
 }));
 
@@ -231,11 +245,11 @@ rolesRouter.get("/channels/:channelId/user-permissions/:targetUserId", requireAu
 rolesRouter.put("/channels/:channelId/user-permissions/:targetUserId", requireAuth, asyncHandler(async (req, res) => {
   const channelId = routeParam(req.params.channelId, "channelId"), targetUserId = routeParam(req.params.targetUserId, "targetUserId"), data = overrideSchema.parse(req.body);
   const channel = await prisma.channel.findUnique({ where: { id: channelId } }); if (!channel) throw new HttpError(404, "Canal nao encontrado"); await assertCanManageUserOverride(req.auth!.sub, channel.guildId, targetUserId);
-  if (overrideIsEmpty(data)) { await prisma.channelUserPermission.deleteMany({ where: { channelId, userId: targetUserId } }); await writeAudit({ guildId: channel.guildId, actorId:req.auth!.sub, action:"CHANNEL_USER_PERMISSION_CLEAR", targetType:"CHANNEL", targetId:channelId, targetUserId, request:req }); return res.json({permission:null}); }
-  const permission=await prisma.channelUserPermission.upsert({where:{channelId_userId:{channelId,userId:targetUserId}},update:data,create:{channelId,userId:targetUserId,...data}}); await writeAudit({guildId:channel.guildId,actorId:req.auth!.sub,action:"CHANNEL_USER_PERMISSION_UPDATE",targetType:"CHANNEL",targetId:channelId,targetUserId,metadata:data,request:req}); res.json({permission});
+  if (overrideIsEmpty(data)) { await prisma.channelUserPermission.deleteMany({ where: { channelId, userId: targetUserId } }); await writeAudit({ guildId: channel.guildId, actorId:req.auth!.sub, action:"CHANNEL_USER_PERMISSION_CLEAR", targetType:"CHANNEL", targetId:channelId, targetUserId, request:req }); emitGuildStructure(req, channel.guildId); return res.json({permission:null}); }
+  const permission=await prisma.channelUserPermission.upsert({where:{channelId_userId:{channelId,userId:targetUserId}},update:data,create:{channelId,userId:targetUserId,...data}}); await writeAudit({guildId:channel.guildId,actorId:req.auth!.sub,action:"CHANNEL_USER_PERMISSION_UPDATE",targetType:"CHANNEL",targetId:channelId,targetUserId,metadata:data,request:req}); emitGuildStructure(req, channel.guildId); res.json({permission});
 }));
 rolesRouter.get("/categories/:categoryId/user-permissions/:targetUserId", requireAuth, asyncHandler(async (req,res)=>{const categoryId=routeParam(req.params.categoryId,"categoryId"),targetUserId=routeParam(req.params.targetUserId,"targetUserId");const category=await prisma.channelCategory.findUnique({where:{id:categoryId}});if(!category)throw new HttpError(404,"Categoria nao encontrada");await requireGuildCapability(req.auth!.sub,category.guildId,"manageRoles");await requireGuildMember(targetUserId,category.guildId);res.json({permission:await prisma.categoryUserPermission.findUnique({where:{categoryId_userId:{categoryId,userId:targetUserId}}})});}));
-rolesRouter.put("/categories/:categoryId/user-permissions/:targetUserId", requireAuth, asyncHandler(async (req,res)=>{const categoryId=routeParam(req.params.categoryId,"categoryId"),targetUserId=routeParam(req.params.targetUserId,"targetUserId"),data=overrideSchema.parse(req.body);const category=await prisma.channelCategory.findUnique({where:{id:categoryId}});if(!category)throw new HttpError(404,"Categoria nao encontrada");await assertCanManageUserOverride(req.auth!.sub,category.guildId,targetUserId);if(overrideIsEmpty(data)){await prisma.categoryUserPermission.deleteMany({where:{categoryId,userId:targetUserId}});await writeAudit({guildId:category.guildId,actorId:req.auth!.sub,action:"CATEGORY_USER_PERMISSION_CLEAR",targetType:"CATEGORY",targetId:categoryId,targetUserId,request:req});return res.json({permission:null});}const permission=await prisma.categoryUserPermission.upsert({where:{categoryId_userId:{categoryId,userId:targetUserId}},update:data,create:{categoryId,userId:targetUserId,...data}});await writeAudit({guildId:category.guildId,actorId:req.auth!.sub,action:"CATEGORY_USER_PERMISSION_UPDATE",targetType:"CATEGORY",targetId:categoryId,targetUserId,metadata:data,request:req});res.json({permission});}));
+rolesRouter.put("/categories/:categoryId/user-permissions/:targetUserId", requireAuth, asyncHandler(async (req,res)=>{const categoryId=routeParam(req.params.categoryId,"categoryId"),targetUserId=routeParam(req.params.targetUserId,"targetUserId"),data=overrideSchema.parse(req.body);const category=await prisma.channelCategory.findUnique({where:{id:categoryId}});if(!category)throw new HttpError(404,"Categoria nao encontrada");await assertCanManageUserOverride(req.auth!.sub,category.guildId,targetUserId);if(overrideIsEmpty(data)){await prisma.categoryUserPermission.deleteMany({where:{categoryId,userId:targetUserId}});await writeAudit({guildId:category.guildId,actorId:req.auth!.sub,action:"CATEGORY_USER_PERMISSION_CLEAR",targetType:"CATEGORY",targetId:categoryId,targetUserId,request:req});emitGuildStructure(req, category.guildId);return res.json({permission:null});}const permission=await prisma.categoryUserPermission.upsert({where:{categoryId_userId:{categoryId,userId:targetUserId}},update:data,create:{categoryId,userId:targetUserId,...data}});await writeAudit({guildId:category.guildId,actorId:req.auth!.sub,action:"CATEGORY_USER_PERMISSION_UPDATE",targetType:"CATEGORY",targetId:categoryId,targetUserId,metadata:data,request:req});emitGuildStructure(req, category.guildId);res.json({permission});}));
 
 rolesRouter.get("/guilds/:guildId/permission-preview/:userId", requireAuth, asyncHandler(async (req, res) => {
   const guildId = routeParam(req.params.guildId, "guildId");

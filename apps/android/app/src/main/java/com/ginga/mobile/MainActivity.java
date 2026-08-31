@@ -51,7 +51,7 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " GingaAndroid/0.3.1");
+        settings.setUserAgentString(settings.getUserAgentString() + " GingaAndroid/0.2.0");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override

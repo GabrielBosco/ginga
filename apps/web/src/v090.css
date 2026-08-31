@@ -1,0 +1,656 @@
+/* Ginga 0.4.1 - recursos Community/Social */
+.ultimate-panel{display:flex;flex-direction:column;gap:18px}.ultimate-hero{padding:22px 24px;border:1px solid rgba(124,60,255,.28);border-radius:18px;background:radial-gradient(circle at 88% 18%,rgba(44,116,255,.18),transparent 35%),radial-gradient(circle at 8% 100%,rgba(124,60,255,.18),transparent 36%),var(--bg-2);display:flex;justify-content:space-between;gap:18px}.ultimate-hero h2{margin:0;font-size:25px}.ultimate-hero p{color:var(--muted);margin:7px 0 0}.ultimate-hero .eyebrow{color:#b7a2ff;font-size:10px;font-weight:900;letter-spacing:.13em}.ultimate-tabs{display:flex;gap:7px;overflow:auto;padding:5px;border:1px solid var(--line);border-radius:13px;background:rgba(0,0,0,.15)}.ultimate-tabs button{display:flex;align-items:center;gap:6px;min-height:36px;border:0;border-radius:8px;background:transparent;color:var(--muted);padding:0 11px;cursor:pointer}.ultimate-tabs button.active{color:#fff;background:linear-gradient(135deg,rgba(124,60,255,.92),rgba(44,116,255,.88))}.ultimate-section{display:flex;flex-direction:column;gap:13px}.section-heading{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.section-heading h3{margin:0}.section-heading p{margin:3px 0;color:var(--muted)}.section-heading button,.ultimate-card button{display:inline-flex;align-items:center;gap:6px;min-height:34px;border:1px solid var(--line);border-radius:8px;background:var(--bg-4);color:var(--text);padding:0 10px;cursor:pointer}.ultimate-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ultimate-card{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--line);border-top:2px solid var(--brand);border-radius:13px;background:rgba(255,255,255,.025)}.ultimate-card header{display:flex;justify-content:space-between;align-items:center;gap:10px}.icon-btn{width:32px;height:32px;padding:0!important;display:grid!important;place-items:center!important}.check-list{display:flex;flex-wrap:wrap;gap:7px}.check-list label,.check-list span{display:inline-flex;gap:6px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:11px}.asset-columns{display:grid;grid-template-columns:1fr 1fr;gap:14px}.file-chip{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg-4);cursor:pointer}.asset-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:9px}.asset-tile{min-height:95px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.025)}.asset-tile img{width:42px;height:42px;object-fit:contain}.asset-tile.sticker img{width:58px;height:58px}.asset-tile span{font-size:10px;color:var(--muted)}.security-v9-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.toggle-card,.numeric-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.025)}.numeric-card{flex-direction:column;align-items:stretch}.numeric-card input{min-height:36px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);color:var(--text);padding:0 8px}.member-badge-list{display:flex;flex-wrap:wrap;gap:6px}.member-badge-list button.active{border-color:var(--brand);background:rgba(124,60,255,.12)}.inline-error,.inline-success{padding:10px 12px;border-radius:9px;font-size:12px}.inline-error{border:1px solid rgba(249,112,102,.28);background:rgba(249,112,102,.08);color:#ffaaa3}.inline-success{border:1px solid rgba(50,213,131,.24);background:rgba(50,213,131,.08);color:#8ce6b7}.social-v9-page label>svg{color:#9481ff}.social-v9-preview{display:flex;align-items:center;gap:15px;padding:17px;border:1px solid rgba(124,60,255,.22);border-radius:15px;background:radial-gradient(circle at 85% 20%,rgba(44,116,255,.16),transparent 35%),var(--bg-2)}.social-v9-preview>div:last-child{display:flex;flex-direction:column;gap:3px}.social-v9-preview small{color:#9f8cff;font-size:10px;font-weight:850}.social-v9-preview span{color:var(--muted)}.social-v9-avatar{position:relative;width:74px;height:74px;display:grid;place-items:center}.social-v9-avatar i{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;color:#fff;font-style:normal;font-size:24px;font-weight:900}.social-v9-avatar>span{position:absolute;inset:2px;border-radius:50%}.decoration-ring>span{border:3px solid #a58cff}.decoration-pixel>span{border:3px dashed #66b8ff;border-radius:18px;transform:rotate(8deg)}.decoration-spark>span{border:2px solid #f7d164;box-shadow:0 0 22px rgba(247,209,100,.4)}.decoration-wave>span{border:3px solid #55d8d0;transform:scaleX(1.08)}
+.message-spoiler{padding:1px 4px;border-radius:4px;background:#262a34;color:transparent;cursor:pointer}.message-spoiler:hover,.message-spoiler:focus{color:var(--text)}.message-inline-code{padding:1px 5px;border:1px solid var(--line);border-radius:5px;background:#0b0e14;color:#d9d2ff}.message-inline-link{color:#73a9ff;text-decoration:none}.message-link-preview-v9{max-width:470px;display:flex;flex-direction:column;gap:3px;margin-top:7px;padding:10px 12px;border-left:3px solid var(--brand);background:rgba(255,255,255,.035);text-decoration:none}.guild-spaces-v9{display:flex;gap:6px;overflow:auto;padding:7px}.guild-spaces-v9 button{flex:0 0 auto;height:30px;padding:0 9px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.025);color:var(--muted);font-size:11px}.guild-spaces-v9 button.active{color:#fff;background:rgba(124,60,255,.18);border-color:var(--brand)}
+@media(max-width:900px){.ultimate-grid,.asset-columns,.security-v9-grid{grid-template-columns:1fr}}@media(max-width:600px){.section-heading{flex-direction:column}}
+
+/* ========================================================================== */
+/* Ginga 0.4.1 - painel de personalizacao refeito                             */
+/* ========================================================================== */
+.ultimate-panel.settings-page-section {
+  width: 100%;
+  max-width: 980px;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 2px 48px 0;
+  overflow: visible;
+}
+.ultimate-panel * { box-sizing: border-box; }
+.ultimate-hero {
+  min-width: 0;
+  min-height: 126px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  padding: 22px 24px;
+  border: 1px solid rgba(114, 126, 255, .22);
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 88% 16%, rgba(77, 103, 255, .15), transparent 31%),
+    linear-gradient(145deg, rgba(91, 73, 190, .08), rgba(28, 34, 44, .72));
+  box-shadow: none;
+}
+.ultimate-hero .eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  color: #929cf6;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+.ultimate-hero h1 {
+  margin: 0;
+  color: #eef0f4;
+  font-size: clamp(21px, 2.4vw, 28px);
+  line-height: 1.15;
+  letter-spacing: -.025em;
+}
+.ultimate-hero p {
+  max-width: 700px;
+  margin: 7px 0 0;
+  color: #8e96a3;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.ultimate-hero-icon {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(122, 113, 235, .22);
+  border-radius: 14px;
+  color: #a9a4ff;
+  background: rgba(105, 93, 218, .10);
+}
+.ultimate-tabs {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 5px;
+  border: 1px solid #2a3038;
+  border-radius: 11px;
+  background: #171b20;
+  scrollbar-width: thin;
+}
+.ultimate-tabs button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #8f97a2;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ultimate-tabs button:hover { background: #20252c; color: #d9dde3; }
+.ultimate-tabs button.active {
+  border-color: #3a4150;
+  background: #292e37;
+  color: #f0f2f5;
+  box-shadow: inset 0 -2px 0 #746ee8;
+}
+.ultimate-loading,
+.ultimate-empty,
+.asset-empty {
+  border: 1px dashed #333a44;
+  border-radius: 11px;
+  color: #7f8792;
+  background: rgba(255,255,255,.018);
+}
+.ultimate-loading { padding: 12px 14px; font-size: 10px; }
+.ultimate-empty {
+  min-height: 150px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 5px;
+  padding: 24px;
+  text-align: center;
+}
+.ultimate-empty svg { color: #737b93; }
+.ultimate-empty strong { color: #cbd0d7; font-size: 12px; }
+.ultimate-empty span { max-width: 460px; font-size: 10px; line-height: 1.45; }
+.ultimate-section {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+.ultimate-section > .section-heading {
+  min-height: 42px;
+  height: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.ultimate-section > .section-heading > div { min-width: 0; }
+.ultimate-section > .section-heading h3 { margin: 0; color: #e8ebef; font-size: 14px; }
+.ultimate-section > .section-heading p { margin: 4px 0 0; color: #818996; font-size: 10px; line-height: 1.45; }
+.ultimate-panel button,
+.ultimate-panel .file-chip {
+  font-family: inherit;
+}
+.ultimate-panel .ultimate-primary,
+.ultimate-card .ultimate-card-action,
+.ultimate-card header button,
+.ultimate-panel .file-chip {
+  min-height: 33px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid #353c47;
+  border-radius: 7px;
+  background: #252b32;
+  color: #d8dde2;
+  font-size: 10px;
+  font-weight: 720;
+  cursor: pointer;
+}
+.ultimate-panel .ultimate-primary {
+  border-color: #4d4a83;
+  background: #39365f;
+  color: #eeedff;
+}
+.ultimate-panel button:hover:not(:disabled),
+.ultimate-panel .file-chip:hover { filter: brightness(1.1); }
+.ultimate-panel button:disabled,
+.ultimate-panel .file-chip.disabled { opacity: .52; cursor: not-allowed; }
+.ultimate-grid {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+.ultimate-stack { display: flex; flex-direction: column; gap: 10px; }
+.ultimate-card {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #2b323a;
+  border-top: 2px solid #615ed0;
+  border-radius: 11px;
+  background: #191e24;
+  overflow: hidden;
+}
+.ultimate-card > header {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ultimate-card > header > div:first-child { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ultimate-card > header strong { min-width: 0; color: #e3e6ea; font-size: 11px; overflow-wrap: anywhere; }
+.ultimate-card > header small { color: #737c88; font-size: 9px; }
+.ultimate-card-help { margin: -2px 0 0; color: #777f8a; font-size: 9px; line-height: 1.45; }
+.ultimate-card .card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.ultimate-card .icon-btn {
+  flex: 0 0 31px;
+  width: 31px;
+  height: 31px;
+  min-height: 31px;
+  padding: 0;
+}
+.ultimate-card .icon-btn.danger,
+.asset-remove { color: #c38288; }
+.ultimate-card .icon-btn.danger:hover,
+.asset-remove:hover { border-color: #744047 !important; background: #392329 !important; color: #ffadb5 !important; }
+.check-list {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.check-list label,
+.check-list > span {
+  min-width: 0;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border: 1px solid #2d343d;
+  border-radius: 7px;
+  background: #151a20;
+  color: #a7adb6;
+  font-size: 9.5px;
+  overflow: hidden;
+}
+.check-list label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.check-list input { width: 14px; height: 14px; flex: 0 0 14px; accent-color: #716ce3; }
+.asset-name-field {
+  width: min(100%, 420px);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #969eaa;
+  font-size: 9.5px;
+}
+.asset-name-field input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  background: #13181e;
+  color: #e2e5e9;
+  padding: 0 10px;
+  outline: 0;
+}
+.asset-name-field input:focus { border-color: #555a94; box-shadow: 0 0 0 3px rgba(92, 89, 170, .10); }
+.asset-columns {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+.asset-column {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #2b323a;
+  border-radius: 11px;
+  background: #181d23;
+}
+.asset-column-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.asset-column-heading > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.asset-column-heading strong { color: #e1e5e9; font-size: 11px; }
+.asset-column-heading span { color: #747d88; font-size: 8.5px; }
+.asset-gallery {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+.asset-tile {
+  position: relative;
+  min-width: 0;
+  min-height: 104px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 5px;
+  border: 1px solid #2d343d;
+  border-radius: 8px;
+  background: #14191f;
+}
+.asset-tile img { width: 44px; height: 44px; object-fit: contain; }
+.asset-tile.sticker img { width: 58px; height: 58px; }
+.asset-tile > span { max-width: 100%; color: #979faa; font-size: 8.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-remove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 25px;
+  height: 25px;
+  min-height: 25px !important;
+  display: grid !important;
+  place-items: center;
+  padding: 0 !important;
+  border: 1px solid #353c45 !important;
+  border-radius: 6px !important;
+  background: rgba(27, 32, 39, .92) !important;
+  opacity: .75;
+}
+.asset-tile:hover .asset-remove { opacity: 1; }
+.asset-empty { grid-column: 1 / -1; min-height: 72px; display: grid; place-items: center; padding: 10px; font-size: 9px; }
+.onboarding-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.onboarding-option {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 4px 0 9px;
+  border: 1px solid #303741;
+  border-radius: 999px;
+  background: #151a20;
+  color: #aeb4bd;
+  font-size: 9px;
+}
+.onboarding-option span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.onboarding-option button {
+  width: 24px;
+  height: 24px;
+  min-height: 24px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  color: #8d6870 !important;
+}
+.muted-line { color: #737b86; font-size: 9px; }
+.template-pattern {
+  display: block;
+  max-width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #293039;
+  border-radius: 7px;
+  background: #11161b;
+  color: #9ca5b3;
+  font-size: 9px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.security-v9-grid {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.toggle-card,
+.numeric-card {
+  min-width: 0;
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid #2c333c;
+  border-radius: 9px;
+  background: #181d23;
+}
+.toggle-card > span,
+.numeric-card > span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.toggle-card strong,
+.numeric-card > span { color: #d1d5da; font-size: 10px; }
+.toggle-card small,
+.numeric-card small { color: #747d89; font-size: 8.5px; font-weight: 400; line-height: 1.4; }
+.toggle-card input[type="checkbox"] { width: 17px; height: 17px; accent-color: #706be0; }
+.numeric-card input {
+  width: 94px;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid #303741;
+  border-radius: 7px;
+  background: #12171c;
+  color: #e0e4e8;
+  padding: 0 8px;
+}
+.member-badge-list {
+  min-width: 0;
+  max-height: 240px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.member-badge-list button {
+  min-width: 0;
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 0 8px;
+  border: 1px solid #303741;
+  border-radius: 7px;
+  background: #151a20;
+  color: #a7afb8;
+  font-size: 9px;
+}
+.member-badge-list button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-badge-list button small { color: #9ee0b8; font-size: 10px; }
+.member-badge-list button.active { border-color: #3e6752; background: #192920; color: #d9eee0; }
+.badge-icon { font-size: 14px; }
+.inline-error,
+.inline-success {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+@media (max-width: 860px) {
+  .ultimate-grid,
+  .asset-columns,
+  .security-v9-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .ultimate-hero { grid-template-columns: 1fr; padding: 18px; }
+  .ultimate-hero-icon { display: none; }
+  .ultimate-section > .section-heading { flex-direction: column; align-items: stretch; }
+  .ultimate-section > .section-heading > button { width: 100%; }
+  .check-list,
+  .member-badge-list { grid-template-columns: 1fr; }
+  .toggle-card,
+  .numeric-card { grid-template-columns: minmax(0,1fr) auto; }
+}
+
+/* ========================================================================== */
+/* Ginga 0.4.1 R2 - densidade responsiva para desktop/web                     */
+/* Corrige a camada BIG UPDATE que ficou ~20% maior em viewports 1440x900.    */
+/* Em telas compactas a UI passa a ocupar o equivalente visual ao zoom 80%,   */
+/* mas sem alterar o zoom do navegador/Electron nem quebrar coordenadas.       */
+/* ========================================================================== */
+
+/* O titlebar customizado ja ocupa 32px via padding-top do body. Nao subtrair
+   outros 32px do #root, pois isso corta a area util do Desktop. */
+html.ginga-desktop-windows #root {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+html.ginga-desktop-windows :is(.app-shell, .nexora-shell, .main-shell) {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+}
+
+/* 1440x900, 1536x864 e notebooks semelhantes: densidade nativa compacta. */
+@media (min-width: 801px) and (max-width: 1600px),
+       (min-width: 801px) and (max-height: 950px) {
+  body { font-size: 13px !important; }
+
+  .nexora-shell.with-inspector {
+    grid-template-columns: 58px 202px minmax(0, 1fr) 190px !important;
+  }
+  .nexora-shell.no-inspector {
+    grid-template-columns: 58px 202px minmax(0, 1fr) !important;
+  }
+
+  /* Rail */
+  .app-rail {
+    width: 58px !important;
+    padding: 8px 6px !important;
+  }
+  .rail-home,
+  .rail-action,
+  .rail-profile,
+  .rail-space {
+    width: 38px !important;
+    height: 38px !important;
+    flex: 0 0 38px !important;
+    border-radius: 11px !important;
+  }
+  .ginga-mark-image.rail-logo,
+  .rail-home .brand-mark {
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 11px !important;
+  }
+  .rail-space .space-nav-icon {
+    width: 35px !important;
+    height: 35px !important;
+    border-radius: 11px !important;
+    font-size: 11px !important;
+  }
+  .rail-spaces { gap: 5px !important; }
+  .rail-divider { width: 26px !important; margin: 5px 0 !important; }
+  .rail-footer { gap: 3px !important; padding-top: 6px !important; }
+  .rail-folder-button { transform: scale(.82); margin-block: -5px !important; }
+
+  /* Cabecalhos */
+  .context-header,
+  .content-header,
+  .inspector-header {
+    height: 46px !important;
+    min-height: 46px !important;
+    flex-basis: 46px !important;
+  }
+  .content-header { padding: 0 14px !important; gap: 11px !important; }
+  .context-header { padding: 0 10px !important; }
+  .inspector-header { padding: 0 11px !important; font-size: 10.5px !important; }
+  .channel-title strong { font-size: 12.5px !important; }
+  .channel-topic { font-size: 10px !important; padding-left: 10px !important; }
+
+  /* Canais e DMs */
+  .context-scroll { padding: 6px 6px 10px !important; }
+  .context-group-title {
+    height: 26px !important;
+    margin-top: 4px !important;
+  }
+  .context-group-title span { font-size: 8.5px !important; }
+  .context-home {
+    min-height: 33px !important;
+    height: 33px !important;
+    font-size: 11px !important;
+  }
+  .modern-channel {
+    min-height: 30px !important;
+    border-radius: 6px !important;
+  }
+  .modern-channel span { font-size: 11.5px !important; }
+  .modern-channel > svg { width: 15px !important; height: 15px !important; }
+  .channel-unread-count,
+  .direct-unread-badge {
+    min-width: 17px !important;
+    height: 17px !important;
+    font-size: 8px !important;
+  }
+  .direct-nav-row { min-height: 38px !important; }
+  .direct-nav-row strong { font-size: 11px !important; }
+  .direct-nav-row span { font-size: 9px !important; }
+  .voice-channel-user {
+    min-height: 27px !important;
+    height: 27px !important;
+    font-size: 10px !important;
+  }
+
+  /* Membros */
+  .member-list { padding: 12px 7px !important; }
+  .member-group-heading { font-size: 8.5px !important; }
+  .member-row {
+    min-height: 37px !important;
+    height: 37px !important;
+    padding: 3px 5px !important;
+    gap: 7px !important;
+  }
+  .member-row strong { font-size: 11px !important; }
+  .member-row span { font-size: 9px !important; }
+  .member-row small { font-size: 8.5px !important; }
+  .avatar-sm { width: 26px !important; height: 26px !important; font-size: 9px !important; }
+  .avatar-md { width: 32px !important; height: 32px !important; font-size: 10px !important; }
+
+  /* Chat */
+  .message-row { padding-top: 3px !important; padding-bottom: 3px !important; }
+  .message-meta strong { font-size: 11.75px !important; }
+  .message-meta span,
+  .message-meta time,
+  .compact-time { font-size: 9px !important; }
+  .message-text { font-size: 12.5px !important; line-height: 1.48 !important; }
+  .composer { min-height: 39px !important; border-radius: 8px !important; }
+  .composer textarea { font-size: 12px !important; }
+  .composer-wrap { padding-bottom: 8px !important; }
+  .compact-icon-button span { font-size: 9px !important; }
+
+  /* Voz */
+  .voice-controls-wrap {
+    min-height: 62px !important;
+    padding: 6px 14px !important;
+    gap: 4px !important;
+  }
+  .ginga-music-panel { margin: 8px 12px !important; }
+
+  /* Pessoas / cards */
+  .person-card { min-height: 52px !important; }
+  .person-main strong,
+  .ginga-friend-row .person-main strong { font-size: 11.5px !important; }
+  .person-main span,
+  .ginga-friend-row .person-main span { font-size: 9.5px !important; }
+  .discord-like-friends-header .people-tabs button,
+  .people-global-search input { font-size: 10.5px !important; }
+
+  /* Menus contextuais: mesma densidade do shell sem usar zoom CSS. */
+  .nexora-context-menu { width: 205px !important; }
+  .nexora-context-menu button { min-height: 31px !important; font-size: 10px !important; }
+  .context-menu-heading { font-size: 10px !important; }
+  .context-menu-label { font-size: 8px !important; }
+
+  /* Configuracoes e Personalizacao */
+  .settings-sidebar {
+    width: 224px !important;
+    padding-top: 38px !important;
+    padding-right: 13px !important;
+  }
+  .settings-sidebar nav button {
+    min-height: 30px !important;
+    font-size: 10px !important;
+  }
+  .settings-nav-group { margin-top: 13px !important; font-size: 7.5px !important; }
+  .settings-page-inner {
+    width: min(100%, 900px) !important;
+    padding: 38px 36px 60px !important;
+  }
+  .settings-close { top: 30px !important; width: 30px !important; height: 30px !important; }
+  .settings-page-title h1 { font-size: 18px !important; }
+  .settings-page-title p { font-size: 10px !important; }
+  .settings-section-card { padding: 13px !important; }
+
+  .ultimate-panel.settings-page-section { max-width: 900px !important; gap: 13px !important; }
+  .ultimate-hero {
+    min-height: 100px !important;
+    padding: 17px 19px !important;
+    gap: 15px !important;
+  }
+  .ultimate-hero h1 { font-size: 20px !important; }
+  .ultimate-hero p { font-size: 9.5px !important; }
+  .ultimate-hero-icon { width: 44px !important; height: 44px !important; border-radius: 11px !important; }
+  .ultimate-tabs { gap: 4px !important; padding: 4px !important; }
+  .ultimate-tabs button {
+    min-height: 29px !important;
+    padding: 0 8px !important;
+    font-size: 9px !important;
+  }
+  .ultimate-section > .section-heading h3 { font-size: 12px !important; }
+  .ultimate-section > .section-heading p { font-size: 9px !important; }
+  .ultimate-card { padding: 11px !important; gap: 8px !important; }
+
+  /* Anuncios / forum / news tambem herdaram a camada superdimensionada. */
+  .announcement-channel-banner { padding: 10px 12px !important; }
+  .news-scroll { padding: 17px 22px 32px !important; }
+  .news-hero-v2 { min-height: 140px !important; padding: 20px 22px !important; }
+  .news-hero-copy h1 { font-size: 24px !important; }
+  .news-hero-copy p { font-size: 11px !important; }
+}

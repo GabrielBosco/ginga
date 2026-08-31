@@ -1,4 +1,5 @@
 import { prisma } from "./db.js";
+import { emitNewGuildMessage } from "./guildMessageEvents.js";
 
 export type GuildMemberSystemEvent = "JOIN" | "LEAVE";
 
@@ -91,19 +92,6 @@ export async function postGuildMemberSystemMessage(
     include: systemMessageInclude
   });
 
-  io?.to?.(`channel:${channel.id}`)?.emit?.("message:new", message);
-  const guildMessageEvent = {
-    messageId: message.id,
-    channelId: channel.id,
-    channelName: channel.name,
-    guildId,
-    authorId: message.authorId,
-    author: message.author,
-    content: message.content,
-    hasAttachments: false,
-    createdAt: message.createdAt
-  };
-  io?.to?.(`guild:${guildId}`)?.emit?.("guild:message:new", guildMessageEvent);
-  io?.to?.(`botguild:${guildId}`)?.emit?.("guild:message:new", guildMessageEvent);
+  if (io) await emitNewGuildMessage(io, { id: channel.id, guildId, name: channel.name }, message);
   return message;
 }

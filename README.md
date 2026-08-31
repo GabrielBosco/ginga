@@ -1,11 +1,11 @@
 <div align="center">
   <img src="apps/web/public/ginga-wordmark.png" alt="Ginga" width="260" />
 
-  <p><strong>Plataforma brasileira, de código aberto e auto-hospedada para comunidades, equipes e grupos.</strong></p>
-  <p>Chat em tempo real, voz, vídeo, compartilhamento de tela, moderação, bots, Desktop e Android em uma única stack.</p>
+  <p><strong>Plataforma brasileira, open source e auto-hospedada para comunidades, equipes e grupos.</strong></p>
+  <p>Chat em tempo real, voz, vídeo, compartilhamento de tela, moderação, bots e clientes Desktop/Web.</p>
 
   <p>
-    <img alt="Versão" src="https://img.shields.io/badge/versão-0.3.1-5865F2" />
+    <img alt="Versão" src="https://img.shields.io/badge/versão-0.4.5-5865F2" />
     <img alt="Idioma" src="https://img.shields.io/badge/idioma-pt--BR-009C3B" />
     <img alt="Debian" src="https://img.shields.io/badge/Debian-13-A81D33?logo=debian&logoColor=white" />
     <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
@@ -16,8 +16,8 @@
   <p>
     <a href="docs/INSTALL.md">Instalação</a> ·
     <a href="docs/CONFIGURATION.md">Configuração</a> ·
-    <a href="docs/ANDROID.md">Android</a> ·
     <a href="docs/DESKTOP.md">Desktop</a> ·
+    <a href="docs/ANDROID.md">Android</a> ·
     <a href="SECURITY.md">Segurança</a> ·
     <a href="CONTRIBUTING.md">Contribuir</a>
   </p>
@@ -27,204 +27,170 @@
 
 ## Sobre o Ginga
 
-O **Ginga** é uma plataforma de comunicação em tempo real feita para rodar na sua própria infraestrutura. A ideia é oferecer uma experiência moderna de comunidade sem obrigar o administrador a depender de um serviço central de terceiros.
+O **Ginga** é uma plataforma de comunicação em tempo real feita para rodar na sua própria infraestrutura. O administrador controla a aplicação, o banco de dados, os uploads e a infraestrutura de voz/vídeo.
 
-Você hospeda, administra e escolhe onde os dados ficam.
+> **Versão atual do servidor/Web/Desktop:** `0.4.5`.
+>
+> O projeto ainda está na série `0.x`; APIs, banco e processos de implantação podem evoluir antes da `1.0.0`.
 
-> **Versão atual:** `0.3.1`. O projeto ainda está na série `0.x`; APIs, estrutura do banco e alguns fluxos de implantação podem evoluir antes da `1.0.0`.
-
-A documentação oficial do projeto é mantida em **português do Brasil**.
+A documentação oficial deste repositório é mantida em **português do Brasil**.
 
 ## Recursos principais
 
-- servidores, categorias e canais de texto e voz;
+- servidores, categorias e canais de texto/voz;
 - mensagens em tempo real, respostas, reações, anexos, fixados e busca;
-- mensagens privadas, amigos e chamadas particulares;
-- voz, vídeo e compartilhamento de tela com LiveKit/WebRTC;
-- status Online, Ausente, Ocupado e Invisível;
-- Push-to-Talk configurável por tecla ou botão do mouse no Desktop;
-- presença de jogos e sobreposição durante a partida no cliente Desktop;
+- amigos, mensagens privadas e chamadas;
+- voz, vídeo e compartilhamento de tela via LiveKit/WebRTC;
 - cargos, hierarquia, permissões e regras por canal/categoria;
-- expulsão, banimento temporário ou permanente, timeout, AutoMod e auditoria;
-- convites, comunidades públicas, fóruns, eventos e anúncios;
-- autenticação em duas etapas (TOTP), códigos de recuperação e sessões revogáveis;
-- redefinição segura de senha por e-mail;
-- Portal do Desenvolvedor, bots, webhooks e **Ginga Bot SDK** para Python;
-- Ginga Music opcional;
+- moderação, timeout, AutoMod e auditoria;
+- fóruns, eventos, convites e comunidades;
+- 2FA/TOTP, códigos de recuperação e sessões revogáveis;
+- redefinição e verificação de conta por e-mail;
+- Portal Developer, bots, webhooks e Ginga Bot SDK para Python;
 - cliente Web responsivo;
-- cliente Windows com Electron;
-- base Android experimental para testes.
+- cliente Desktop Electron para Windows e Linux;
+- suporte a avatar/banner/ícone GIF animado na `0.4.5`;
+- base Android experimental, com ciclo de versão separado.
 
-## Tecnologias
+## Stack
 
 | Camada | Tecnologia |
 | --- | --- |
-| Interface Web | React 19, TypeScript e Vite |
-| API | Node.js 22, Express, Socket.IO e Prisma |
-| Banco de dados | PostgreSQL 16 |
-| Cache e presença | Redis 7 |
-| Voz e vídeo | LiveKit / WebRTC |
+| Web | React 19, TypeScript, Vite |
+| API | Node.js 22, Express, Socket.IO, Prisma |
+| Banco | PostgreSQL 16 |
+| Cache/presença | Redis 7 |
+| Voz/vídeo | LiveKit / WebRTC |
 | Desktop | Electron |
-| Android | WebView nativo para a fase inicial |
-| Implantação | Docker Compose |
-| Entrada HTTP/HTTPS | Caddy incluído na stack de produção |
+| Android | WebView nativo experimental |
+| Deploy | Docker Compose |
+| Edge opcional | Caddy |
 
-Não é necessário configurar um proxy externo para a instalação padrão do projeto.
+## Estrutura do repositório
 
-## Requisitos recomendados
+```text
+apps/
+├── api/          API, autenticação, permissões e tempo real
+├── web/          interface React
+├── desktop/      Electron Windows/Linux
+└── android/      cliente Android experimental
 
-Para uma comunidade pequena ou média, um bom ponto de partida é:
+infra/
+├── caddy/        exemplos de entrada HTTPS/LAN
+└── livekit/      geração da configuração LiveKit
 
-- **Debian 13 minimal**;
+sdk/
+├── python/       SDK oficial ginga-bot / import gingabot
+└── javascript/   integração JavaScript
+
+scripts/          inicialização, auditoria, backup e release
+updates/          diretório de publicação; binários não são versionados
+docs/             documentação técnica e histórico de releases
+```
+
+Mais detalhes em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Início rápido no Debian
+
+Requisitos recomendados para uma instalação pequena/média:
+
+- Debian 13;
 - Docker Engine + plugin Docker Compose;
 - 4 vCPU;
 - 8 GB de RAM;
-- 20 GB ou mais de armazenamento;
-- conexão estável e boa banda de upload para voz/vídeo;
-- DNS público para uso HTTPS na Internet.
+- armazenamento adequado para banco e uploads.
 
-Outras distribuições Linux modernas também podem funcionar, mas o Debian 13 é a referência oficial da documentação.
-
-## Início rápido — rede local
+Clone o projeto:
 
 ```bash
-git clone https://github.com/SEU_USUARIO/ginga.git
+git clone https://github.com/GabrielBosco/ginga.git
 cd ginga
+```
 
+Crie um `.env` seguro a partir do exemplo:
+
+```bash
 ./scripts/init.sh
+```
+
+Suba os serviços:
+
+```bash
 docker compose up -d --build
 ```
 
-Acesse:
-
-```text
-http://IP_DO_SERVIDOR
-```
-
-A aplicação Web usa **porta 80** no modo local. A sinalização direta do LiveKit usa `7880/TCP` nesse cenário.
-
-Confira o estado:
+Por padrão, a Web fica vinculada a `127.0.0.1:3090`. Valide localmente:
 
 ```bash
 docker compose ps
-curl -fsS http://127.0.0.1/api/health
+curl -fsS http://127.0.0.1:3090/api/health
 ```
 
-## Produção — Internet + HTTPS
+Para LAN ou Internet, revise `.env`, `APP_ORIGINS`, `GINGA_SERVER_URL`, LiveKit e a estratégia de proxy/TLS antes de expor a aplicação. Consulte [docs/INSTALL.md](docs/INSTALL.md) e [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-Crie dois registros DNS apontando para o servidor, por exemplo:
+## Produção / HTTPS
 
-```text
-ginga.exemplo.com        -> IP público do servidor
-midia.ginga.exemplo.com  -> IP público do servidor
-```
-
-Gere o ambiente:
+A stack inclui perfis Caddy para cenários em que o host pode publicar `80/TCP` e `443/TCP/UDP`:
 
 ```bash
-./scripts/init.sh --production ginga.exemplo.com midia.ginga.exemplo.com
+docker compose --profile production up -d --build
 ```
 
-Revise o `.env`, principalmente SMTP, proprietário global e limites de armazenamento. Depois suba:
+Configure `APP_DOMAIN`, `LIVEKIT_DOMAIN`, `GINGA_SERVER_URL` e `APP_ORIGINS` antes de ativar o perfil.
+
+Se `80/443` não puderem ser usados diretamente no host, mantenha Web/API protegidos e publique o Ginga por um reverse proxy, NAT ou edge compatível com HTTPS/WSS. Não exponha PostgreSQL ou Redis à Internet.
+
+## Cliente Desktop 0.4.5
+
+O Desktop utiliza a URL embutida no momento do release. O source público usa `127.0.0.1` como fallback de desenvolvimento; `release-win.sh` injeta `GINGA_PUBLIC_URL`/`GINGA_SERVER_URL` no build oficial.
+
+Build Linux x64:
 
 ```bash
-docker compose -f docker-compose.production.yml up -d --build
+./build-linux.sh x64
 ```
 
-A instalação padrão publica a aplicação em **80/TCP e 443/TCP** e cuida do HTTPS dentro da própria stack.
+Release Linux x64:
 
-Acesse:
-
-```text
-https://ginga.exemplo.com
+```bash
+./release-linux.sh 0.4.5 --x64
 ```
 
-### Portas públicas de produção
+Release Windows + Linux:
 
-| Porta | Protocolo | Uso |
-| ---: | :---: | --- |
-| 80 | TCP | HTTP e emissão/renovação do certificado |
-| 443 | TCP | Web, API e WSS |
-| 443 | UDP | HTTP/3, quando disponível |
-| 7881 | TCP | alternativa WebRTC/ICE por TCP |
-| 7882 | UDP | mídia WebRTC/ICE por UDP |
-| 3478 | UDP | TURN, quando habilitado |
-
-`PostgreSQL`, `Redis`, API interna e a sinalização interna do LiveKit **não devem ser publicados diretamente na Internet**.
-
-## Configuração inicial
-
-O arquivo `.env` contém segredos e **nunca deve entrar no Git**. O script `./scripts/init.sh` gera os principais valores aleatórios automaticamente.
-
-Para definir o proprietário global:
-
-```env
-PLATFORM_OWNER_USERNAME=seu_usuario
-ALLOW_FIRST_USER_PLATFORM_OWNER=false
+```bash
+./release-all.sh 0.4.5 --all
 ```
 
-Para exigir verificação de e-mail:
+Targets atuais:
 
-```env
-EMAIL_VERIFICATION_REQUIRED=true
-EMAIL_PROVIDER=smtp
-SMTP_HOST=smtp.exemplo.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=usuario
-SMTP_PASSWORD=senha-de-app-ou-senha-smtp
-EMAIL_FROM="Ginga <nao-responda@exemplo.com>"
-```
+- Windows x64: NSIS `.exe`;
+- Linux x64: AppImage, `.deb`, `.rpm`;
+- Linux ARM64: AppImage, `.deb`.
 
-Todas as opções estão em [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+**Nunca publique a chave privada do updater.** A chave pública `apps/desktop/update-public.pem` faz parte do cliente e pode ser versionada; `secrets/update-signing/private.pem` não pode entrar no Git.
+
+Consulte [docs/DESKTOP.md](docs/DESKTOP.md) e [docs/LINUX.md](docs/LINUX.md).
 
 ## Ginga Bot SDK
 
-O **Ginga Bot SDK** e o SDK Python oficial para bots. O pacote publico no PyPI se chama **`ginga-bot`** e o modulo Python e **`gingabot`**. O namespace `ginga` nao e utilizado porque ja pertence a outro projeto do ecossistema Python.
-
-Requisitos:
-
-- Python 3.10+;
-- bot criado no **Ginga Developer**;
-- token exclusivo de bot;
-- bot instalado no servidor com as permissoes necessarias.
-
-Instalacao:
+O pacote Python oficial é **`ginga-bot`** e o módulo importado é **`gingabot`**:
 
 ```bash
 python -m pip install -U ginga-bot
 ```
 
-Validacao:
-
-```bash
-python -c "import gingabot; print(gingabot.__version__)"
-```
-
-Se a maquina usa mirror/indice privado e o `pip` nao encontrar o pacote:
-
-```bash
-python -m pip install --no-cache-dir --index-url https://pypi.org/simple ginga-bot
-```
-
-Primeiro bot:
+Exemplo:
 
 ```python
 import os
 import gingabot
 
-intents = gingabot.Intents.default()
-intents.message_content = True
-
 bot = gingabot.Bot(
     command_prefix="!",
-    intents=intents,
+    intents=gingabot.Intents.default(),
     server_url=os.environ["GINGA_SERVER"],
 )
-
-@bot.event
-async def on_ready():
-    print(f"Online como {bot.user}")
 
 @bot.command(description="Testa o bot")
 async def ping(ctx):
@@ -233,89 +199,16 @@ async def ping(ctx):
 bot.run(os.environ["GINGA_BOT_TOKEN"])
 ```
 
-Para comandos baseados em mensagens, habilite `intents.message_content = True` **e** a opcao **Conteudo de mensagens** no Portal Developer.
+Veja [docs/BOTS-PYTHON.md](docs/BOTS-PYTHON.md).
 
-Documentacao completa:
-
-- [Bots Python / Quickstart / troubleshooting](docs/BOTS-PYTHON.md)
-- [README do pacote Python](sdk/python/README.md)
-- [Publicacao e manutencao do SDK](sdk/python/PUBLISHING.md)
-- [Exemplos prontos](sdk/python/examples/)
-
-Durante o desenvolvimento pelo proprio repositorio:
-
-```bash
-python -m pip install -e ./sdk/python
-```
-
-## Estrutura do projeto
-
-```text
-apps/
-├── api/          API, autenticação, permissões e tempo real
-├── web/          interface React responsiva
-├── desktop/      cliente Windows/Electron
-└── android/      cliente Android experimental
-
-infra/
-├── caddy/        entrada HTTP/HTTPS da produção
-└── livekit/      configuração de voz e vídeo
-
-sdk/
-├── python/       SDK oficial para bots Python
-└── javascript/   exemplos e integração Node.js
-
-scripts/          inicialização, backup, auditoria e release
-updates/          arquivos públicos do atualizador Desktop
-```
-
-Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Cliente Desktop
-
-O cliente Desktop adiciona recursos nativos que o navegador não consegue oferecer da mesma forma, como presença de jogos, sobreposição, integração com bandeja e Push-to-Talk global.
-
-Para compilar o instalador Windows:
-
-```bash
-./build-win.sh
-```
-
-Saída esperada:
-
-```text
-apps/desktop/dist/Ginga-Setup-0.3.1-x64.exe
-```
-
-A chave privada do atualizador nunca deve entrar no Git. Veja [docs/DESKTOP.md](docs/DESKTOP.md).
-
-## Android
-
-A `0.3.1` inclui uma base Android experimental voltada a testes. O aplicativo utiliza a interface responsiva do servidor Ginga e exige HTTPS para conexões externas.
-
-O APK de teste pode ser gerado pelo fluxo **Gerar APK Android** no GitHub Actions ou localmente:
-
-```bash
-./scripts/build-android.sh https://ginga.exemplo.com
-```
-
-Veja [docs/ANDROID.md](docs/ANDROID.md).
-
-## Backup
-
-```bash
-./scripts/backup.sh
-```
-
-Mantenha pelo menos uma cópia dos backups fora do próprio servidor.
-
-## Desenvolvimento
+## Desenvolvimento e CI
 
 API:
 
 ```bash
 cd apps/api
-npm install
+npm ci
+npx prisma generate
 npm run build
 ```
 
@@ -323,42 +216,41 @@ Web:
 
 ```bash
 cd apps/web
-npm install
+npm ci
 npm run build
 ```
 
-Antes de abrir um Pull Request ou publicar uma cópia do projeto:
+Antes de enviar código ao GitHub:
 
 ```bash
 ./scripts/prepare-github.sh
 ```
 
-O verificador procura segredos, `.env`, chaves privadas, dependências vendorizadas, binários e configurações específicas de uma instalação.
+Esse gate procura arquivos sensíveis, backups internos, artefatos gerados, endpoints específicos de produção, divergência de versões e regressões conhecidas do empacotamento Linux.
 
 ## Segurança
 
-O Ginga utiliza limites de requisição, cabeçalhos de segurança, validação de upload, sessões revogáveis, 2FA/TOTP, isolamento de containers e outras proteções na aplicação.
+- `.env` nunca deve ser commitado;
+- a chave privada do updater nunca deve ser commitada;
+- PostgreSQL e Redis devem permanecer internos;
+- para Internet, use HTTPS/WSS;
+- revise uploads, backups e permissões do host;
+- não publique vulnerabilidades exploráveis em Issues públicas.
 
-Para uma instalação pública, **HTTPS/WSS deve ser considerado obrigatório**. Credenciais, tokens e sinalização não devem trafegar em HTTP puro pela Internet.
+Consulte [SECURITY.md](SECURITY.md) e [docs/HARDENING-DEBIAN13.md](docs/HARDENING-DEBIAN13.md).
 
-Não publique vulnerabilidades exploráveis em Issues. Consulte [SECURITY.md](SECURITY.md).
+## GitHub e releases
 
-Para reforço do host Debian, consulte [docs/HARDENING-DEBIAN13.md](docs/HARDENING-DEBIAN13.md).
+O repositório oficial é:
 
-## Roteiro de desenvolvimento
+```text
+https://github.com/GabrielBosco/ginga
+```
 
-A série `0.x` está focada em estabilidade, voz, experiência mobile, cliente Desktop, moderação, segurança e facilidade de auto-hospedagem.
+Instaladores e pacotes não devem entrar no histórico Git. Use o feed `/updates/` do servidor e/ou **GitHub Releases** para distribuir `.exe`, `.AppImage`, `.deb`, `.rpm` e APKs.
 
-- correções compatíveis: `0.2.1`, `0.2.2`;
-- novas funcionalidades relevantes: `0.3.0`, `0.4.0`;
-- primeira versão considerada estável: `1.0.0`.
-
-## Contribuindo
-
-Relatos de bugs reproduzíveis, ideias bem explicadas e Pull Requests pequenos são bem-vindos. Leia [CONTRIBUTING.md](CONTRIBUTING.md).
+O processo recomendado de atualização do repositório está em [docs/GITHUB.md](docs/GITHUB.md).
 
 ## Licença
 
 Distribuído sob a licença [MIT](LICENSE).
-
-O arquivo `LICENSE` mantém o texto jurídico oficial da licença MIT. Componentes de terceiros continuam sujeitos às respectivas licenças.

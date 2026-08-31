@@ -1,0 +1,578 @@
+/* ========================================================================== */
+/* Ginga 0.4.3 - UI foundation / typography pass                              */
+/*                                                                            */
+/* Objetivos:                                                                 */
+/* - preservar o dimensionamento responsivo corrigido no R2;                  */
+/* - remover a sensacao de UI "miniatura" criada pelos textos de 7-10px;      */
+/* - unificar hierarquia tipografica em chat, canais, membros e configuracoes;*/
+/* - manter Web e Electron visualmente equivalentes em zoom 100%;             */
+/* ========================================================================== */
+
+:root {
+  --ginga-font-ui: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --ginga-font-display: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+  --ginga-fs-micro: 10px;
+  --ginga-fs-caption: 10.5px;
+  --ginga-fs-small: 11.5px;
+  --ginga-fs-ui: 12.5px;
+  --ginga-fs-body: 14px;
+  --ginga-fs-title: 14.5px;
+  --ginga-fs-heading: 21px;
+  --ginga-lh-tight: 1.25;
+  --ginga-lh-ui: 1.4;
+  --ginga-lh-body: 1.52;
+  --ginga-radius-control: 8px;
+  --ginga-radius-card: 11px;
+}
+
+html,
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--ginga-font-ui) !important;
+}
+
+html,
+body {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-size: 13.5px;
+  line-height: var(--ginga-lh-ui);
+}
+
+button,
+input,
+textarea,
+select {
+  letter-spacing: 0;
+}
+
+button {
+  line-height: 1.2;
+}
+
+/* Controles compartilhados ------------------------------------------------ */
+.primary-button,
+.secondary-button,
+.compact-button,
+.compact-icon-button {
+  font-size: var(--ginga-fs-ui) !important;
+  font-weight: 650 !important;
+}
+
+.primary-button,
+.secondary-button {
+  min-height: 36px;
+  padding-inline: 13px;
+  border-radius: var(--ginga-radius-control);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+textarea,
+select {
+  font-size: var(--ginga-fs-ui);
+}
+
+/* Shell / sidebar --------------------------------------------------------- */
+.context-header strong,
+.space-context-header strong {
+  font-family: var(--ginga-font-display) !important;
+  font-size: var(--ginga-fs-title) !important;
+  font-weight: 700 !important;
+  letter-spacing: -.015em !important;
+}
+
+.context-header small,
+.space-context-header small {
+  font-size: var(--ginga-fs-caption) !important;
+  line-height: 1.25 !important;
+}
+
+.context-group-title span,
+.member-group-heading {
+  font-size: var(--ginga-fs-micro) !important;
+  font-weight: 750 !important;
+  letter-spacing: .065em !important;
+}
+
+.context-home {
+  font-size: var(--ginga-fs-ui) !important;
+  font-weight: 620 !important;
+}
+
+.modern-channel span {
+  font-size: 13px !important;
+  font-weight: 590 !important;
+}
+
+.modern-channel.unread span {
+  font-weight: 720 !important;
+}
+
+.voice-channel-user {
+  font-size: var(--ginga-fs-small) !important;
+}
+
+.direct-nav-row strong {
+  font-size: var(--ginga-fs-ui) !important;
+  font-weight: 650 !important;
+}
+
+.direct-nav-row span {
+  font-size: var(--ginga-fs-caption) !important;
+  line-height: 1.3;
+}
+
+/* Estado Explorar: era pequeno demais e parecia quebrado. */
+.context-empty {
+  font-size: var(--ginga-fs-small) !important;
+  line-height: 1.5 !important;
+}
+
+.context-empty.large {
+  margin-top: 18px !important;
+}
+
+.community-context {
+  width: calc(100% - 12px);
+  margin-inline: 6px;
+  padding: 16px 10px 12px !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.community-context > svg {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 1px;
+  color: #83909b;
+}
+
+.community-context > strong {
+  color: #dce1e6;
+  font-family: var(--ginga-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+
+.community-context > span {
+  max-width: 185px;
+  color: #88939e;
+  font-size: 10.75px;
+  line-height: 1.45;
+}
+
+.community-context > .secondary-button {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 4px;
+  padding-inline: 10px;
+  justify-content: center;
+  font-size: 12px !important;
+}
+
+/* Header principal -------------------------------------------------------- */
+.channel-title strong,
+.content-header > strong {
+  font-family: var(--ginga-font-display) !important;
+  font-size: var(--ginga-fs-title) !important;
+  font-weight: 700 !important;
+  letter-spacing: -.012em !important;
+}
+
+.channel-topic {
+  font-size: var(--ginga-fs-small) !important;
+  line-height: 1.35 !important;
+}
+
+.inspector-header {
+  font-size: var(--ginga-fs-small) !important;
+  font-weight: 650 !important;
+}
+
+/* Chat ------------------------------------------------------------------- */
+.message-meta strong {
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: -.008em;
+}
+
+.message-meta span,
+.message-meta time,
+.compact-time {
+  font-size: var(--ginga-fs-caption) !important;
+  line-height: 1.25;
+}
+
+.message-text {
+  font-size: var(--ginga-fs-body) !important;
+  line-height: var(--ginga-lh-body) !important;
+  letter-spacing: 0 !important;
+}
+
+.composer textarea {
+  font-size: 13.5px !important;
+  line-height: 1.45 !important;
+}
+
+.composer textarea::placeholder {
+  opacity: .92;
+}
+
+/* Membros ---------------------------------------------------------------- */
+.member-row strong,
+.member-display-name {
+  font-size: var(--ginga-fs-ui) !important;
+  font-weight: 650 !important;
+}
+
+.member-row span {
+  font-size: var(--ginga-fs-caption) !important;
+  line-height: 1.3;
+}
+
+.member-row small {
+  font-size: var(--ginga-fs-micro) !important;
+  line-height: 1.3;
+}
+
+/* Pessoas / amigos ------------------------------------------------------- */
+.person-main strong,
+.ginga-friend-row .person-main strong {
+  font-size: 13px !important;
+  font-weight: 670 !important;
+}
+
+.person-main span,
+.ginga-friend-row .person-main span {
+  font-size: 11px !important;
+}
+
+.discord-like-friends-header .people-tabs button,
+.people-global-search input {
+  font-size: 12px !important;
+}
+
+/* Menus ------------------------------------------------------------------ */
+.nexora-context-menu button {
+  font-size: 11.5px !important;
+  line-height: 1.25 !important;
+}
+
+.context-menu-heading {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+}
+
+.context-menu-label {
+  font-size: 9.5px !important;
+  letter-spacing: .055em !important;
+}
+
+/* Configuracoes ---------------------------------------------------------- */
+.settings-sidebar-head strong {
+  font-family: var(--ginga-font-display) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+}
+
+.settings-sidebar-head span {
+  font-size: 10.5px !important;
+  line-height: 1.35;
+}
+
+.settings-nav-group {
+  font-size: 9.5px !important;
+  font-weight: 750 !important;
+  letter-spacing: .07em !important;
+}
+
+.settings-sidebar nav button {
+  font-size: 12px !important;
+  font-weight: 590 !important;
+}
+
+.settings-page-title h1 {
+  font-family: var(--ginga-font-display) !important;
+  font-size: 22px !important;
+  font-weight: 720 !important;
+  line-height: 1.18 !important;
+  letter-spacing: -.025em !important;
+}
+
+.settings-page-title p {
+  font-size: 12px !important;
+  line-height: 1.52 !important;
+}
+
+.settings-section-card-title strong,
+.settings-toggle-row strong {
+  font-size: 12px !important;
+  font-weight: 650 !important;
+}
+
+.settings-section-card-title span,
+.settings-toggle-row span,
+.settings-toggle-row small {
+  font-size: 10.75px !important;
+  line-height: 1.45 !important;
+}
+
+.settings-form-grid label,
+.settings-control-block label,
+.profile-editor-fields label,
+.invite-create-panel label {
+  font-size: 10.75px !important;
+  line-height: 1.35 !important;
+}
+
+.settings-form-grid small,
+.settings-field-hint {
+  font-size: 10px !important;
+  line-height: 1.45 !important;
+}
+
+.settings-form-grid input,
+.settings-form-grid select,
+.settings-form-grid textarea,
+.settings-control-block select,
+.profile-editor-fields input,
+.profile-editor-fields textarea {
+  font-size: 12.5px !important;
+}
+
+/* Personalizacao / Community update ------------------------------------- */
+.ultimate-hero .eyebrow {
+  font-size: 9.5px !important;
+}
+
+.ultimate-hero h1,
+.ultimate-hero h2 {
+  font-family: var(--ginga-font-display) !important;
+  font-size: 22px !important;
+  font-weight: 720 !important;
+  line-height: 1.18 !important;
+  letter-spacing: -.022em !important;
+}
+
+.ultimate-hero p {
+  font-size: 11.5px !important;
+  line-height: 1.5 !important;
+}
+
+.ultimate-tabs button {
+  font-size: 11px !important;
+  font-weight: 620 !important;
+}
+
+.ultimate-section > .section-heading h3 {
+  font-family: var(--ginga-font-display) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+}
+
+.ultimate-section > .section-heading p {
+  font-size: 11px !important;
+  line-height: 1.45 !important;
+}
+
+.ultimate-card > header strong {
+  font-size: 12px !important;
+  font-weight: 650 !important;
+}
+
+.ultimate-card > header small,
+.ultimate-card-help,
+.asset-tile span {
+  font-size: 10px !important;
+  line-height: 1.4 !important;
+}
+
+.check-list label,
+.check-list span,
+.toggle-card,
+.numeric-card {
+  font-size: 11px !important;
+}
+
+/* Views auxiliares ------------------------------------------------------- */
+.news-hero-copy p,
+.community-featured-copy p,
+.forum-topic-copy p,
+.event-copy p {
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+}
+
+/* A camada R2 continua controlando GEOMETRIA em notebooks. Aqui ajustamos   */
+/* apenas leitura/hierarquia para que 100% de zoom nao pareca 80% de texto. */
+@media (min-width: 801px) and (max-width: 1600px),
+       (min-width: 801px) and (max-height: 950px) {
+  body { font-size: 13.5px !important; }
+
+  .inspector-header { font-size: 11.5px !important; }
+  .channel-title strong { font-size: 13.5px !important; }
+  .channel-topic { font-size: 11px !important; }
+
+  .context-group-title span { font-size: 9.5px !important; }
+  .context-home { font-size: 12.5px !important; }
+  .modern-channel span { font-size: 13px !important; }
+  .direct-nav-row strong { font-size: 12px !important; }
+  .direct-nav-row span { font-size: 10px !important; }
+  .voice-channel-user { font-size: 11px !important; }
+
+  .member-group-heading { font-size: 9.5px !important; }
+  .member-row strong { font-size: 12px !important; }
+  .member-row span { font-size: 10px !important; }
+  .member-row small { font-size: 9.5px !important; }
+
+  .message-meta strong { font-size: 13px !important; }
+  .message-meta span,
+  .message-meta time,
+  .compact-time { font-size: 10px !important; }
+  .message-text { font-size: 14px !important; line-height: 1.5 !important; }
+  .composer textarea { font-size: 13px !important; }
+  .compact-icon-button span { font-size: 10.5px !important; }
+
+  .person-main strong,
+  .ginga-friend-row .person-main strong { font-size: 12.5px !important; }
+  .person-main span,
+  .ginga-friend-row .person-main span { font-size: 10.5px !important; }
+  .discord-like-friends-header .people-tabs button,
+  .people-global-search input { font-size: 11.5px !important; }
+
+  .nexora-context-menu button { font-size: 11.5px !important; }
+  .context-menu-heading { font-size: 10.5px !important; }
+  .context-menu-label { font-size: 9px !important; }
+
+  .settings-sidebar nav button { font-size: 11.5px !important; }
+  .settings-nav-group { font-size: 9px !important; }
+  .settings-page-title h1 { font-size: 21px !important; }
+  .settings-page-title p { font-size: 11.5px !important; }
+
+  .ultimate-hero h1,
+  .ultimate-hero h2 { font-size: 21px !important; }
+  .ultimate-hero p { font-size: 11px !important; }
+  .ultimate-tabs button { font-size: 10.5px !important; }
+  .ultimate-section > .section-heading h3 { font-size: 13.5px !important; }
+  .ultimate-section > .section-heading p { font-size: 10.5px !important; }
+}
+
+/* Mobile continua touch-friendly e nao herda microtipografia de desktop. */
+@media (max-width: 700px) {
+  body { font-size: 14px; }
+  .context-header strong,
+  .channel-title strong { font-size: 14px !important; }
+  .context-home,
+  .modern-channel span { font-size: 13px !important; }
+  .message-text { font-size: 14px !important; }
+  .composer textarea { font-size: 16px !important; }
+  .settings-sidebar nav button { font-size: 13px !important; }
+  .settings-page-title p { font-size: 12px !important; }
+}
+
+/* --------------------------------------------------------------------------
+   Ginga 0.4.3 RC3 - Member hierarchy / role identity
+   -------------------------------------------------------------------------- */
+.member-group-heading {
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.member-group-heading:hover { color: #c4c9d1 !important; }
+.member-group-chevron {
+  flex: 0 0 auto;
+  transform: rotate(90deg);
+  transition: transform .14s ease;
+  color: currentColor;
+}
+.member-group-block.collapsed .member-group-chevron { transform: rotate(0deg); }
+.member-group-block.collapsed { margin-bottom: 5px; }
+
+.member-display-name,
+.role-colored-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+}
+.guild-owner-crown {
+  flex: 0 0 auto;
+  color: #f0b232;
+  fill: rgba(240,178,50,.16);
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.32));
+  vertical-align: -2px;
+}
+.member-display-name .guild-owner-crown { margin-left: 1px; }
+.message-author-button .guild-owner-crown,
+.pinned-message-meta .guild-owner-crown,
+.chat-search-results .guild-owner-crown { margin-left: 2px; }
+
+/* A cor do maior cargo identifica o usuario no chat/perfil. Voz permanece neutra. */
+.message-author-button .role-colored-name,
+.pinned-message-meta .role-colored-name,
+.chat-search-results .role-colored-name,
+.message-reply-ref .role-colored-name,
+.user-popover-name .role-colored-name,
+.full-profile-identity .role-colored-name {
+  color: inherit;
+}
+
+.profile-role-chip {
+  align-self: flex-start;
+  display: inline-flex !important;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 7px;
+  border: 1px solid;
+  border-radius: 7px;
+  font-size: 10.5px !important;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.profile-role-inline { font-weight: 750; }
+
+/* Controles de video/stream: icones mais reconheciveis e estados claros. */
+.media-button.camera-control,
+.media-button.screen-control {
+  position: relative;
+  overflow: visible;
+}
+.media-button.camera-control svg,
+.media-button.screen-control svg {
+  width: 21px !important;
+  height: 21px !important;
+  stroke-width: 2.15;
+}
+.media-button.screen-control.active {
+  background: #23a55a !important;
+  border-color: #2dc36a !important;
+  color: #fff !important;
+  box-shadow: 0 0 0 3px rgba(35,165,90,.12);
+}
+.media-button.screen-control.active::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(35,165,90,.95);
+}
+
+/* Somente o fallback OFFLINE recebe cabecalho apagado; cargos podem misturar online/offline. */
+.member-group-block:has(.member-row-offline) .member-group-heading { color: #949ba4 !important; }
+.member-group-block.offline-group .member-group-heading { color: #747b86 !important; }

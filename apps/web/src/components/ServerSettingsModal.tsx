@@ -17,6 +17,7 @@ import {
   MessageSquareText,
   MicOff,
   Music2,
+  Palette,
   Pencil,
   RefreshCw,
   Save,
@@ -24,6 +25,7 @@ import {
   Settings2,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Upload,
   UserMinus,
@@ -35,9 +37,10 @@ import { api } from "../lib/api";
 import { friendlyWebhookError } from "../lib/webhookErrors";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { builtinGuildRoleId, useDeveloperMode } from "../lib/developerMode";
-import { imageFileToSquareWebp, imageFileToWideWebp } from "../lib/imageUpload";
+import { prepareSquareImageAsset, prepareWideImageAsset } from "../lib/imageUpload";
 import type {
   Guild,
+  GuildAppearance,
   GuildAuditLog,
   GuildBan,
   GuildMember,
@@ -56,9 +59,10 @@ import { Avatar } from "./Avatar";
 import { CustomRolesPanel } from "./CustomRolesPanel";
 import { Modal } from "./Modal";
 import { SettingsShell } from "./SettingsShell";
+import { ServerUltimatePanel } from "./ServerUltimatePanel";
 
-import { gingaConfirm } from "../lib/dialogs";
-export type ServerSettingsTab = "overview" | "community" | "members" | "roles" | "channels" | "integrations" | "music" | "security" | "automod" | "insights" | "templates" | "invites" | "bans" | "audit";
+import { gingaConfirm, gingaPrompt } from "../lib/dialogs";
+export type ServerSettingsTab = "overview" | "appearance" | "community" | "ultimate" | "members" | "roles" | "channels" | "integrations" | "music" | "security" | "automod" | "insights" | "templates" | "invites" | "bans" | "audit";
 type PermissionKey = keyof Omit<GuildRolePermission, "id" | "guildId" | "role">;
 type BanDuration = "PERMANENT" | "1H" | "24H" | "7D" | "30D";
 
@@ -102,6 +106,25 @@ const roleDescription: Record<GuildRole, string> = {
   MODERATOR: "Moderacao e operacao conforme as permissoes configuradas.",
   MEMBER: "Acesso padrao definido pelos cargos, categorias e canais."
 };
+
+function guildAppearanceFor(guild: Guild): GuildAppearance {
+  return {
+    accentColor: guild.appearance?.accentColor || guild.iconColor || "#7c3cff",
+    secondaryColor: guild.appearance?.secondaryColor || "#2c74ff",
+    sidebarStyle: guild.appearance?.sidebarStyle || "TINTED",
+    bannerPosition: guild.appearance?.bannerPosition ?? 50,
+    channelDensity: guild.appearance?.channelDensity || "COZY",
+    showBannerInSidebar: guild.appearance?.showBannerInSidebar !== false
+  };
+}
+
+const guildAppearancePresets: Array<{ name: string; accentColor: string; secondaryColor: string; sidebarStyle: GuildAppearance["sidebarStyle"] }> = [
+  { name: "Ginga", accentColor: "#7c3cff", secondaryColor: "#2c74ff", sidebarStyle: "TINTED" },
+  { name: "Oceano", accentColor: "#1d8cf8", secondaryColor: "#22d3ee", sidebarStyle: "GLASS" },
+  { name: "Esmeralda", accentColor: "#16a874", secondaryColor: "#71d99b", sidebarStyle: "TINTED" },
+  { name: "Solar", accentColor: "#f97316", secondaryColor: "#facc15", sidebarStyle: "TINTED" },
+  { name: "Mono", accentColor: "#8992a3", secondaryColor: "#c4cad4", sidebarStyle: "SOLID" }
+];
 
 const guildPermissionLabels: Array<{ key: PermissionKey; title: string; description: string }> = [
   { key: "canManageServer", title: "Gerenciar servidor", description: "Alterar nome, descricao e configuracoes gerais." },
@@ -153,6 +176,7 @@ function channelTypeIcon(type: ManagedChannel["type"]) {
 function auditLabel(action: string) {
   const labels: Record<string, string> = {
     GUILD_UPDATE: "Configuracoes do espaco alteradas",
+    GUILD_APPEARANCE_UPDATE: "Aparencia do espaco alterada",
     GUILD_LOCKDOWN_ENABLE: "Modo de contencao ativado",
     GUILD_LOCKDOWN_DISABLE: "Modo de contencao desativado",
     MEMBER_ROLE_UPDATE: "Cargo de membro alterado",
@@ -174,6 +198,7 @@ function auditLabel(action: string) {
     CHANNEL_CREATE: "Canal criado",
     CHANNEL_UPDATE: "Canal alterado",
     CHANNEL_DELETE: "Canal excluido",
+    CHANNEL_MESSAGES_CLEAR: "Mensagens do canal limpas",
     CHANNEL_REORDER: "Canais reorganizados",
     ROLE_PERMISSION_UPDATE: "Permissoes de cargo alteradas",
     CATEGORY_PERMISSION_UPDATE: "Permissoes de categoria alteradas",
@@ -240,6 +265,8 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
   const [guildIconBusy, setGuildIconBusy] = useState(false);
   const [guildBannerUrl,setGuildBannerUrl]=useState<string|null>(guild.bannerUrl??null);
   const [guildBannerBusy,setGuildBannerBusy]=useState(false);
+  const [guildAppearanceDraft, setGuildAppearanceDraft] = useState<GuildAppearance>(() => guildAppearanceFor(guild));
+  const [guildAppearanceBusy, setGuildAppearanceBusy] = useState(false);
   const [communityEnabled, setCommunityEnabled] = useState(Boolean(guild.communityEnabled));
   const [communityCategory, setCommunityCategory] = useState(guild.communityCategory || "Geral");
   const [communityTags, setCommunityTags] = useState((guild.communityTags ?? []).join(", "));
@@ -249,6 +276,7 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
 
   useEffect(() => { setGuildIconUrl(guild.iconUrl ?? null); }, [guild.id, guild.iconUrl]);
   useEffect(() => { setGuildBannerUrl(guild.bannerUrl ?? null); }, [guild.id, guild.bannerUrl]);
+  useEffect(() => { setGuildAppearanceDraft(guildAppearanceFor(guild)); }, [guild.id, guild.iconColor, guild.appearance]);
   useEffect(() => {
     setCommunityEnabled(Boolean(guild.communityEnabled));
     setCommunityCategory(guild.communityCategory || "Geral");
@@ -261,11 +289,11 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
     if (!file || guildIconBusy) return;
     setGuildIconBusy(true); setError(""); setNotice("");
     try {
-      const blob = await imageFileToSquareWebp(file, 512, 0.9);
+      const asset = await prepareSquareImageAsset(file, 512, 0.9);
       const result = await api<{ iconUrl: string }>(`/api/guilds/${guild.id}/icon`, {
         method: "POST",
-        headers: { "Content-Type": "image/webp" },
-        body: blob
+        headers: { "Content-Type": asset.mime },
+        body: asset.blob
       });
       setGuildIconUrl(result.iconUrl);
       await onGuildsRefresh();
@@ -291,7 +319,9 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
   const tabs = useMemo(() => {
     const items: Array<{ id: ServerSettingsTab; label: string; icon: ReactNode; group?: string }> = [];
     if (guild.permissions.canManageServer) items.push({ id: "overview", label: "Visao geral", icon: <Settings2 size={18} />, group: "ESPACO" });
+    if (guild.permissions.canManageServer) items.push({ id: "appearance", label: "Aparencia", icon: <Palette size={18} /> });
     if (guild.permissions.canManageServer) items.push({ id: "community", label: "Comunidade", icon: <Users size={18} /> });
+    if (guild.permissions.canManageServer || guild.permissions.canManageChannels || guild.permissions.canManageRoles || guild.permissions.canManageAutoMod) items.push({ id: "ultimate", label: "Personalizacao", icon: <Sparkles size={18} />, group: "PERSONALIZACAO" });
     if (guild.permissions.canManageMembers || guild.permissions.canManageRoles || guild.permissions.canKickMembers || guild.permissions.canMoveMembers || guild.permissions.canMuteMembers || guild.permissions.canDeafenMembers || guild.permissions.canManageNicknames || guild.permissions.canBanMembers) {
       items.push({ id: "members", label: "Membros", icon: <Users size={18} />, group: items.length ? undefined : "ESPACO" });
     }
@@ -502,8 +532,24 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
     } finally { setBusy(false); }
   }
 
-  async function uploadGuildBanner(file:File|null){if(!file||guildBannerBusy)return;setGuildBannerBusy(true);setError("");try{const blob=await imageFileToWideWebp(file);const result=await api<{bannerUrl:string}>(`/api/guilds/${guild.id}/banner`,{method:"POST",headers:{"Content-Type":"image/webp"},body:blob});setGuildBannerUrl(result.bannerUrl);await onGuildsRefresh();setNotice("Banner atualizado");}catch(e){setError(e instanceof Error?e.message:"Falha ao atualizar banner")}finally{setGuildBannerBusy(false)}}
+  async function uploadGuildBanner(file:File|null){if(!file||guildBannerBusy)return;setGuildBannerBusy(true);setError("");try{const asset=await prepareWideImageAsset(file);const result=await api<{bannerUrl:string}>(`/api/guilds/${guild.id}/banner`,{method:"POST",headers:{"Content-Type":asset.mime},body:asset.blob});setGuildBannerUrl(result.bannerUrl);await onGuildsRefresh();setNotice("Banner atualizado");}catch(e){setError(e instanceof Error?e.message:"Falha ao atualizar banner")}finally{setGuildBannerBusy(false)}}
   async function removeGuildBannerImage(){if(guildBannerBusy)return;setGuildBannerBusy(true);try{await api(`/api/guilds/${guild.id}/banner`,{method:"DELETE"});setGuildBannerUrl(null);await onGuildsRefresh();setNotice("Banner removido");}catch(e){setError(e instanceof Error?e.message:"Falha ao remover banner")}finally{setGuildBannerBusy(false)}}
+
+  async function saveGuildAppearanceSettings() {
+    if (guildAppearanceBusy) return;
+    setGuildAppearanceBusy(true); setError(""); setNotice("");
+    try {
+      const result = await api<{ appearance: GuildAppearance }>(`/api/guilds/${guild.id}/appearance`, {
+        method: "PATCH",
+        body: JSON.stringify(guildAppearanceDraft)
+      });
+      setGuildAppearanceDraft(result.appearance);
+      await onGuildsRefresh();
+      setNotice("Aparencia do servidor atualizada");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nao foi possivel salvar a aparencia");
+    } finally { setGuildAppearanceBusy(false); }
+  }
 
   async function saveCommunitySettings() {
     setBusy(true); setError(""); setNotice("");
@@ -720,6 +766,34 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
     } finally { setBusy(false); }
   }
 
+  async function updateChannelSlowMode(channel: ManagedChannel, slowModeSeconds: number) {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await api(`/api/channels/${channel.id}`, { method: "PATCH", body: JSON.stringify({ slowModeSeconds }) });
+      await Promise.all([loadStructure(), onGuildsRefresh()]);
+      setNotice(slowModeSeconds ? `Modo lento de #${channel.name}: ${slowModeSeconds}s` : `Modo lento desativado em #${channel.name}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nao foi possivel alterar o modo lento");
+    } finally { setBusy(false); }
+  }
+
+  async function clearChannelHistory(channel: ManagedChannel) {
+    const answer = await gingaPrompt("Informe quantas mensagens deseja remover (1 a 500) ou digite tudo.", "50", { title: `Limpar #${channel.name}`, confirmLabel: "Continuar", placeholder: "50 ou tudo" });
+    if (!answer) return;
+    const normalized = answer.trim().toLowerCase();
+    const count: number | "all" = ["all","tudo","todos"].includes(normalized) ? "all" : Number(normalized);
+    if (count !== "all" && (!Number.isInteger(count) || count < 1 || count > 500)) { setError("Informe um numero entre 1 e 500 ou digite tudo."); return; }
+    const label = count === "all" ? "TODAS as mensagens" : `as ultimas ${count} mensagens`;
+    if (!(await gingaConfirm(`Remover ${label} de #${channel.name}? Esta acao nao pode ser desfeita.`, { title: "Limpar mensagens", confirmLabel: "Limpar", cancelLabel: "Cancelar", tone: "danger" }))) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await api<{ deleted: number }>(`/api/channels/${channel.id}/messages/clear`, { method: "POST", body: JSON.stringify({ count }) });
+      setNotice(`${result.deleted} mensagem${result.deleted === 1 ? "" : "s"} removida${result.deleted === 1 ? "" : "s"} de #${channel.name}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nao foi possivel limpar as mensagens");
+    } finally { setBusy(false); }
+  }
+
   async function deleteChannel(channel: ManagedChannel) {
     if (!(await gingaConfirm(`As mensagens de #${channel.name} tambem serao removidas.`, { title: `Excluir #${channel.name}?`, confirmLabel: "Excluir canal", tone: "danger" }))) return;
     setBusy(true); setError(""); setNotice("");
@@ -734,7 +808,8 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
 
   async function createInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const expiresInMinutes = Number(form.get("expiresInMinutes") ?? 10080);
     const maxUsesRaw = String(form.get("maxUses") ?? "0").trim();
     setBusy(true); setError(""); setNotice("");
@@ -838,7 +913,8 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
 
   async function createCustomRole(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setBusy(true); setError(""); setNotice("");
     try {
       await api(`/api/guilds/${guild.id}/custom-roles`, { method: "POST", body: JSON.stringify({ name: String(form.get("name") ?? ""), color: String(form.get("color") ?? "#8b93a7"), hoist: Boolean(form.get("hoist")), mentionable: Boolean(form.get("mentionable")), permissions: [] }) });
@@ -934,10 +1010,10 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
             <div className="server-overview-hero"><span className={`server-overview-icon ${guildIconUrl ? "with-image" : ""}`} style={{ background: guild.iconColor }}>{guildIconUrl ? <img src={guildIconUrl} alt=""/> : guild.name.slice(0, 1).toUpperCase()}</span><div><strong>{guild.name}</strong><span>{guild.memberCount} membros · voce e {roleLabel[guild.role].toLowerCase()}</span></div></div>
             <div className="avatar-settings-card server-icon-editor">
               <div className="avatar-settings-preview"><span className={`server-overview-icon ${guildIconUrl ? "with-image" : ""}`} style={{ background: guild.iconColor }}>{guildIconUrl ? <img src={guildIconUrl} alt=""/> : guild.name.slice(0, 1).toUpperCase()}</span></div>
-              <div className="avatar-settings-copy"><strong>Icone do servidor</strong><span>Envie PNG, JPG ou WebP. A imagem e recortada em quadrado e otimizada automaticamente.</span><small>Recomendado: 512 x 512.</small></div>
-              <div className="avatar-settings-actions"><label className={`secondary-button avatar-upload-button ${guildIconBusy ? "disabled" : ""}`}><Camera size={16}/> {guildIconBusy ? "Processando..." : "Enviar imagem"}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={guildIconBusy} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ""; void uploadGuildIcon(file); }}/></label>{guildIconUrl && <button type="button" className="ghost-danger-button" disabled={guildIconBusy} onClick={() => void removeGuildIconImage()}><Trash2 size={15}/> Remover</button>}</div>
+              <div className="avatar-settings-copy"><strong>Icone do servidor</strong><span>Envie PNG, JPG, WebP ou GIF. GIFs animados sao preservados; imagens estaticas sao otimizadas automaticamente.</span><small>Recomendado: 512 x 512.</small></div>
+              <div className="avatar-settings-actions"><label className={`secondary-button avatar-upload-button ${guildIconBusy ? "disabled" : ""}`}><Camera size={16}/> {guildIconBusy ? "Processando..." : "Enviar imagem"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={guildIconBusy} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ""; void uploadGuildIcon(file); }}/></label>{guildIconUrl && <button type="button" className="ghost-danger-button" disabled={guildIconBusy} onClick={() => void removeGuildIconImage()}><Trash2 size={15}/> Remover</button>}</div>
             </div>
-            <div className="server-banner-editor"><div className="server-banner-preview" style={{background:guild.iconColor}}>{guildBannerUrl?<img src={guildBannerUrl} alt="Banner"/>:<><Camera size={26}/><span>Banner da comunidade</span></>}</div><div className="server-banner-actions"><div><strong>Banner do servidor</strong><span>Usado na pagina publica. Recomendado 1600x600.</span></div><label className="secondary-button avatar-upload-button"><Upload size={16}/> {guildBannerBusy?"Processando...":"Enviar banner"}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={guildBannerBusy} onChange={e=>{const f=e.target.files?.[0]??null;e.currentTarget.value="";void uploadGuildBanner(f)}}/></label>{guildBannerUrl&&<button type="button" className="ghost-danger-button" onClick={()=>void removeGuildBannerImage()}><Trash2 size={15}/> Remover</button>}</div></div>
+            <div className="server-banner-editor"><div className="server-banner-preview" style={{background:guild.iconColor}}>{guildBannerUrl?<img src={guildBannerUrl} alt="Banner"/>:<><Camera size={26}/><span>Banner da comunidade</span></>}</div><div className="server-banner-actions"><div><strong>Banner do servidor</strong><span>Usado na pagina publica. Aceita GIF animado. Recomendado 1600x600.</span></div><label className="secondary-button avatar-upload-button"><Upload size={16}/> {guildBannerBusy?"Processando...":"Enviar banner"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={guildBannerBusy} onChange={e=>{const f=e.target.files?.[0]??null;e.currentTarget.value="";void uploadGuildBanner(f)}}/></label>{guildBannerUrl&&<button type="button" className="ghost-danger-button" onClick={()=>void removeGuildBannerImage()}><Trash2 size={15}/> Remover</button>}</div></div>
             <div className="settings-form-grid">
               <label>Nome do servidor<input name="name" defaultValue={guild.name} minLength={2} maxLength={64} required /></label>
               <label>Cor principal<input name="iconColor" type="color" defaultValue={guild.iconColor} /></label>
@@ -959,6 +1035,29 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
           </form>
         )}
 
+        {tab === "appearance" && (
+          <section className="settings-page-section guild-appearance-settings">
+            <div className="settings-page-title"><h1>Aparencia do servidor</h1><p>Crie uma identidade propria para o espaco sem alterar a experiencia dos outros servidores.</p></div>
+            <div className={`guild-theme-preview style-${guildAppearanceDraft.sidebarStyle.toLowerCase()} density-${guildAppearanceDraft.channelDensity.toLowerCase()}`} style={{ "--guild-accent": guildAppearanceDraft.accentColor, "--guild-accent-2": guildAppearanceDraft.secondaryColor } as CSSProperties}>
+              <div className="guild-theme-preview-banner" style={{ background: guildBannerUrl ? undefined : `linear-gradient(135deg, ${guildAppearanceDraft.accentColor}, ${guildAppearanceDraft.secondaryColor})` }}>
+                {guildBannerUrl && <img src={guildBannerUrl} alt="" style={{ objectPosition: `50% ${guildAppearanceDraft.bannerPosition}%` }}/>}
+                <div className="guild-theme-preview-title"><span className={`server-overview-icon ${guildIconUrl ? "with-image" : ""}`} style={{ background: guildAppearanceDraft.accentColor }}>{guildIconUrl ? <img src={guildIconUrl} alt=""/> : guild.name.slice(0,1).toUpperCase()}</span><div><small>PREVIA DO ESPACO</small><strong>{guild.name}</strong></div></div>
+              </div>
+              <div className="guild-theme-preview-body"><aside><b>GERAL</b><span className="active"># geral</span><span># avisos</span><b>VOZ</b><span>◉ Lobby</span></aside><main><span className="guild-theme-preview-pill">{guildAppearanceDraft.channelDensity === "COMPACT" ? "Compacto" : "Confortavel"}</span><h3>Personalizacao por servidor</h3><p>As cores e o estilo sao aplicados quando este espaco estiver selecionado.</p></main></div>
+            </div>
+            <section className="settings-section-card guild-theme-presets"><div className="settings-section-card-title"><Palette size={19}/><div><strong>Temas rapidos</strong><span>Use um ponto de partida e depois ajuste as cores.</span></div></div><div className="guild-theme-preset-grid">{guildAppearancePresets.map((preset) => <button type="button" key={preset.name} onClick={() => setGuildAppearanceDraft((current) => ({ ...current, accentColor: preset.accentColor, secondaryColor: preset.secondaryColor, sidebarStyle: preset.sidebarStyle }))}><i style={{ background: `linear-gradient(135deg, ${preset.accentColor}, ${preset.secondaryColor})` }}/><span>{preset.name}</span></button>)}</div></section>
+            <div className="settings-form-grid">
+              <label>Cor principal<div className="color-input-row"><input type="color" value={guildAppearanceDraft.accentColor} onChange={(event) => setGuildAppearanceDraft((current) => ({ ...current, accentColor: event.target.value }))}/><span>{guildAppearanceDraft.accentColor}</span></div></label>
+              <label>Cor secundaria<div className="color-input-row"><input type="color" value={guildAppearanceDraft.secondaryColor} onChange={(event) => setGuildAppearanceDraft((current) => ({ ...current, secondaryColor: event.target.value }))}/><span>{guildAppearanceDraft.secondaryColor}</span></div></label>
+              <label>Estilo da barra lateral<select value={guildAppearanceDraft.sidebarStyle} onChange={(event) => setGuildAppearanceDraft((current) => ({ ...current, sidebarStyle: event.target.value as GuildAppearance["sidebarStyle"] }))}><option value="SOLID">Solido</option><option value="TINTED">Tonalizado</option><option value="GLASS">Glass / translucido</option></select></label>
+              <label>Densidade dos canais<select value={guildAppearanceDraft.channelDensity} onChange={(event) => setGuildAppearanceDraft((current) => ({ ...current, channelDensity: event.target.value as GuildAppearance["channelDensity"] }))}><option value="COZY">Confortavel</option><option value="COMPACT">Compacto</option></select></label>
+              <label className="full">Posicao vertical do banner<div className="settings-range-row"><input type="range" min="0" max="100" value={guildAppearanceDraft.bannerPosition} onChange={(event) => setGuildAppearanceDraft((current) => ({ ...current, bannerPosition: Number(event.target.value) }))}/><strong>{guildAppearanceDraft.bannerPosition}%</strong></div></label>
+            </div>
+            <div className="settings-toggle-list"><label className="settings-toggle-row"><div><strong>Mostrar banner na lista de canais</strong><span>Exibe uma faixa visual no topo do servidor quando houver um banner configurado.</span></div><input type="checkbox" checked={guildAppearanceDraft.showBannerInSidebar} onChange={(event) => setGuildAppearanceDraft((current) => ({ ...current, showBannerInSidebar: event.target.checked }))}/></label></div>
+            <div className="settings-action-row"><button type="button" className="secondary-button" onClick={() => setGuildAppearanceDraft(guildAppearanceFor(guild))}>Restaurar atual</button><button type="button" className="primary-button" disabled={guildAppearanceBusy} onClick={() => void saveGuildAppearanceSettings()}><Save size={16}/> {guildAppearanceBusy ? "Salvando..." : "Salvar aparencia"}</button></div>
+          </section>
+        )}
+
         {tab === "community" && (
           <section className="settings-page-section community-settings-page">
             <div className="settings-page-title"><h1>Comunidade e AFK</h1><p>Decida se o servidor aparece no Explorar do Ginga e configure a sala de usuarios ausentes.</p></div>
@@ -977,6 +1076,8 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
             <div className="settings-action-row"><button type="button" className="primary-button" disabled={busy} onClick={() => void saveCommunitySettings()}><Save size={16}/> {busy ? "Salvando..." : "Salvar configuracoes"}</button></div>
           </section>
         )}
+
+        {tab === "ultimate" && <ServerUltimatePanel guild={guild} members={members} onRefresh={async()=>{await onGuildsRefresh();await onMembersRefresh();}} />}
 
         {tab === "members" && (
           <section className="settings-page-section">
@@ -1065,11 +1166,15 @@ export function ServerSettingsModal({ guild, members, onClose, onGuildsRefresh, 
           <section className="settings-page-section">
             <div className="settings-page-title"><h1>Canais</h1><p>Tipos disponiveis: texto, voz, anuncios, forum e eventos. A organizacao por categorias fica na barra lateral.</p></div>
             <div className="channel-admin-list">
-              {structure.channels.map((channel) => <div className="channel-admin-row" key={channel.id}>
+              {structure.channels.map((channel) => <div className="channel-admin-row channel-admin-row-qol" key={channel.id}>
                 <span className="channel-admin-icon">{channelTypeIcon(channel.type)}</span>
-                {editingChannelId === channel.id ? <input value={editingChannelName} onChange={(event) => setEditingChannelName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void renameChannel(channel); if (event.key === "Escape") setEditingChannelId(""); }} autoFocus /> : <div><strong>{channel.name}</strong><span>{channelTypeLabel(channel.type)}</span></div>}
-                {editingChannelId === channel.id ? <button className="secondary-button compact-button" disabled={busy} onClick={() => void renameChannel(channel)}>Salvar</button> : <button className="secondary-button compact-button" onClick={() => { setEditingChannelId(channel.id); setEditingChannelName(channel.name); }}>Editar</button>}
-                {guild.permissions.canManageChannels && <button className="danger-icon-button" disabled={busy} onClick={() => void deleteChannel(channel)} aria-label="Excluir canal"><Trash2 size={17} /></button>}
+                {editingChannelId === channel.id ? <input className="channel-admin-name-input" value={editingChannelName} onChange={(event) => setEditingChannelName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void renameChannel(channel); if (event.key === "Escape") setEditingChannelId(""); }} autoFocus /> : <div className="channel-admin-copy"><strong>{channel.name}</strong><span>{channelTypeLabel(channel.type)}{channel.slowModeSeconds ? ` · modo lento ${channel.slowModeSeconds}s` : ""}</span></div>}
+                {["TEXT","ANNOUNCEMENT","FORUM","EVENT"].includes(channel.type) && <label className="channel-slowmode-control" title="Intervalo minimo entre mensagens de membros"><Clock3 size={14}/><select value={channel.slowModeSeconds ?? 0} disabled={busy} onChange={(event)=>void updateChannelSlowMode(channel, Number(event.target.value))}><option value={0}>Sem modo lento</option><option value={5}>5 s</option><option value={10}>10 s</option><option value={15}>15 s</option><option value={30}>30 s</option><option value={60}>1 min</option><option value={120}>2 min</option><option value={300}>5 min</option><option value={600}>10 min</option></select></label>}
+                <div className="channel-admin-actions">
+                  {editingChannelId === channel.id ? <button className="secondary-button compact-button" disabled={busy} onClick={() => void renameChannel(channel)}>Salvar</button> : <button className="secondary-button compact-button" onClick={() => { setEditingChannelId(channel.id); setEditingChannelName(channel.name); }}>Editar</button>}
+                  {["TEXT","ANNOUNCEMENT","FORUM","EVENT"].includes(channel.type) && guild.permissions.canManageMessages && <button className="secondary-button compact-button channel-clear-button" disabled={busy} onClick={()=>void clearChannelHistory(channel)}><Trash2 size={14}/> Limpar</button>}
+                  {guild.permissions.canManageChannels && <button className="danger-icon-button" disabled={busy} onClick={() => void deleteChannel(channel)} aria-label="Excluir canal"><Trash2 size={17} /></button>}
+                </div>
               </div>)}
             </div>
           </section>

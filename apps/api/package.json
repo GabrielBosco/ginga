@@ -1,6 +1,6 @@
 {
   "name": "@ginga/api",
-  "version": "0.3.1",
+  "version": "0.4.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
     "prisma:push": "prisma db push"
   },
   "dependencies": {
-    "@prisma/client": "6.14.0",
+    "@prisma/client": "6.19.3",
     "cors": "2.8.5",
     "dotenv": "16.5.0",
     "express": "5.1.0",
@@ -19,11 +19,10 @@
     "helmet": "8.1.0",
     "jsonwebtoken": "9.0.2",
     "livekit-server-sdk": "2.17.0",
-    "multer": "2.0.2",
-    "prisma": "6.14.0",
+    "multer": "2.2.0",
+    "nodemailer": "9.0.5",
     "socket.io": "4.8.1",
-    "zod": "3.25.76",
-    "nodemailer": "9.0.5"
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/cors": "2.8.17",
@@ -31,8 +30,9 @@
     "@types/jsonwebtoken": "9.0.10",
     "@types/multer": "1.4.13",
     "@types/node": "22.15.30",
+    "@types/nodemailer": "8.0.1",
+    "prisma": "6.19.3",
     "tsx": "4.20.3",
-    "typescript": "5.8.3",
-    "@types/nodemailer": "8.0.1"
+    "typescript": "5.8.3"
   }
 }

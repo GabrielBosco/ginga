@@ -1,0 +1,12 @@
+{
+  "name": "Ginga",
+  "desktopName": "Ginga Desktop",
+  "appId": "br.com.ginga.desktop",
+  "updateProduct": "Ginga",
+  "windowsInstallerPrefix": "Ginga-Setup",
+  "configDirectoryName": "Ginga",
+  "assets": {
+    "windowsIcon": "apps/desktop/assets/icon.ico",
+    "appIcon": "apps/desktop/assets/icon.png"
+  }
+}

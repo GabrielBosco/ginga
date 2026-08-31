@@ -1,4 +1,4 @@
-name: Gerar APK Android
+name: Android APK
 
 on:
   workflow_dispatch:
@@ -16,27 +16,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Baixar código
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Preparar Java 21
+      - name: Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Preparar Android SDK
+      - name: Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Instalar plataforma Android
+      - name: Install Android platform
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Preparar Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
-      - name: Validar URL do servidor
+      - name: Validate server URL
         env:
           GINGA_SERVER_URL: ${{ inputs.server_url }}
         run: |
@@ -45,21 +45,21 @@ jobs:
             *) echo "server_url precisa usar HTTPS" >&2; exit 1 ;;
           esac
 
-      - name: Compilar APK de teste
+      - name: Build debug APK
         working-directory: apps/android
         env:
           GINGA_SERVER_URL: ${{ inputs.server_url }}
         run: gradle --no-daemon clean assembleDebug -PGINGA_SERVER_URL="$GINGA_SERVER_URL"
 
-      - name: Renomear APK
+      - name: Rename APK
         run: |
           mkdir -p dist/android
-          cp apps/android/app/build/outputs/apk/debug/app-debug.apk dist/android/Ginga-0.3.1-debug.apk
+          cp apps/android/app/build/outputs/apk/debug/app-debug.apk dist/android/Ginga-0.2.0-debug.apk
 
-      - name: Publicar artefato do APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Ginga-0.3.1-Android-debug
-          path: dist/android/Ginga-0.3.1-debug.apk
+          name: Ginga-0.2.0-Android-debug
+          path: dist/android/Ginga-0.2.0-debug.apk
           if-no-files-found: error
           retention-days: 14

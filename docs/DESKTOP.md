@@ -1,52 +1,59 @@
 # Cliente Desktop
 
-O cliente Desktop é baseado em Electron e se conecta a uma instalação Ginga existente.
+Versão atual: `0.4.5`.
 
-## Compilar para Windows
+O Desktop fica em `apps/desktop` e usa Electron.
 
-O caminho mais simples em Linux é usar o ambiente de compilação preparado pelo projeto:
+## URL do servidor
+
+O source público contém apenas um fallback local em `apps/desktop/config.json`.
+
+O pipeline oficial de Windows substitui a URL antes do build usando:
+
+- `GINGA_PUBLIC_URL`; ou
+- `GINGA_SERVER_URL` do `/opt/ginga/.env`.
+
+Assim, a URL de uma instalação específica não precisa ficar hardcoded no GitHub.
+
+## Windows
 
 ```bash
 ./build-win.sh
 ```
 
-Saída esperada:
+Release oficial:
 
-```text
-apps/desktop/dist/Ginga-Setup-0.3.1-x64.exe
+```bash
+./release-win.sh 0.4.5
 ```
 
-## Servidor padrão
-
-`apps/desktop/config.json` contém apenas um endereço alternativo de desenvolvimento. Durante uma publicação, o pipeline ajusta o endereço para a instalação desejada.
-
-Nunca publique um instalador apontando para IP privado, hostname interno ou servidor de testes.
-
-## Atualizador
-
-Os arquivos públicos de atualização ficam em:
+A cadeia de updater utiliza chave pública no cliente e chave privada fora do Git:
 
 ```text
-/updates/windows/
+apps/desktop/update-public.pem        pode ser versionada
+secrets/update-signing/private.pem    NUNCA versionar
 ```
 
-A cadeia de atualização usa uma chave Ed25519 própria. A chave privada fica em:
+Não use `--init-key` em uma cadeia de updater que já tenha clientes publicados.
 
-```text
-secrets/update-signing/private.pem
+## Linux
+
+Build x64:
+
+```bash
+./build-linux.sh x64
 ```
 
-Ela é ignorada pelo Git e precisa de backup seguro. Depois que usuários recebem um cliente assinado por essa chave, substituí-la quebra a confiança da cadeia de atualização existente.
+Publicação x64:
 
-## Recursos nativos
+```bash
+./release-linux.sh 0.4.5 --x64
+```
 
-- presença de jogos;
-- sobreposição durante jogos;
-- Push-to-Talk com atalhos de teclado ou mouse;
-- integração com a bandeja do sistema;
-- seleção de tela ou janela para compartilhamento;
-- atualização automática assinada.
+Publicação x64 + ARM64:
 
-## Desenvolvimento local
+```bash
+./release-linux.sh 0.4.5 --all
+```
 
-HTTP pode ser usado em `localhost` ou em ambientes isolados de teste. Para uma instalação pública, use HTTPS/WSS.
+O `electron-builder 26.15.3` usado pelo projeto exige `packageName` nos blocos `build.deb` e `build.rpm`, não em `build.linux`. O gate `scripts/prepare-github.sh` verifica essa regressão.

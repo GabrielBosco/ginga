@@ -1,0 +1,41 @@
+GINGA 0.4.3 RC9
+================
+
+1) Preserve o .env ativo e a private.pem original do updater.
+2) Extraia este source em uma pasta temporaria.
+3) Aplique com:
+
+   ./scripts/apply-update-safe.sh "$PWD"
+
+4) Para validar Linux no host de build:
+
+   cd /opt/ginga-build
+   ./scripts/pre-release-check.sh 0.4.3 --linux
+
+5) Para testar/publicar Linux x64:
+
+   ./release-linux.sh 0.4.3 --x64
+
+   Para x64 + ARM64:
+
+   ./release-linux.sh 0.4.3 --all
+
+6) Para Windows, valide o feed Windows separadamente:
+
+   ./scripts/pre-release-check.sh 0.4.3 --windows
+   ./release-win.sh 0.4.3
+
+   Se o feed Windows ativo ja estiver em 0.4.4, a publicacao Windows 0.4.3 sera recusada por seguranca.
+   Isso nao impede o build/release Linux 0.4.3 quando o preflight e executado com --linux.
+
+NAO use --init-key numa cadeia que ja possui clientes Ginga publicados.
+
+RC9 inclui:
+- categorias de canais recolhiveis restauradas;
+- Forum revisado com banner/foto GIF;
+- notificacoes sem corte na titlebar;
+- compartilhamento de tela no mini controle de voz;
+- troca de janela sem interromper espectadores;
+- contador de espectadores;
+- distribuicao Linux AppImage/DEB/RPM x64 e AppImage/DEB ARM64;
+- botoes Linux no site apos publicacao dos manifests.

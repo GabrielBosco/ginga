@@ -44,7 +44,7 @@ const HEARTBEAT_MS = 30_000;
 const PROFILE_REFRESH_MS = 12_000;
 const GAME_SCAN_MS = 20_000;
 const IDLE_AFTER_MS = 5 * 60_000;
-const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
+const MAX_AVATAR_BYTES = 8 * 1024 * 1024;
 const PUBLIC_PROFILE_SELECTORS = [
   ".member-row",
   ".person-card",
@@ -200,10 +200,10 @@ function profileModalHtml(profile: OwnGamingProfile, desktopAvailable: boolean) 
           <section class="ginga-profile-identity-grid">
             <div class="ginga-avatar-editor">
               <div class="ginga-avatar-preview-wrap">${avatar}<canvas class="ginga-avatar-crop" width="220" height="220" hidden></canvas></div>
-              <input class="ginga-avatar-file" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+              <input class="ginga-avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
               <div class="ginga-avatar-actions"><button type="button" class="ginga-profile-secondary ginga-avatar-pick">Trocar avatar</button>${profile.avatarUrl ? '<button type="button" class="ginga-profile-ghost" data-remove-avatar>Remover</button>' : ""}</div>
               <label class="ginga-avatar-zoom" hidden><span>Zoom</span><input type="range" min="1" max="3" step="0.01" value="1" /></label>
-              <small>PNG, JPG ou WebP. O Ginga recorta e salva em WebP 512×512.</small>
+              <small>PNG, JPG, WebP ou GIF. GIF animado e preservado; imagens estaticas sao recortadas em WebP 512×512.</small>
             </div>
             <div class="ginga-profile-fields">
               <label><span>Sobre mim</span><textarea name="bio" maxlength="280" rows="4" placeholder="Fale um pouco sobre você...">${escapeHtml(profile.bio || "")}</textarea><small><b data-count-bio>${(profile.bio || "").length}</b>/280</small></label>
@@ -427,6 +427,7 @@ export function installGamingProfileExperience(api: ApiRequest, hasSession: HasS
     const autoAway = host.querySelector<HTMLInputElement>('input[name="autoAway"]')!;
 
     let image: HTMLImageElement | null = null;
+    let selectedAvatarFile: File | null = null;
     let imageObjectUrl = "";
     let zoom = 1;
     let offsetX = 0;
@@ -484,14 +485,15 @@ export function installGamingProfileExperience(api: ApiRequest, hasSession: HasS
     const loadAvatarFile = (file: File | null) => {
       if (!file) return;
       pendingRemoveAvatar = false;
-      if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-        saveStatus.textContent = "Use uma imagem PNG, JPG ou WebP.";
+      if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) {
+        saveStatus.textContent = "Use uma imagem PNG, JPG, WebP ou GIF.";
         return;
       }
       if (file.size > MAX_AVATAR_BYTES) {
-        saveStatus.textContent = "A imagem pode ter no máximo 10 MB.";
+        saveStatus.textContent = "A imagem pode ter no máximo 8 MB.";
         return;
       }
+      selectedAvatarFile = file;
       if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl);
       imageObjectUrl = URL.createObjectURL(file);
       const next = new Image();
@@ -508,11 +510,23 @@ export function installGamingProfileExperience(api: ApiRequest, hasSession: HasS
         offsetX = 0;
         offsetY = 0;
         zoomInput.value = "1";
-        currentAvatar.hidden = true;
-        cropCanvas.hidden = false;
-        zoomRow.hidden = false;
-        drawCrop();
-        saveStatus.textContent = "Arraste a imagem para ajustar o enquadramento.";
+        if (file.type === "image/gif") {
+          cropCanvas.hidden = true;
+          zoomRow.hidden = true;
+          currentAvatar.hidden = false;
+          currentAvatar.textContent = "";
+          currentAvatar.classList.add("ginga-avatar-image");
+          currentAvatar.style.backgroundImage = `url(${JSON.stringify(imageObjectUrl)})`;
+          currentAvatar.style.backgroundPosition = "center";
+          currentAvatar.style.backgroundSize = "cover";
+          saveStatus.textContent = "GIF animado pronto. Ele sera enviado sem conversao para manter a animacao.";
+        } else {
+          currentAvatar.hidden = true;
+          cropCanvas.hidden = false;
+          zoomRow.hidden = false;
+          drawCrop();
+          saveStatus.textContent = "Arraste a imagem para ajustar o enquadramento.";
+        }
       };
       next.onerror = () => { saveStatus.textContent = "Não foi possível abrir a imagem."; };
       next.src = imageObjectUrl;
@@ -559,7 +573,8 @@ export function installGamingProfileExperience(api: ApiRequest, hasSession: HasS
     });
 
     const renderAvatarFile = async (): Promise<File | null> => {
-      if (!image) return null;
+      if (!image || !selectedAvatarFile) return null;
+      if (selectedAvatarFile.type === "image/gif") return selectedAvatarFile;
       const size = 512;
       const output = document.createElement("canvas");
       output.width = size;
@@ -580,6 +595,7 @@ export function installGamingProfileExperience(api: ApiRequest, hasSession: HasS
     host.querySelector("[data-remove-avatar]")?.addEventListener("click", () => {
       pendingRemoveAvatar = true;
       image = null;
+      selectedAvatarFile = null;
       if (imageObjectUrl) { URL.revokeObjectURL(imageObjectUrl); imageObjectUrl = ""; }
       cropCanvas.hidden = true;
       zoomRow.hidden = true;
@@ -630,7 +646,7 @@ export function installGamingProfileExperience(api: ApiRequest, hasSession: HasS
           saveStatus.textContent = "Salvando avatar...";
           const avatarResponse = await api<{ profile: OwnGamingProfile }>("/api/gaming-profile/avatar", {
             method: "POST",
-            headers: { "Content-Type": "image/webp" },
+            headers: { "Content-Type": avatarFile.type || "image/webp" },
             body: avatarFile
           });
           ownProfile = avatarResponse.profile;

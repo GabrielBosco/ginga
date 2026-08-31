@@ -3,10 +3,13 @@ import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
+import { enforceAutoMod } from "../automod.js";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { asyncHandler, HttpError } from "../errors.js";
+import { emitNewGuildMessage } from "../guildMessageEvents.js";
 import { requireAuth, requireBotAuth } from "../middleware.js";
+import { validateGuildMentions } from "../mentions.js";
 import { requireDeveloperAccess } from "../platformAccess.js";
 import { requireChannelCapability, requireGuildCapability, requireGuildMember } from "../permissions.js";
 import { hashSecret, secretMatches, secureToken, tokenPrefix } from "../secretTokens.js";
@@ -119,6 +122,13 @@ async function findOwnedApplication(userId: string, applicationId: string) {
   return application;
 }
 
+function disconnectBotRuntime(req: Request, applicationId: string) {
+  // Rooms do gateway sao calculados no handshake. Ao mudar token, intents ou
+  // instalacoes, derrubamos apenas os sockets deste bot para que o SDK reconecte
+  // e negocie o estado atual sem manter acesso antigo a canais/servidores.
+  req.app.get("io")?.in?.(`bot:${applicationId}`)?.disconnectSockets?.(true);
+}
+
 developerRouter.get("/developers/applications", requireAuth, asyncHandler(async (req, res) => {
   await requireDeveloperAccess(req.auth!.sub);
   const actor = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.sub }, select: { systemRole: true } });
@@ -174,6 +184,7 @@ developerRouter.patch("/developers/applications/:applicationId", requireAuth, as
     }
     return updated;
   });
+  if (typeof data.messageContentIntent === "boolean" && data.messageContentIntent !== current.messageContentIntent) disconnectBotRuntime(req, applicationId);
   res.json({ application: publicApplication(application) });
 }));
 
@@ -182,6 +193,7 @@ developerRouter.post("/developers/applications/:applicationId/token/reset", requ
   const applicationId = routeParam(req.params.applicationId, "applicationId");
   await findOwnedApplication(req.auth!.sub, applicationId);
   const secret = await createBotToken(applicationId);
+  disconnectBotRuntime(req, applicationId);
   res.json(secret);
 }));
 
@@ -193,6 +205,7 @@ developerRouter.delete("/developers/applications/:applicationId", requireAuth, a
     await tx.developerApplication.delete({ where: { id: applicationId } });
     if (application.botUserId) await tx.user.deleteMany({ where: { id: application.botUserId, accountType: "BOT" } });
   });
+  disconnectBotRuntime(req, applicationId);
   res.status(204).end();
 }));
 
@@ -261,6 +274,7 @@ developerRouter.post("/oauth/applications/:clientId/authorize", requireAuth, asy
   });
   await writeAudit({ guildId: data.guildId, actorId: req.auth!.sub, action: "BOT_INSTALL", targetType: "APPLICATION", targetId: application.id, metadata: { clientId, permissions: data.permissions }, request: req });
   req.app.get("io")?.to?.(`guild:${data.guildId}`)?.emit?.("guild:structure:changed", { guildId: data.guildId, at: new Date().toISOString() });
+  disconnectBotRuntime(req, application.id);
   res.status(201).json({ installed });
 }));
 
@@ -289,6 +303,7 @@ developerRouter.delete("/guilds/:guildId/bots/:applicationId", requireAuth, asyn
     if (install.application.botUserId) await tx.guildMember.deleteMany({ where: { guildId, userId: install.application.botUserId } });
   });
   await writeAudit({ guildId, actorId: req.auth!.sub, action: "BOT_REMOVE", targetType: "APPLICATION", targetId: applicationId, request: req });
+  disconnectBotRuntime(req, applicationId);
   res.status(204).end();
 }));
 
@@ -382,6 +397,8 @@ async function executeIncomingWebhook(req: Request, res: Response, webhookId: st
   const guildState = await prisma.guild.findUnique({ where: { id: webhook.guildId }, select: { lockdownEnabled: true } });
   if (guildState?.lockdownEnabled) throw new HttpError(423, "Servidor em modo de contencao. Webhooks estao pausados temporariamente.");
   if (!["TEXT", "ANNOUNCEMENT"].includes(webhook.channel.type)) throw new HttpError(409, "Canal do webhook nao aceita mensagens");
+  const mentions = await validateGuildMentions(webhook.guildId, data.content);
+  if (mentions.mentionEveryone) throw new HttpError(403, "Webhooks nao podem mencionar @todos, @everyone ou @here");
   if (data.username || data.avatarColor) {
     await prisma.user.update({
       where: { id: webhook.userId },
@@ -392,7 +409,8 @@ async function executeIncomingWebhook(req: Request, res: Response, webhookId: st
     data: { channelId: webhook.channelId, authorId: webhook.userId, content: data.content },
     include: { author: { select: { id: true, username: true, displayName: true, avatarColor: true, systemRole: true, platformOwner: true, accountType: true } }, attachments: true, reactions: true, replyTo: { include: { author: { select: { id: true, username: true, displayName: true, avatarColor: true, systemRole: true, platformOwner: true, accountType: true } } } } }
   });
-  req.app.get("io")?.to?.(`channel:${webhook.channelId}`)?.emit?.("message:new", message);
+  const io = req.app.get("io");
+  if (io) await emitNewGuildMessage(io, { id: webhook.channel.id, guildId: webhook.guildId, name: webhook.channel.name }, message);
   res.status(201).json({ message });
 }
 
@@ -573,10 +591,15 @@ botApiRouter.post("/bot/channels/:channelId/messages", requireBotAuth, botWriteL
   const channel = await prisma.channel.findUnique({ where: { id: channelId } });
   if (!channel || !["TEXT", "ANNOUNCEMENT"].includes(channel.type)) throw new HttpError(404, "Canal de texto nao encontrado");
   const install = await prisma.botInstall.findUnique({ where: { guildId_applicationId: { guildId: channel.guildId, applicationId: req.botAuth!.applicationId } } });
-  if (!install || !install.permissions.includes("SEND_MESSAGES")) throw new HttpError(403, "Bot nao possui permissao para enviar mensagens neste espaco");
+  if (!install || !install.permissions.includes("VIEW_CHANNELS") || !install.permissions.includes("SEND_MESSAGES")) {
+    throw new HttpError(403, "Bot nao possui permissao para visualizar e enviar mensagens neste espaco");
+  }
   const member = await prisma.guildMember.findUnique({ where: { guildId_userId: { guildId: channel.guildId, userId: req.botAuth!.botUserId } } });
   if (!member) throw new HttpError(403, "Bot nao esta instalado neste espaco");
   await requireChannelCapability(req.botAuth!.botUserId, channelId, "sendMessages");
+  const mentions = await validateGuildMentions(channel.guildId, data.content);
+  if (mentions.mentionEveryone) throw new HttpError(403, "Bots nao podem mencionar @todos, @everyone ou @here sem uma permissao dedicada");
+  await enforceAutoMod({ guildId: channel.guildId, channelId, userId: req.botAuth!.botUserId, content: data.content });
   if (data.replyToId) {
     const replied = await prisma.message.findUnique({ where: { id: data.replyToId }, select: { channelId: true } });
     if (!replied || replied.channelId !== channelId) throw new HttpError(400, "Mensagem de resposta invalida");
@@ -585,6 +608,7 @@ botApiRouter.post("/bot/channels/:channelId/messages", requireBotAuth, botWriteL
     data: { channelId, authorId: req.botAuth!.botUserId, content: data.content, replyToId: data.replyToId ?? null },
     include: { author: { select: { id: true, username: true, displayName: true, avatarColor: true, systemRole: true, platformOwner: true, accountType: true } }, attachments: true, reactions: true, replyTo: { include: { author: { select: { id: true, username: true, displayName: true, avatarColor: true, systemRole: true, platformOwner: true, accountType: true } } } } }
   });
-  req.app.get("io")?.to?.(`channel:${channelId}`)?.emit?.("message:new", message);
+  const io = req.app.get("io");
+  if (io) await emitNewGuildMessage(io, { id: channel.id, guildId: channel.guildId, name: channel.name }, message);
   res.status(201).json({ message });
 }));

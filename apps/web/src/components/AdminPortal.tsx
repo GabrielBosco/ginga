@@ -458,19 +458,19 @@ export function AdminPortal({ user, onExit }: { user: User; onExit: () => void }
           <span><ShieldCheck size={19}/></span>
           <div><strong>Ginga Control</strong><small>Administração da plataforma</small></div>
         </div>
-        <button className="admin-back-v2" onClick={onExit}>← Voltar ao Ginga</button>
+        <button type="button" className="admin-back-v2" onClick={onExit}>← Voltar ao Ginga</button>
         <nav className="admin-nav-v2" aria-label="Administração">
           <small>OPERAÇÃO</small>
           {nav.map(({ id, label, icon: Icon }) => (
-            <button key={id} className={section === id ? "active" : ""} onClick={() => setSection(id)}>
+            <button type="button" key={id} className={section === id ? "active" : ""} aria-current={section === id ? "page" : undefined} onClick={() => setSection(id)}>
               <Icon size={17}/><span>{label}</span>{section === id && <ChevronRight size={15}/>} 
             </button>
           ))}
         </nav>
         <div className="admin-session-v2">
           <Avatar user={user} size="sm"/>
-          <div><strong>{user.displayName}</strong><span>@{user.username}</span></div>
-          <UserBadges user={user} compact/>
+          <div className="admin-session-copy-v2"><strong>{user.displayName}</strong><span>@{user.username}</span></div>
+          <div className="admin-session-badges-v2"><UserBadges user={user} compact/></div>
         </div>
       </aside>
 
@@ -554,7 +554,11 @@ export function AdminPortal({ user, onExit }: { user: User; onExit: () => void }
               <div className="admin-user-table-head-v2"><span>Usuário</span><span>E-mail</span><span>Último acesso</span><span>Permissão</span><span>Ações</span></div>
               {filteredUsers.map((item) => <article key={item.id} className={selectedUser?.id === item.id ? "selected" : ""}>
                 <button type="button" className="admin-user-identity-v2 admin-user-open-v2" onClick={() => { setSelectedUser(item); setDeleteConfirmation(""); setError(""); }}>
-                  <Avatar user={item} size="sm" status={item.online ? "online" : "offline"}/><span><strong>{item.displayName} <UserBadges user={item} compact/></strong><small><i className={`admin-presence-dot-v2 ${item.online ? "online" : "offline"}`}/>{item.online ? "Online" : "Offline"} · @{item.username}{item.accountDisabled ? " · DESATIVADA" : ""} <span className={`admin-2fa-inline-v2 ${item.twoFactorEnabled ? "enabled" : "disabled"}`}>{item.twoFactorEnabled ? "2FA ativo" : "sem 2FA"}</span></small></span>
+                  <Avatar user={item} size="sm" status={item.online ? "online" : "offline"}/>
+                  <span className="admin-user-copy-v2">
+                    <span className="admin-user-name-line-v2"><strong>{item.displayName}</strong><UserBadges user={item} compact/></span>
+                    <small><i className={`admin-presence-dot-v2 ${item.online ? "online" : "offline"}`}/>{item.online ? "Online" : "Offline"} · @{item.username}{item.accountDisabled ? " · DESATIVADA" : ""} <span className={`admin-2fa-inline-v2 ${item.twoFactorEnabled ? "enabled" : "disabled"}`}>{item.twoFactorEnabled ? "2FA ativo" : "sem 2FA"}</span></small>
+                  </span>
                 </button>
                 <span className="admin-user-email-v2">{item.email}</span>
                 <span className="admin-user-login-v2">{safeDate(item.lastLoginAt)}</span>

@@ -33,7 +33,7 @@ function looksLikeText(buffer: Buffer) {
   }
 }
 
-function signatureMatches(mimeType: string, buffer: Buffer) {
+export function signatureMatches(mimeType: string, buffer: Buffer) {
   switch (mimeType) {
     case "image/jpeg":
       return startsWith(buffer, [0xff, 0xd8, 0xff]);
@@ -83,6 +83,14 @@ function signatureMatches(mimeType: string, buffer: Buffer) {
     default:
       return false;
   }
+}
+
+
+export function reasonableGifDimensions(buffer: Buffer, maxSide = 8192, maxPixels = 40_000_000) {
+  if (!signatureMatches("image/gif", buffer) || buffer.length < 10) return false;
+  const width = buffer.readUInt16LE(6);
+  const height = buffer.readUInt16LE(8);
+  return width >= 1 && height >= 1 && width <= maxSide && height <= maxSide && width * height <= maxPixels;
 }
 
 /**

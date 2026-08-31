@@ -1,179 +1,75 @@
 # Instalação do Ginga
 
-Este guia cobre uma instalação limpa do Ginga `0.3.1` em Linux usando Docker Compose.
+Este guia corresponde ao source `0.4.5`.
 
-## Sistema recomendado
+## Pré-requisitos
 
-A referência oficial do projeto é **Debian 13 minimal**. Outras distribuições Linux modernas podem funcionar, mas os exemplos abaixo consideram Debian.
+- Linux moderno; Debian 13 é a referência do projeto;
+- Docker Engine;
+- plugin `docker compose`;
+- `openssl` para gerar os segredos iniciais;
+- DNS/TLS quando a instalação for exposta à Internet.
 
-Para uma comunidade pequena ou média:
-
-- 4 vCPU;
-- 8 GB de RAM;
-- 20 GB ou mais de disco;
-- conexão estável e boa banda de upload;
-- Docker Engine e plugin Docker Compose.
-
-Voz e vídeo dependem principalmente da banda disponível e da quantidade de participantes simultâneos.
-
-## 1. Preparar o Debian 13
-
-Atualize o sistema:
+## Instalação básica
 
 ```bash
-sudo apt update
-sudo apt full-upgrade -y
-sudo apt install -y ca-certificates curl git openssl
-```
-
-Instale Docker Engine e Docker Compose conforme a documentação oficial do Docker. Depois confirme:
-
-```bash
-docker --version
-docker compose version
-```
-
-## 2. Clonar o projeto
-
-```bash
-git clone https://github.com/SEU_USUARIO/ginga.git
+git clone https://github.com/GabrielBosco/ginga.git
 cd ginga
-```
-
-## 3. Instalação local ou em LAN
-
-Gere o `.env`:
-
-```bash
 ./scripts/init.sh
-```
-
-Suba a stack:
-
-```bash
 docker compose up -d --build
 ```
 
-Confira:
+O `init.sh` cria `.env` somente se ele ainda não existir e gera valores aleatórios para banco, JWT, MFA e LiveKit.
+
+Valide:
 
 ```bash
 docker compose ps
-curl -fsS http://127.0.0.1/api/health
+curl -fsS http://127.0.0.1:3090/api/health
 ```
 
-Acesse:
+## Acesso pela LAN
 
-```text
-http://IP_DO_SERVIDOR
-```
-
-### Portas do modo local
-
-- `80/TCP`: Web/API;
-- `7880/TCP`: sinalização LiveKit;
-- `7881/TCP`: WebRTC/ICE TCP;
-- `7882/UDP`: WebRTC/ICE UDP;
-- `3478/UDP`: TURN quando habilitado.
-
-## 4. Produção com HTTPS
-
-Crie dois registros DNS apontando para o IP público do host:
-
-```text
-ginga.exemplo.com
-midia.ginga.exemplo.com
-```
-
-Gere o ambiente de produção:
-
-```bash
-./scripts/init.sh --production ginga.exemplo.com midia.ginga.exemplo.com
-```
-
-Abra o `.env` e configure no mínimo:
-
-- `PLATFORM_OWNER_USERNAME`;
-- SMTP, se `EMAIL_VERIFICATION_REQUIRED=true`;
-- `GITHUB_REPOSITORY_URL`, caso queira exibir o link do código na interface;
-- limites de upload e armazenamento.
-
-Suba:
-
-```bash
-docker compose -f docker-compose.production.yml up -d --build
-```
-
-A stack publica a aplicação em **80/443**. Web, API, PostgreSQL, Redis e a sinalização interna do LiveKit permanecem isolados na rede Docker conforme a configuração de produção.
-
-### Portas públicas esperadas
-
-```text
-80/TCP
-443/TCP
-443/UDP
-7881/TCP
-7882/UDP
-3478/UDP  # somente se TURN estiver habilitado
-```
-
-Não publique PostgreSQL (`5432`) ou Redis (`6379`) diretamente na Internet.
-
-## 5. Proprietário global
-
-Antes do cadastro da conta que administrará toda a instalação:
+O padrão é `WEB_BIND=127.0.0.1`. Para publicar diretamente na LAN, ajuste conscientemente no `.env`, por exemplo:
 
 ```env
-PLATFORM_OWNER_USERNAME=meu_usuario
-ALLOW_FIRST_USER_PLATFORM_OWNER=false
+WEB_BIND=0.0.0.0
+WEB_PORT=3090
+APP_ORIGINS=http://192.168.1.10:3090
+GINGA_SERVER_URL=http://192.168.1.10:3090
 ```
 
-O valor deve corresponder exatamente ao nome de usuário usado no cadastro.
+HTTP deve ser tratado como cenário de laboratório/LAN. Para credenciais e mídia em redes não confiáveis, use HTTPS/WSS.
 
-## 6. E-mail
+## Produção com Caddy
 
-Exemplo SMTP:
+Preencha os domínios no `.env`:
 
 ```env
-EMAIL_VERIFICATION_REQUIRED=true
-EMAIL_PROVIDER=smtp
-SMTP_HOST=smtp.exemplo.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=usuario
-SMTP_PASSWORD=senha
-EMAIL_FROM="Ginga <nao-responda@exemplo.com>"
+APP_DOMAIN=ginga.example.com
+LIVEKIT_DOMAIN=media.ginga.example.com
+GINGA_SERVER_URL=https://ginga.example.com
+APP_ORIGINS=https://ginga.example.com
+PUBLIC_LIVEKIT_URL=wss://media.ginga.example.com
 ```
 
-Não publique senha SMTP em `.env.example`, documentação, Issue ou commit.
-
-## 7. Atualizar o Ginga
-
-Faça backup:
+Então:
 
 ```bash
-./scripts/backup.sh
+docker compose --profile production up -d --build
 ```
 
-Atualize o código:
+O perfil Caddy pressupõe disponibilidade de `80/TCP` e `443/TCP/UDP` no host.
 
-```bash
-git pull --ff-only
-docker compose -f docker-compose.production.yml build
-docker compose -f docker-compose.production.yml up -d
-```
+## Produção sem 80/443 no host
 
-Confira os logs:
+É possível manter a Web em uma porta local e usar um reverse proxy/edge externo. Preserve:
 
-```bash
-docker compose -f docker-compose.production.yml logs --tail=200 api web livekit
-```
+- HTTPS para a aplicação;
+- WSS/HTTPS para a sinalização;
+- portas WebRTC necessárias ao LiveKit;
+- PostgreSQL/Redis sem exposição pública.
 
-## 8. Backup
+## Atualização do source
 
-```bash
-./scripts/backup.sh
-```
-
-Os backups ficam em `backups/<data-hora>/` e são ignorados pelo Git.
-
-Mantenha pelo menos uma cópia fora do servidor.
+Em instalações que utilizam o pipeline do projeto, aplique releases com `scripts/apply-update-safe.sh` em vez de copiar arquivos manualmente sobre `/opt/ginga`. O script preserva `.env`, `updates/` e `secrets/`.

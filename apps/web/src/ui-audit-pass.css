@@ -370,3 +370,895 @@
 .ginga-dialog-input{width:100%;min-height:42px;box-sizing:border-box;border:1px solid rgba(255,255,255,.11);border-radius:9px;background:#11151b;color:#eef1f4;padding:0 12px;font:inherit;font-size:13px;outline:0}.ginga-dialog-input:focus{border-color:rgba(118,103,245,.72);box-shadow:0 0 0 3px rgba(118,103,245,.12)}
 .ginga-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}.ginga-dialog-actions button{min-height:38px}
 @media(max-width:520px){.ginga-dialog{padding:18px}.ginga-dialog-actions{flex-direction:column-reverse}.ginga-dialog-actions button{width:100%;justify-content:center}}
+
+/* GINGA_ADMIN_FULL_AUDIT_FIX_START
+   Ginga 0.3.2 - auditoria completa do Ginga Control/Admin.
+   Objetivos:
+   - eliminar cards, badges e linhas que esticam verticalmente;
+   - isolar o Admin das regras globais de botoes/inputs;
+   - tornar sidebar, tabelas, cards, formularios e drawers responsivos;
+   - preservar densidade visual sem esconder controles essenciais.
+*/
+
+/* ---------- Base / containment ---------- */
+html[data-ginga-surface="admin"],
+html[data-ginga-surface="admin"] body,
+html[data-ginga-surface="admin"] #root {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-console-v2,
+html[data-ginga-surface="admin"] .admin-console-v2 *,
+html[data-ginga-surface="admin"] .admin-console-v2 *::before,
+html[data-ginga-surface="admin"] .admin-console-v2 *::after {
+  box-sizing: border-box;
+}
+
+html[data-ginga-surface="admin"] .admin-console-v2 {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  grid-template-columns: 252px minmax(0, 1fr) !important;
+  overflow: hidden !important;
+}
+
+/* ---------- Sidebar ---------- */
+html[data-ginga-surface="admin"] .admin-sidebar-v2 {
+  width: 252px !important;
+  min-width: 252px !important;
+  max-width: 252px !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  max-height: 100dvh !important;
+  flex: 0 0 252px !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-brand-v2,
+html[data-ginga-surface="admin"] .admin-back-v2,
+html[data-ginga-surface="admin"] .admin-nav-v2,
+html[data-ginga-surface="admin"] .admin-session-v2 {
+  flex: 0 0 auto !important;
+}
+
+html[data-ginga-surface="admin"] .admin-brand-v2 {
+  min-height: 50px !important;
+  height: 50px !important;
+  max-height: 50px !important;
+}
+
+html[data-ginga-surface="admin"] .admin-back-v2 {
+  width: auto !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  max-height: 36px !important;
+  padding: 0 10px !important;
+}
+
+html[data-ginga-surface="admin"] .admin-nav-v2 {
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  scrollbar-width: thin;
+}
+
+html[data-ginga-surface="admin"] .admin-nav-v2 button {
+  width: 100% !important;
+  min-height: 38px !important;
+  height: 38px !important;
+  max-height: 38px !important;
+  padding: 0 10px !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* O card da sessao foi o maior causador visual do print: ele nunca pode consumir
+   o espaco livre da sidebar nem deixar badge/avatar virar uma coluna de 400px. */
+html[data-ginga-surface="admin"] .admin-session-v2 {
+  margin-top: auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 58px !important;
+  height: 58px !important;
+  max-height: 58px !important;
+  padding: 8px 9px !important;
+  grid-template-columns: 31px minmax(0, 1fr) auto !important;
+  grid-template-rows: 42px !important;
+  align-items: center !important;
+  align-content: center !important;
+  justify-items: stretch !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-session-v2 > * {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: 42px !important;
+  align-self: center !important;
+}
+
+html[data-ginga-surface="admin"] .admin-session-v2 .avatar.avatar-sm {
+  width: 31px !important;
+  min-width: 31px !important;
+  max-width: 31px !important;
+  height: 31px !important;
+  min-height: 31px !important;
+  max-height: 31px !important;
+  flex: 0 0 31px !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-session-copy-v2 {
+  min-width: 0 !important;
+  height: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 1px !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-session-copy-v2 strong,
+html[data-ginga-surface="admin"] .admin-session-copy-v2 span {
+  display: block !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+html[data-ginga-surface="admin"] .admin-session-badges-v2 {
+  min-width: 0 !important;
+  max-width: 96px !important;
+  height: 24px !important;
+  max-height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-session-badges-v2 .user-badges {
+  width: auto !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  max-height: 22px !important;
+  display: inline-flex !important;
+  flex: 0 1 auto !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+}
+
+html[data-ginga-surface="admin"] .admin-session-badges-v2 .user-badge {
+  width: auto !important;
+  min-width: 0 !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  max-height: 22px !important;
+  padding: 0 5px !important;
+  display: inline-flex !important;
+  flex: 0 1 auto !important;
+  align-items: center !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+}
+
+/* ---------- Main / header / page ---------- */
+html[data-ginga-surface="admin"] .admin-main-v2 {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+}
+
+html[data-ginga-surface="admin"] .admin-topbar-v2 {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 108px !important;
+  height: auto !important;
+  max-height: none !important;
+  padding: 24px 32px 20px !important;
+  flex-wrap: wrap !important;
+}
+
+html[data-ginga-surface="admin"] .admin-topbar-v2 > div,
+html[data-ginga-surface="admin"] .admin-topbar-actions-v2 {
+  min-width: 0 !important;
+}
+
+html[data-ginga-surface="admin"] .admin-topbar-actions-v2 > * {
+  flex: 0 0 auto !important;
+}
+
+html[data-ginga-surface="admin"] .admin-feedback-v2,
+html[data-ginga-surface="admin"] .admin-page-v2 {
+  width: min(1180px, calc(100% - 48px)) !important;
+  max-width: 1180px !important;
+  min-width: 0 !important;
+}
+
+html[data-ginga-surface="admin"] .admin-page-v2,
+html[data-ginga-surface="admin"] .admin-page-v2 > *,
+html[data-ginga-surface="admin"] .admin-panel-v2,
+html[data-ginga-surface="admin"] .admin-panel-v2 > * {
+  min-width: 0 !important;
+}
+
+html[data-ginga-surface="admin"] .admin-panel-v2 {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-panel-v2 > header {
+  min-width: 0 !important;
+  min-height: 52px !important;
+  height: auto !important;
+  max-height: none !important;
+  flex-wrap: wrap !important;
+}
+
+html[data-ginga-surface="admin"] .admin-panel-v2 > header > div {
+  flex: 1 1 280px !important;
+  min-width: 0 !important;
+}
+
+/* ---------- Neutralizacao das regras globais do Admin ---------- */
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-user-open-v2,
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-panel-v2 > header > button,
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-user-filter-v2 button,
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-search-v2 > button,
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-user-drawer-close-v2 {
+  box-shadow: none !important;
+}
+
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-user-open-v2 {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: inherit !important;
+  line-height: normal !important;
+  text-align: left !important;
+}
+
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-user-open-v2:hover:not(:disabled) {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-panel-v2 > header > button {
+  width: auto !important;
+  min-height: 30px !important;
+  height: 30px !important;
+  padding: 0 6px !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-search-v2 {
+  flex: 0 1 360px !important;
+  width: min(360px, 100%) !important;
+  min-width: 220px !important;
+  max-width: 360px !important;
+  min-height: 38px !important;
+  height: 38px !important;
+  max-height: 38px !important;
+  padding: 0 9px !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-search-v2 input {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: 36px !important;
+  padding: 0 !important;
+}
+
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-search-v2 > button {
+  width: 26px !important;
+  min-width: 26px !important;
+  max-width: 26px !important;
+  min-height: 26px !important;
+  height: 26px !important;
+  max-height: 26px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+  background: transparent !important;
+}
+
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-user-filter-v2 {
+  align-items: center !important;
+}
+
+html[data-ginga-surface="admin"] .admin-console-v2 .admin-user-filter-v2 button {
+  width: auto !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  max-height: 32px !important;
+  padding: 0 10px !important;
+  border: 0 !important;
+}
+
+/* ---------- Overview ---------- */
+html[data-ginga-surface="admin"] .admin-metrics-v2 {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  align-items: stretch !important;
+}
+
+html[data-ginga-surface="admin"] .admin-metrics-v2 article {
+  min-width: 0 !important;
+  min-height: 108px !important;
+  height: auto !important;
+  max-height: none !important;
+}
+
+html[data-ginga-surface="admin"] .admin-dashboard-grid-v2 {
+  min-width: 0 !important;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, .75fr) !important;
+}
+
+html[data-ginga-surface="admin"] .admin-server-table-v2 {
+  min-width: 0 !important;
+  overflow-x: auto !important;
+}
+
+html[data-ginga-surface="admin"] .admin-server-table-v2 article {
+  width: 100% !important;
+  min-width: 650px !important;
+  min-height: 56px !important;
+  height: auto !important;
+  max-height: none !important;
+}
+
+html[data-ginga-surface="admin"] .admin-privileged-list-v2 > div,
+html[data-ginga-surface="admin"] .admin-mini-audit-v2 > div {
+  min-height: 47px !important;
+  height: auto !important;
+  max-height: none !important;
+}
+
+/* ---------- Sistema ---------- */
+html[data-ginga-surface="admin"] .admin-system-page-v3,
+html[data-ginga-surface="admin"] .admin-system-summary-v3,
+html[data-ginga-surface="admin"] .admin-system-grid-v3,
+html[data-ginga-surface="admin"] .admin-system-detail-grid-v3 {
+  min-width: 0 !important;
+}
+
+html[data-ginga-surface="admin"] .admin-system-hero-v3 {
+  min-width: 0 !important;
+  height: auto !important;
+  min-height: 92px !important;
+  flex-wrap: wrap !important;
+}
+
+html[data-ginga-surface="admin"] .admin-system-grid-v3 {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+html[data-ginga-surface="admin"] .admin-system-grid-v3 > article {
+  min-width: 0 !important;
+  min-height: 112px !important;
+  height: auto !important;
+}
+
+html[data-ginga-surface="admin"] .admin-system-kv-v3 > div,
+html[data-ginga-surface="admin"] .admin-system-endpoint-v3 {
+  min-width: 0 !important;
+}
+
+html[data-ginga-surface="admin"] .admin-system-endpoint-v3 code {
+  min-width: 0 !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* ---------- Usuarios ---------- */
+html[data-ginga-surface="admin"] .admin-users-panel-v2 {
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-table-v2 {
+  width: 100% !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-table-head-v2,
+html[data-ginga-surface="admin"] .admin-user-table-v2 > article {
+  width: 100% !important;
+  min-width: 0 !important;
+  grid-template-columns: minmax(240px, 1.35fr) minmax(170px, 1fr) minmax(145px, .75fr) 148px 112px !important;
+  grid-auto-rows: min-content !important;
+  align-items: center !important;
+  align-content: center !important;
+  gap: 10px !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-table-v2 > article {
+  min-height: 62px !important;
+  height: auto !important;
+  max-height: none !important;
+  padding: 8px 10px !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-table-v2 > article > * {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  align-self: center !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-identity-v2 {
+  width: 100% !important;
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns: 31px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 9px !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-identity-v2 .avatar.avatar-sm {
+  width: 31px !important;
+  min-width: 31px !important;
+  max-width: 31px !important;
+  height: 31px !important;
+  min-height: 31px !important;
+  max-height: 31px !important;
+  flex: 0 0 31px !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-copy-v2 {
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-name-line-v2 {
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-name-line-v2 > strong {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-name-line-v2 .user-badges {
+  min-width: 0 !important;
+  max-width: 120px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  max-height: 20px !important;
+  flex: 0 1 auto !important;
+  flex-wrap: nowrap !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-name-line-v2 .user-badge {
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 20px !important;
+  height: 20px !important;
+  max-height: 20px !important;
+  padding: 0 5px !important;
+  flex: 0 1 auto !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-copy-v2 > small,
+html[data-ginga-surface="admin"] .admin-user-email-v2,
+html[data-ginga-surface="admin"] .admin-user-login-v2 {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-table-v2 select {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 34px !important;
+  height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 9px !important;
+}
+
+html[data-ginga-surface="admin"] .admin-manage-user-v2 {
+  width: 112px !important;
+  min-width: 112px !important;
+  max-width: 112px !important;
+  min-height: 34px !important;
+  height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 8px !important;
+  white-space: nowrap !important;
+}
+
+/* ---------- Servidores ---------- */
+html[data-ginga-surface="admin"] .admin-guild-cards-v2 {
+  min-width: 0 !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  align-items: stretch !important;
+}
+
+html[data-ginga-surface="admin"] .admin-guild-cards-v2 > article {
+  min-width: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+html[data-ginga-surface="admin"] .admin-guild-card-top-v2,
+html[data-ginga-surface="admin"] .admin-guild-card-top-v2 > div,
+html[data-ginga-surface="admin"] .admin-guild-actions-v2 {
+  min-width: 0 !important;
+}
+
+html[data-ginga-surface="admin"] .admin-guild-actions-v2 code {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* ---------- Comunicados ---------- */
+html[data-ginga-surface="admin"] .admin-announcement-layout-v2 {
+  min-width: 0 !important;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr) !important;
+}
+
+html[data-ginga-surface="admin"] .admin-announcement-form-v2 {
+  width: 100% !important;
+  min-width: 0 !important;
+  margin-top: 14px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  grid-template-columns: minmax(0, 1fr) 180px !important;
+}
+
+html[data-ginga-surface="admin"] .admin-announcement-form-v2 label,
+html[data-ginga-surface="admin"] .admin-announcement-form-v2 :is(input, select, textarea) {
+  min-width: 0 !important;
+}
+
+html[data-ginga-surface="admin"] .admin-announcement-list-v2 article {
+  min-width: 0 !important;
+  min-height: 68px !important;
+  height: auto !important;
+  max-height: none !important;
+}
+
+html[data-ginga-surface="admin"] .admin-announcement-actions-v2 {
+  flex-wrap: wrap !important;
+}
+
+html[data-ginga-surface="admin"] .admin-announcement-actions-v2 button {
+  width: auto !important;
+  min-height: 30px !important;
+  height: 30px !important;
+  max-height: 30px !important;
+  padding: 0 8px !important;
+}
+
+/* ---------- Auditoria ---------- */
+html[data-ginga-surface="admin"] .admin-audit-table-v2 {
+  min-width: 0 !important;
+  overflow-x: auto !important;
+}
+
+html[data-ginga-surface="admin"] .admin-audit-table-v2 article {
+  width: 100% !important;
+  min-width: 720px !important;
+  min-height: 54px !important;
+  height: auto !important;
+  max-height: none !important;
+  grid-template-columns: 34px minmax(190px, 1.3fr) 120px minmax(140px, .8fr) 155px !important;
+  align-items: center !important;
+}
+
+/* ---------- Drawer / dialog ---------- */
+html[data-ginga-surface="admin"] .admin-user-drawer-backdrop-v2,
+html[data-ginga-surface="admin"] .admin-confirm-backdrop-v2 {
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-drawer-v2 {
+  width: min(520px, calc(100vw - 24px)) !important;
+  max-width: 520px !important;
+  min-width: 0 !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-drawer-v2 > header,
+html[data-ginga-surface="admin"] .admin-user-drawer-summary-v2,
+html[data-ginga-surface="admin"] .admin-user-action-section-v2,
+html[data-ginga-surface="admin"] .admin-user-danger-zone-v2,
+html[data-ginga-surface="admin"] .admin-session-list-v2,
+html[data-ginga-surface="admin"] .admin-moderation-list-v2 {
+  min-width: 0 !important;
+}
+
+html[data-ginga-surface="admin"] .admin-user-drawer-close-v2 {
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  min-height: 34px !important;
+  height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+html[data-ginga-surface="admin"] .admin-session-list-v2 article,
+html[data-ginga-surface="admin"] .admin-moderation-list-v2 article,
+html[data-ginga-surface="admin"] .admin-active-ban-v2 {
+  min-width: 0 !important;
+  height: auto !important;
+  min-height: 42px !important;
+  max-height: none !important;
+}
+
+html[data-ginga-surface="admin"] .admin-confirm-dialog-v2 {
+  width: min(440px, calc(100vw - 28px)) !important;
+  min-width: 0 !important;
+  height: auto !important;
+  max-height: calc(100dvh - 32px) !important;
+  overflow: auto !important;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1280px) {
+  html[data-ginga-surface="admin"] .admin-metrics-v2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-dashboard-grid-v2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-panel-wide-v2 {
+    grid-row: auto !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-system-grid-v3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-guild-cards-v2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-announcement-layout-v2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-user-table-head-v2,
+  html[data-ginga-surface="admin"] .admin-user-table-v2 > article {
+    grid-template-columns: minmax(220px, 1fr) 148px 112px !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-user-table-head-v2 > span:nth-child(2),
+  html[data-ginga-surface="admin"] .admin-user-table-head-v2 > span:nth-child(3),
+  html[data-ginga-surface="admin"] .admin-user-email-v2,
+  html[data-ginga-surface="admin"] .admin-user-login-v2 {
+    display: none !important;
+  }
+}
+
+@media (max-width: 900px) {
+  html[data-ginga-surface="admin"] .admin-console-v2 {
+    grid-template-columns: 68px minmax(0, 1fr) !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-sidebar-v2 {
+    width: 68px !important;
+    min-width: 68px !important;
+    max-width: 68px !important;
+    flex-basis: 68px !important;
+    padding: 12px 7px !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-brand-v2 {
+    justify-content: center !important;
+    padding: 0 !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-brand-v2 > div,
+  html[data-ginga-surface="admin"] .admin-back-v2,
+  html[data-ginga-surface="admin"] .admin-nav-v2 > small,
+  html[data-ginga-surface="admin"] .admin-nav-v2 button span,
+  html[data-ginga-surface="admin"] .admin-nav-v2 button > svg:last-child,
+  html[data-ginga-surface="admin"] .admin-session-copy-v2,
+  html[data-ginga-surface="admin"] .admin-session-badges-v2 {
+    display: none !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-nav-v2 button {
+    grid-template-columns: 1fr !important;
+    justify-items: center !important;
+    padding: 0 !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-session-v2 {
+    width: 54px !important;
+    min-width: 54px !important;
+    max-width: 54px !important;
+    height: 54px !important;
+    min-height: 54px !important;
+    max-height: 54px !important;
+    padding: 7px !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 40px !important;
+    justify-items: center !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-topbar-v2 {
+    min-height: 96px !important;
+    padding: 20px 20px 17px !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-page-v2,
+  html[data-ginga-surface="admin"] .admin-feedback-v2 {
+    width: calc(100% - 28px) !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-guild-cards-v2,
+  html[data-ginga-surface="admin"] .admin-system-detail-grid-v3 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 680px) {
+  html[data-ginga-surface="admin"] .admin-topbar-v2 {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-topbar-actions-v2 {
+    width: 100% !important;
+    justify-content: space-between !important;
+    flex-wrap: wrap !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-metrics-v2,
+  html[data-ginga-surface="admin"] .admin-system-grid-v3,
+  html[data-ginga-surface="admin"] .admin-system-detail-grid-v3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-users-header-v2 {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-console-v2 .admin-search-v2 {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex-basis: auto !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-user-table-head-v2 {
+    display: none !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-user-table-v2 > article {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 8px !important;
+    padding: 11px 8px !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-user-table-v2 select,
+  html[data-ginga-surface="admin"] .admin-manage-user-v2 {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-announcement-form-v2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-announcement-form-v2 .full {
+    grid-column: auto !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-publish-actions-v2 {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-user-drawer-v2 {
+    width: 100vw !important;
+    max-width: none !important;
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-user-drawer-summary-v2,
+  html[data-ginga-surface="admin"] .admin-user-password-form-v2 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 480px) {
+  html[data-ginga-surface="admin"] .admin-console-v2 {
+    grid-template-columns: 58px minmax(0, 1fr) !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-sidebar-v2 {
+    width: 58px !important;
+    min-width: 58px !important;
+    max-width: 58px !important;
+    flex-basis: 58px !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-brand-v2 > span {
+    width: 34px !important;
+    height: 34px !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-session-v2 {
+    width: 48px !important;
+    min-width: 48px !important;
+    max-width: 48px !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-page-v2,
+  html[data-ginga-surface="admin"] .admin-feedback-v2 {
+    width: calc(100% - 18px) !important;
+  }
+
+  html[data-ginga-surface="admin"] .admin-panel-v2 {
+    padding: 13px !important;
+  }
+}
+
+/* GINGA_ADMIN_FULL_AUDIT_FIX_END */

@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Activity, Archive, AudioLines, BellRing, Bookmark, CalendarClock, Camera, CircleCheck, Code2, Copy, Download, Eye, Gamepad2, Headphones, Keyboard, KeyRound, LockKeyhole, Mic, MicOff, MonitorUp, Palette, RefreshCw, Save, ShieldCheck, Trash2, TriangleAlert, UserCog } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { Activity, Archive, AudioLines, BellRing, Bookmark, CalendarClock, Camera, CircleCheck, Code2, Copy, Download, ExternalLink, Eye, Gamepad2, Headphones, Keyboard, KeyRound, LockKeyhole, Mic, MicOff, MonitorUp, Palette, RefreshCw, Save, ShieldCheck, Trash2, TriangleAlert, UserCog } from "lucide-react";
 import { api, setToken } from "../lib/api";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { loadDeveloperPreferences, saveDeveloperPreferences } from "../lib/developerMode";
-import { imageFileToSquareWebp } from "../lib/imageUpload";
+import { prepareSquareImageAsset, prepareWideImageAsset } from "../lib/imageUpload";
 import { ensureNotificationPermission, isGingaDesktop, showSystemNotification } from "../lib/notifications";
 import {
   loadAppearancePreferences,
@@ -15,21 +15,23 @@ import {
   type NotificationPreferences,
   type ThemePreference
 } from "../lib/preferences";
-import type { User } from "../types";
+import type { ProfileAppearance, ProfileLink, ProfileTheme, PublicGamingProfile, User } from "../types";
 import QRCode from "qrcode";
 import { Avatar } from "./Avatar";
 import { SettingsShell } from "./SettingsShell";
+import { UserSocialPanel } from "./UserSocialPanel";
 import { applyVoiceDevice, loadVoicePreferences, saveVoicePreferences, type VoicePreferences } from "../lib/voicePreferences";
 import { bindingFromKeyboardEvent, bindingFromMouseEvent, formatPushToTalkBinding } from "../lib/pushToTalkBinding";
 import { detectDesktopGame, isGameOverlayAvailable, loadGameOverlayPreferences, previewGameOverlay, saveGameOverlayPreferences, type DesktopDetectedGame, type GameOverlayPreferences } from "../lib/gameOverlay";
 
-export type UserSettingsTab = "account" | "profile" | "privacy" | "voice" | "saved" | "notifications" | "appearance" | "updates" | "gaming" | "developer" | "security";
+export type UserSettingsTab = "account" | "profile" | "social" | "privacy" | "voice" | "saved" | "notifications" | "appearance" | "updates" | "gaming" | "diagnostics" | "developer" | "security";
 
 interface UserSettingsModalProps {
   user: User;
   onClose: () => void;
   onSessionUpdate: (token: string, user: User) => void;
   initialTab?: UserSettingsTab;
+  socketConnected?: boolean;
 }
 
 
@@ -38,7 +40,18 @@ interface TrustedTwoFactorDeviceItem { id:string; userAgent:string; createdAt:st
 interface TwoFactorStatus { available:boolean; enabled:boolean; }
 interface TwoFactorSetup { secret:string; otpauthUri:string; }
 interface DesktopUpdateResult { available?:boolean; version?:string; latestVersion?:string; currentVersion?:string; channel?:"stable"|"beta"; skippedPrerelease?:boolean; releaseNotes?:string; restarting?:boolean; }
-interface DesktopUpdateBridge { isDesktop?:boolean; checkForUpdate?:()=>Promise<DesktopUpdateResult>; getUpdateChannel?:()=>Promise<{channel:"stable"|"beta"}>; setUpdateChannel?:(channel:"stable"|"beta")=>Promise<DesktopUpdateResult&{channel:"stable"|"beta"}>; restartToUpdate?:()=>Promise<DesktopUpdateResult>; }
+interface DesktopUpdateBridge {
+  isDesktop?:boolean;
+  checkForUpdate?:()=>Promise<DesktopUpdateResult>;
+  getUpdateChannel?:()=>Promise<{channel:"stable"|"beta"}>;
+  setUpdateChannel?:(channel:"stable"|"beta")=>Promise<DesktopUpdateResult&{channel:"stable"|"beta"}>;
+  restartToUpdate?:()=>Promise<DesktopUpdateResult>;
+  getAutoStart?:()=>Promise<{enabled:boolean;supported:boolean}>;
+  setAutoStart?:(enabled:boolean)=>Promise<{enabled:boolean;supported:boolean}>;
+  getStartMinimized?:()=>Promise<{enabled:boolean;supported:boolean}>;
+  setStartMinimized?:(enabled:boolean)=>Promise<{enabled:boolean;supported:boolean}>;
+  getDiagnostics?:()=>Promise<DesktopDiagnostics>;
+}
 interface GamingProfileSettings {
   showGameActivity:boolean;
   autoDetectGame:boolean;
@@ -46,8 +59,77 @@ interface GamingProfileSettings {
   gameDetails:string|null;
   gameSource:"NONE"|"MANUAL"|"DESKTOP";
 }
-interface GamingProfileResponse { profile:{ activity:{name:string;details:string;startedAt:string|null}|null; settings:GamingProfileSettings } }
+interface GamingProfileResponse { profile: PublicGamingProfile & { settings: GamingProfileSettings } }
+interface ServerDiagnostics {
+  status:"healthy"|"degraded";
+  version:string;
+  timestamp:string;
+  uptimeSeconds:number;
+  database:{ok:boolean;latencyMs:number};
+  livekit:{ok:boolean;latencyMs:number;publicUrl:string};
+  websocket:{ok:boolean};
+  storage:{ok:boolean;usedPercent:number};
+}
+interface DesktopDiagnostics {
+  appVersion:string; product:string; platform:string; arch:string; osType:string; osRelease:string;
+  electron:string; chrome:string; node:string; packaged:boolean; serverUrl:string; updateChannel:string;
+  autoStart:{enabled:boolean;supported:boolean}; desktopPreferences:{startMinimized:boolean};
+  window:{width:number;height:number;maximized:boolean;minimized:boolean;visible:boolean;zoomFactor:number}|null;
+  display:{scaleFactor:number;workArea:{width:number;height:number}|null};
+}
+interface ClientDiagnostics {
+  collectedAt:string; webVersion:string; requestLatencyMs:number; online:boolean; socketConnected:boolean; viewport:{width:number;height:number;dpr:number};
+  userAgent:string; server:ServerDiagnostics; desktop:DesktopDiagnostics|null;
+}
+
+function defaultProfileAppearance(user: User): ProfileAppearance {
+  return {
+    accentColor: user.avatarColor || "#7c3cff",
+    secondaryColor: "#2c74ff",
+    profileTheme: "AURORA",
+    bannerPosition: 50,
+    pronouns: null,
+    links: []
+  };
+}
 function desktopUpdaterBridge():DesktopUpdateBridge|null { return typeof window === "undefined" ? null : (window as unknown as {gingaDesktop?:DesktopUpdateBridge}).gingaDesktop ?? null; }
+
+function formatDuration(totalSeconds:number){
+  const seconds=Math.max(0,Math.floor(totalSeconds||0));
+  const days=Math.floor(seconds/86400); const hours=Math.floor((seconds%86400)/3600); const minutes=Math.floor((seconds%3600)/60);
+  return [days?`${days}d`:"",hours?`${hours}h`:"",`${minutes}min`].filter(Boolean).join(" ");
+}
+function diagnosticsReport(value:ClientDiagnostics){
+  const d=value.desktop;
+  return [
+    "GINGA - DIAGNOSTICO",
+    `Coletado: ${value.collectedAt}`,
+    `Web: ${value.webVersion}`,
+    `API: ${value.server.version} (${value.server.status})`,
+    `Compatibilidade Web/API: ${value.webVersion===value.server.version?"OK":"DIVERGENTE"}`,
+    ...(d?[`Compatibilidade Desktop/API: ${d.appVersion===value.server.version?"OK":"DIVERGENTE"}`]:[]),
+    `Latencia HTTP: ${value.requestLatencyMs} ms`,
+    `PostgreSQL: ${value.server.database.ok?"OK":"FALHA"} (${value.server.database.latencyMs} ms)`,
+    `LiveKit: ${value.server.livekit.ok?"OK":"FALHA"} (${value.server.livekit.latencyMs} ms)`,
+    `WebSocket: ${value.server.websocket.ok?"OK":"FALHA"}`,
+    `Armazenamento: ${value.server.storage.ok?"OK":"FALHA"} (${value.server.storage.usedPercent}% usado)`,
+    `Uptime API: ${formatDuration(value.server.uptimeSeconds)}`,
+    `Viewport: ${value.viewport.width}x${value.viewport.height} @ DPR ${value.viewport.dpr}`,
+    `Navigator online: ${value.online?"sim":"nao"}`,
+    `Socket.IO cliente: ${value.socketConnected?"conectado":"desconectado"}`,
+    ...(d?[
+      `Desktop: ${d.appVersion} (${d.platform}-${d.arch})`,
+      `Electron: ${d.electron} | Chromium: ${d.chrome}`,
+      `SO: ${d.osType} ${d.osRelease}`,
+      `Servidor Desktop: ${d.serverUrl}`,
+      `Canal updater: ${d.updateChannel}`,
+      `Autostart: ${d.autoStart.enabled?"ativo":"inativo"} | iniciar minimizado: ${d.desktopPreferences.startMinimized?"sim":"nao"}`,
+      `Janela: ${d.window?`${d.window.width}x${d.window.height} zoom ${Math.round(d.window.zoomFactor*100)}%${d.window.maximized?" maximizada":""}`:"indisponivel"}`,
+      `Monitor: ${d.display.workArea?`${d.display.workArea.width}x${d.display.workArea.height}`:"indisponivel"} escala ${Math.round(d.display.scaleFactor*100)}%`
+    ]: ["Desktop: navegador Web"]),
+    `User-Agent: ${value.userAgent}`
+  ].join("\n");
+}
 
 interface SavedMessageItem {
   messageId: string;
@@ -73,7 +155,7 @@ interface ScheduledMessageItem {
 
 type MicrophoneHealth = "idle" | "checking" | "ok" | "silent" | "missing" | "denied" | "error";
 
-export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab = "account" }: UserSettingsModalProps) {
+export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab = "account", socketConnected = false }: UserSettingsModalProps) {
   const [tab, setTab] = useState<UserSettingsTab>(initialTab);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -99,7 +181,12 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
   const [voiceDevices, setVoiceDevices] = useState<{ microphones: MediaDeviceInfo[]; speakers: MediaDeviceInfo[]; cameras: MediaDeviceInfo[] }>({ microphones: [], speakers: [], cameras: [] });
   const [voiceRefreshing, setVoiceRefreshing] = useState(false);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
+  const [profileBannerUrl, setProfileBannerUrl] = useState<string | null>(null);
+  const [profileBioDraft, setProfileBioDraft] = useState(user.bio ?? "");
+  const [profileStatusDraft, setProfileStatusDraft] = useState(user.statusMessage ?? "");
+  const [profileAppearance, setProfileAppearance] = useState<ProfileAppearance>(() => defaultProfileAppearance(user));
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [bannerBusy, setBannerBusy] = useState(false);
   const [twoFactor, setTwoFactor] = useState<TwoFactorStatus | null>(null);
   const [twoFactorSetup, setTwoFactorSetup] = useState<TwoFactorSetup | null>(null);
   const [twoFactorQr, setTwoFactorQr] = useState("");
@@ -115,6 +202,13 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
   const [updateChannel, setUpdateChannel] = useState<"stable"|"beta">("stable");
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateResult|null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
+  const [autoStartEnabled, setAutoStartEnabled] = useState(false);
+  const [autoStartSupported, setAutoStartSupported] = useState(false);
+  const [autoStartBusy, setAutoStartBusy] = useState(false);
+  const [startMinimizedEnabled, setStartMinimizedEnabled] = useState(false);
+  const [startMinimizedBusy, setStartMinimizedBusy] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<ClientDiagnostics|null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [microphoneHealth, setMicrophoneHealth] = useState<MicrophoneHealth>("idle");
   const [microphoneLevel, setMicrophoneLevel] = useState(0);
   const [microphoneTestActive, setMicrophoneTestActive] = useState(false);
@@ -123,9 +217,15 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
   const microphoneTestFrameRef = useRef<number | null>(null);
   const microphoneTestTimerRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    setProfileBioDraft(user.bio ?? "");
+    setProfileStatusDraft(user.statusMessage ?? "");
+  }, [user.id, user.bio, user.statusMessage]);
+
   const tabs = [
     { id: "account" as const, label: "Minha conta", icon: <UserCog size={18} />, group: "CONTA" },
     { id: "profile" as const, label: "Perfil", icon: <Palette size={18} /> },
+    { id: "social" as const, label: "Social", icon: <Activity size={18} /> },
     { id: "privacy" as const, label: "Privacidade", icon: <Eye size={18} /> },
     { id: "voice" as const, label: "Voz e video", icon: <AudioLines size={18} />, group: "COMUNICACAO" },
     { id: "saved" as const, label: "Itens salvos", icon: <Bookmark size={18} /> },
@@ -133,6 +233,7 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
     { id: "appearance" as const, label: "Aparencia", icon: <Palette size={18} /> },
     ...(isGameOverlayAvailable() ? [{ id: "gaming" as const, label: "Jogos e sobreposicao", icon: <Gamepad2 size={18} />, group: "GAMING" }] : []),
     ...(isGingaDesktop() ? [{ id: "updates" as const, label: "Atualizacoes", icon: <Download size={18} /> }] : []),
+    { id: "diagnostics" as const, label: "Diagnostico", icon: <Activity size={18} />, group: "SUPORTE" },
     { id: "developer" as const, label: "Desenvolvedor", icon: <Code2 size={18} />, group: "AVANCADO" },
     { id: "security" as const, label: "Seguranca", icon: <ShieldCheck size={18} />, group: "SEGURANCA" }
   ];
@@ -200,8 +301,37 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
   }, [tab]);
 
   useEffect(() => {
-    if(tab!=="updates")return;const bridge=desktopUpdaterBridge();if(!bridge?.isDesktop)return;let cancelled=false;setUpdateChecking(true);Promise.all([bridge.getUpdateChannel?.(),bridge.checkForUpdate?.()]).then(([c,u])=>{if(cancelled)return;if(c?.channel)setUpdateChannel(c.channel);if(u)setUpdateStatus(u)}).catch(e=>{if(!cancelled)setError(e instanceof Error?e.message:"Falha ao verificar atualizacao")}).finally(()=>{if(!cancelled)setUpdateChecking(false)});return()=>{cancelled=true};
-  },[tab]);
+    if (tab !== "updates") return;
+    const bridge = desktopUpdaterBridge();
+    if (!bridge?.isDesktop) return;
+    let cancelled = false;
+    setUpdateChecking(true);
+    Promise.all([
+      bridge.getUpdateChannel?.(),
+      bridge.checkForUpdate?.(),
+      bridge.getAutoStart?.(),
+      bridge.getStartMinimized?.()
+    ]).then(([channelResult, updateResult, autoStartResult, startMinimizedResult]) => {
+      if (cancelled) return;
+      if (channelResult?.channel) setUpdateChannel(channelResult.channel);
+      if (updateResult) setUpdateStatus(updateResult);
+      if (autoStartResult) {
+        setAutoStartEnabled(Boolean(autoStartResult.enabled));
+        setAutoStartSupported(Boolean(autoStartResult.supported));
+      }
+      if (startMinimizedResult) setStartMinimizedEnabled(Boolean(startMinimizedResult.enabled));
+    }).catch((caught) => {
+      if (!cancelled) setError(caught instanceof Error ? caught.message : "Falha ao carregar configuracoes do Desktop");
+    }).finally(() => {
+      if (!cancelled) setUpdateChecking(false);
+    });
+    return () => { cancelled = true; };
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "diagnostics") return;
+    void refreshDiagnostics();
+  }, [tab]);
 
   useEffect(() => {
     if (tab !== "saved") return;
@@ -276,8 +406,13 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
   useEffect(() => {
     if (tab !== "account" && tab !== "profile") return;
     let active = true;
-    void api<{ profile: { avatarUrl: string | null } }>("/api/gaming-profile/me")
-      .then(({ profile }) => { if (active) setProfileAvatarUrl(profile.avatarUrl); })
+    void api<GamingProfileResponse>("/api/gaming-profile/me")
+      .then(({ profile }) => {
+        if (!active) return;
+        setProfileAvatarUrl(profile.avatarUrl);
+        setProfileBannerUrl(profile.bannerUrl);
+        setProfileAppearance(profile.appearance || defaultProfileAppearance(user));
+      })
       .catch(() => undefined);
     return () => { active = false; };
   }, [tab]);
@@ -287,11 +422,11 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
     setAvatarBusy(true);
     resetFeedback();
     try {
-      const blob = await imageFileToSquareWebp(file, 512, 0.9);
+      const asset = await prepareSquareImageAsset(file, 512, 0.9);
       const response = await api<{ profile: { avatarUrl: string | null } }>("/api/gaming-profile/avatar", {
         method: "POST",
-        headers: { "Content-Type": "image/webp" },
-        body: blob
+        headers: { "Content-Type": asset.mime },
+        body: asset.blob
       });
       setProfileAvatarUrl(response.profile.avatarUrl);
       window.dispatchEvent(new CustomEvent("ginga:profile-local-update", { detail: response.profile }));
@@ -317,6 +452,60 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
     } finally {
       setAvatarBusy(false);
     }
+  }
+
+  async function uploadProfileBanner(file: File | null) {
+    if (!file || bannerBusy) return;
+    setBannerBusy(true);
+    resetFeedback();
+    try {
+      const asset = await prepareWideImageAsset(file, 1600, 600, 0.88);
+      const response = await api<GamingProfileResponse>("/api/gaming-profile/banner", {
+        method: "POST",
+        headers: { "Content-Type": asset.mime },
+        body: asset.blob
+      });
+      setProfileBannerUrl(response.profile.bannerUrl);
+      setProfileAppearance(response.profile.appearance);
+      window.dispatchEvent(new CustomEvent("ginga:profile-local-update", { detail: response.profile }));
+      setNotice("Banner do perfil atualizado");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nao foi possivel atualizar o banner");
+    } finally {
+      setBannerBusy(false);
+    }
+  }
+
+  async function removeProfileBanner() {
+    if (bannerBusy) return;
+    setBannerBusy(true);
+    resetFeedback();
+    try {
+      const response = await api<GamingProfileResponse>("/api/gaming-profile/banner", { method: "DELETE" });
+      setProfileBannerUrl(null);
+      setProfileAppearance(response.profile.appearance);
+      window.dispatchEvent(new CustomEvent("ginga:profile-local-update", { detail: response.profile }));
+      setNotice("Banner do perfil removido");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nao foi possivel remover o banner");
+    } finally {
+      setBannerBusy(false);
+    }
+  }
+
+  function updateProfileLink(index: number, patch: Partial<ProfileLink>) {
+    setProfileAppearance((current) => ({
+      ...current,
+      links: current.links.map((link, linkIndex) => linkIndex === index ? { ...link, ...patch } : link)
+    }));
+  }
+
+  function addProfileLink() {
+    setProfileAppearance((current) => current.links.length >= 3 ? current : ({ ...current, links: [...current.links, { label: "Site", url: "https://" }] }));
+  }
+
+  function removeProfileLink(index: number) {
+    setProfileAppearance((current) => ({ ...current, links: current.links.filter((_, linkIndex) => linkIndex !== index) }));
   }
 
   function microphoneErrorMessage(caught: unknown) {
@@ -605,12 +794,46 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await patchUser({
-      bio: String(form.get("bio") ?? ""),
-      statusMessage: String(form.get("statusMessage") ?? ""),
-      avatarColor: String(form.get("avatarColor") ?? user.avatarColor)
-    }, "Perfil atualizado");
+    if (busy) return;
+    setBusy(true);
+    resetFeedback();
+    try {
+      const account = await api<{ token: string; user: User }>("/api/auth/me", {
+        method: "PATCH",
+        body: JSON.stringify({
+          bio: profileBioDraft,
+          statusMessage: profileStatusDraft,
+          avatarColor: profileAppearance.accentColor
+        })
+      });
+      const links = profileAppearance.links
+        .map((link) => ({ label: link.label.trim(), url: link.url.trim() }))
+        .filter((link) => link.label && link.url && link.url !== "https://");
+      const visual = await api<GamingProfileResponse>("/api/gaming-profile/me", {
+        method: "PATCH",
+        body: JSON.stringify({
+          bio: profileBioDraft.trim() || null,
+          customStatus: profileStatusDraft.trim() || null,
+          accentColor: profileAppearance.accentColor,
+          secondaryColor: profileAppearance.secondaryColor,
+          profileTheme: profileAppearance.profileTheme,
+          bannerPosition: profileAppearance.bannerPosition,
+          pronouns: profileAppearance.pronouns?.trim() || null,
+          profileLinks: links
+        })
+      });
+      setToken(account.token);
+      onSessionUpdate(account.token, account.user);
+      setProfileAppearance(visual.profile.appearance);
+      setProfileAvatarUrl(visual.profile.avatarUrl);
+      setProfileBannerUrl(visual.profile.bannerUrl);
+      window.dispatchEvent(new CustomEvent("ginga:profile-local-update", { detail: visual.profile }));
+      setNotice("Perfil e personalizacao atualizados");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nao foi possivel salvar o perfil");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function savePrivacy(next = privacy) {
@@ -776,6 +999,57 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
   }
   async function checkDesktopUpdate(){const bridge=desktopUpdaterBridge();if(!bridge?.checkForUpdate)return;setUpdateChecking(true);try{setUpdateStatus(await bridge.checkForUpdate())}catch(e){setError(e instanceof Error?e.message:"Falha ao verificar atualizacao")}finally{setUpdateChecking(false)}}
   async function changeDesktopUpdateChannel(channel:"stable"|"beta"){const bridge=desktopUpdaterBridge();if(!bridge?.setUpdateChannel)return;setUpdateChecking(true);try{const r=await bridge.setUpdateChannel(channel);setUpdateChannel(channel);setUpdateStatus(r);setNotice(channel==="stable"?"Canal estavel selecionado":"Canal beta selecionado")}catch(e){setError(e instanceof Error?e.message:"Falha ao mudar canal")}finally{setUpdateChecking(false)}}
+  async function changeDesktopAutoStart(enabled:boolean){
+    const bridge=desktopUpdaterBridge();
+    if(!bridge?.setAutoStart||autoStartBusy)return;
+    setAutoStartBusy(true);setError("");setNotice("");
+    try{
+      const result=await bridge.setAutoStart(enabled);
+      setAutoStartSupported(Boolean(result.supported));
+      setAutoStartEnabled(Boolean(result.enabled));
+      setNotice(result.enabled?"Ginga vai abrir com o Windows":"Inicializacao com o Windows desativada");
+    }catch(e){setError(e instanceof Error?e.message:"Falha ao alterar a inicializacao com o Windows")}
+    finally{setAutoStartBusy(false)}
+  }
+  async function changeDesktopStartMinimized(enabled:boolean){
+    const bridge=desktopUpdaterBridge();
+    if(!bridge?.setStartMinimized||startMinimizedBusy)return;
+    setStartMinimizedBusy(true);setError("");setNotice("");
+    try{
+      const result=await bridge.setStartMinimized(enabled);
+      setStartMinimizedEnabled(Boolean(result.enabled));
+      setNotice(result.enabled?"O Ginga iniciara minimizado na bandeja":"O Ginga abrira a janela ao iniciar com o Windows");
+    }catch(e){setError(e instanceof Error?e.message:"Falha ao alterar a inicializacao minimizada")}
+    finally{setStartMinimizedBusy(false)}
+  }
+  async function refreshDiagnostics(){
+    if(diagnosticsLoading)return;
+    setDiagnosticsLoading(true);setError("");
+    const started=performance.now();
+    try{
+      const bridge=desktopUpdaterBridge();
+      const [server,desktop]=await Promise.all([
+        api<ServerDiagnostics>("/api/system/diagnostics"),
+        bridge?.getDiagnostics?.().catch(()=>null)??Promise.resolve(null)
+      ]);
+      setDiagnostics({
+        collectedAt:new Date().toLocaleString("pt-BR"),
+        webVersion:__GINGA_WEB_VERSION__,
+        requestLatencyMs:Math.max(0,Math.round(performance.now()-started)),
+        online:navigator.onLine,
+        socketConnected,
+        viewport:{width:window.innerWidth,height:window.innerHeight,dpr:Math.round(window.devicePixelRatio*100)/100},
+        userAgent:navigator.userAgent,
+        server,desktop
+      });
+    }catch(e){setError(e instanceof Error?e.message:"Nao foi possivel coletar o diagnostico")}
+    finally{setDiagnosticsLoading(false)}
+  }
+  async function copyDiagnostics(){
+    if(!diagnostics)return;
+    try{await copyTextToClipboard(diagnosticsReport(diagnostics));setNotice("Diagnostico copiado. Pode enviar o texto ao suporte.");}
+    catch{setError("Nao foi possivel copiar o diagnostico")};
+  }
 
   return (
     <SettingsShell
@@ -794,14 +1068,14 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
         <form className="settings-page-section" onSubmit={saveAccount}>
           <div className="settings-page-title"><h1>Minha conta</h1><p>Dados usados para identificar sua conta em toda a plataforma.</p></div>
           <div className="account-hero-card">
-            <div className="account-hero-banner" style={{ background: `linear-gradient(135deg, ${user.avatarColor}, color-mix(in srgb, ${user.avatarColor} 35%, #10131b))` }} />
+            <div className="account-hero-banner" style={{ background: `linear-gradient(135deg, ${profileAppearance.accentColor}, ${profileAppearance.secondaryColor})` }}>{profileBannerUrl && <img src={profileBannerUrl} alt="" style={{ objectPosition: `50% ${profileAppearance.bannerPosition}%` }}/>}</div>
             <div className="account-hero-content"><Avatar user={user} size="xl" status="online" imageUrl={profileAvatarUrl} /><div><strong>{user.displayName}</strong><span>@{user.username}</span>{user.statusMessage && <small>{user.statusMessage}</small>}</div></div>
           </div>
           <div className="avatar-settings-card">
             <div className="avatar-settings-preview"><Avatar user={user} size="xl" imageUrl={profileAvatarUrl}/></div>
-            <div className="avatar-settings-copy"><strong>Avatar do usuario</strong><span>Use PNG, JPG ou WebP. O Ginga recorta ao centro e otimiza a imagem automaticamente.</span><small>Recomendado: imagem quadrada com pelo menos 256 x 256.</small></div>
+            <div className="avatar-settings-copy"><strong>Avatar do usuario</strong><span>Use PNG, JPG, WebP ou GIF. GIFs animados sao preservados; imagens estaticas sao otimizadas automaticamente.</span><small>Recomendado: imagem quadrada com pelo menos 256 x 256.</small></div>
             <div className="avatar-settings-actions">
-              <label className={`secondary-button avatar-upload-button ${avatarBusy ? "disabled" : ""}`}><Camera size={16}/> {avatarBusy ? "Processando..." : "Enviar imagem"}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={avatarBusy} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ""; void uploadProfileAvatar(file); }}/></label>
+              <label className={`secondary-button avatar-upload-button ${avatarBusy ? "disabled" : ""}`}><Camera size={16}/> {avatarBusy ? "Processando..." : "Enviar imagem"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={avatarBusy} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ""; void uploadProfileAvatar(file); }}/></label>
               {profileAvatarUrl && <button type="button" className="ghost-danger-button" disabled={avatarBusy} onClick={() => void removeProfileAvatar()}><Trash2 size={15}/> Remover</button>}
             </div>
           </div>
@@ -815,25 +1089,59 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
       )}
 
       {tab === "profile" && (
-        <form className="settings-page-section" onSubmit={saveProfile}>
-          <div className="settings-page-title"><h1>Perfil</h1><p>Essas informacoes aparecem no seu card e na pagina de perfil.</p></div>
-          <div className="profile-editor-layout">
+        <form className="settings-page-section profile-personalization-page" onSubmit={saveProfile}>
+          <div className="settings-page-title"><span className="settings-eyebrow">IDENTIDADE</span><h1>Perfil personalizado</h1><p>Monte um perfil com banner, tema, cores, recado, pronomes e links. A pre-visualizacao muda na hora.</p></div>
+
+          <div className="profile-editor-layout profile-editor-layout-v4">
             <div className="profile-editor-fields">
-              <label>Recado<input name="statusMessage" defaultValue={user.statusMessage ?? ""} maxLength={80} placeholder="Ex.: atendendo chamados ate 18h" /><small>Texto curto exibido logo abaixo do seu nome.</small></label>
-              <label>Sobre mim<textarea name="bio" defaultValue={user.bio ?? ""} maxLength={240} rows={6} placeholder="Conte um pouco sobre voce..." /></label>
-              <label>Cor do perfil<div className="color-input-row"><input name="avatarColor" type="color" defaultValue={user.avatarColor} /><span>{user.avatarColor}</span></div></label>
+              <div className="settings-section-card profile-banner-editor">
+                <div className="settings-section-card-title"><Camera size={19}/><div><strong>Banner do perfil</strong><span>Imagem panoramica exibida no card e no perfil completo. Aceita GIF animado.</span></div></div>
+                <div className="profile-banner-editor-preview" style={{ background: `linear-gradient(135deg, ${profileAppearance.accentColor}, ${profileAppearance.secondaryColor})` }}>
+                  {profileBannerUrl && <img src={profileBannerUrl} alt="" style={{ objectPosition: `50% ${profileAppearance.bannerPosition}%` }}/>}
+                </div>
+                <div className="profile-banner-editor-actions">
+                  <label className={`secondary-button avatar-upload-button ${bannerBusy ? "disabled" : ""}`}><Camera size={16}/> {bannerBusy ? "Processando..." : "Enviar banner"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={bannerBusy} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ""; void uploadProfileBanner(file); }}/></label>
+                  {profileBannerUrl && <button type="button" className="ghost-danger-button" disabled={bannerBusy} onClick={() => void removeProfileBanner()}><Trash2 size={15}/> Remover</button>}
+                </div>
+                <label>Enquadramento vertical<div className="settings-range-row"><input type="range" min="0" max="100" value={profileAppearance.bannerPosition} onChange={(event) => setProfileAppearance((current) => ({ ...current, bannerPosition: Number(event.target.value) }))}/><strong>{profileAppearance.bannerPosition}%</strong></div></label>
+              </div>
+
+              <div className="profile-personalization-grid">
+                <label>Recado<input name="statusMessage" value={profileStatusDraft} onChange={(event) => setProfileStatusDraft(event.target.value)} maxLength={80} placeholder="Ex.: atendendo chamados ate 18h" /><small>Texto curto exibido logo abaixo do seu nome.</small></label>
+                <label>Pronomes<input value={profileAppearance.pronouns ?? ""} maxLength={40} placeholder="Opcional" onChange={(event) => setProfileAppearance((current) => ({ ...current, pronouns: event.target.value || null }))}/></label>
+                <label className="full">Sobre mim<textarea name="bio" value={profileBioDraft} onChange={(event) => setProfileBioDraft(event.target.value)} maxLength={240} rows={5} placeholder="Conte um pouco sobre voce..." /></label>
+                <label>Cor principal<div className="color-input-row"><input type="color" value={profileAppearance.accentColor} onChange={(event) => setProfileAppearance((current) => ({ ...current, accentColor: event.target.value }))}/><span>{profileAppearance.accentColor}</span></div></label>
+                <label>Cor secundaria<div className="color-input-row"><input type="color" value={profileAppearance.secondaryColor} onChange={(event) => setProfileAppearance((current) => ({ ...current, secondaryColor: event.target.value }))}/><span>{profileAppearance.secondaryColor}</span></div></label>
+                <label>Tema do perfil<select value={profileAppearance.profileTheme} onChange={(event) => setProfileAppearance((current) => ({ ...current, profileTheme: event.target.value as ProfileTheme }))}><option value="AURORA">Aurora</option><option value="SOLID">Solido</option><option value="MIDNIGHT">Midnight</option></select></label>
+              </div>
+
+              <div className="settings-section-card profile-links-editor">
+                <div className="settings-section-card-title"><ExternalLink size={19}/><div><strong>Links do perfil</strong><span>Adicione ate 3 atalhos publicos para site, portfolio ou redes.</span></div></div>
+                {profileAppearance.links.map((link, index) => <div className="profile-link-editor-row" key={`${index}-${link.label}`}>
+                  <input value={link.label} maxLength={24} placeholder="Nome" onChange={(event) => updateProfileLink(index, { label: event.target.value })}/>
+                  <input value={link.url} maxLength={300} placeholder="https://..." onChange={(event) => updateProfileLink(index, { url: event.target.value })}/>
+                  <button type="button" className="icon-button" aria-label="Remover link" onClick={() => removeProfileLink(index)}><Trash2 size={15}/></button>
+                </div>)}
+                {profileAppearance.links.length < 3 && <button type="button" className="secondary-button compact-button" onClick={addProfileLink}><ExternalLink size={15}/> Adicionar link</button>}
+              </div>
             </div>
-            <div className="profile-preview-card">
-              <div className="profile-preview-banner" style={{ background: user.avatarColor }} />
+
+            <div className={`profile-preview-card profile-preview-card-v4 theme-${profileAppearance.profileTheme.toLowerCase()}`} style={{ "--profile-accent": profileAppearance.accentColor, "--profile-accent-2": profileAppearance.secondaryColor } as CSSProperties}>
+              <div className="profile-preview-banner" style={{ background: `linear-gradient(135deg, ${profileAppearance.accentColor}, ${profileAppearance.secondaryColor})` }}>
+                {profileBannerUrl && <img src={profileBannerUrl} alt="" style={{ objectPosition: `50% ${profileAppearance.bannerPosition}%` }}/>}
+              </div>
               <Avatar user={user} size="xl" status="online" imageUrl={profileAvatarUrl} />
-              <h3>{user.displayName}</h3><span>@{user.username}</span>
-              {user.statusMessage && <p className="profile-status-copy">{user.statusMessage}</p>}
-              <div className="profile-preview-about"><strong>SOBRE MIM</strong><p>{user.bio || "Seu texto de apresentacao aparecera aqui."}</p></div>
+              <h3>{user.displayName}</h3><span>@{user.username}{profileAppearance.pronouns ? ` · ${profileAppearance.pronouns}` : ""}</span>
+              {profileStatusDraft && <p className="profile-status-copy">{profileStatusDraft}</p>}
+              <div className="profile-preview-about"><strong>SOBRE MIM</strong><p>{profileBioDraft || "Seu texto de apresentacao aparecera aqui."}</p></div>
+              {profileAppearance.links.length > 0 && <div className="profile-preview-links">{profileAppearance.links.map((link, index) => <span key={`${link.label}-${index}`}>{link.label || "Link"}</span>)}</div>}
             </div>
           </div>
           <div className="settings-action-row"><button className="primary-button" disabled={busy}><Save size={16} /> Salvar perfil</button></div>
         </form>
       )}
+
+      {tab === "social" && <UserSocialPanel user={user} />}
 
       {tab === "privacy" && (
         <section className="settings-page-section">
@@ -1033,13 +1341,55 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
           </div>
           <div className="settings-control-block">
             <label>Densidade<select value={appearance.density} onChange={(event) => updateAppearance({ ...appearance, density: event.target.value as DensityPreference })}><option value="comfortable">Confortavel</option><option value="compact">Compacta</option></select></label>
-            <label>Escala do texto<select value={appearance.fontScale} onChange={(event) => updateAppearance({ ...appearance, fontScale: Number(event.target.value) as 90 | 100 | 110 })}><option value={90}>90%</option><option value={100}>100%</option><option value={110}>110%</option></select></label>
+            <label>Escala do texto<select value={appearance.fontScale} onChange={(event) => updateAppearance({ ...appearance, fontScale: Number(event.target.value) as 90 | 100 | 110 | 120 | 130 | 140 })}><option value={90}>90% · Compacto</option><option value={100}>100% · Padrao</option><option value={110}>110% · Confortavel</option><option value={120}>120% · Grande</option><option value={130}>130% · Muito grande</option><option value={140}>140% · Acessibilidade</option></select><small>Amplia somente os textos do Ginga, sem usar o zoom do navegador e sem quebrar o layout.</small></label>
             <label className="settings-toggle-row compact-toggle"><div><strong>Reduzir animacoes</strong><span>Diminui transicoes e movimentos na interface.</span></div><input type="checkbox" checked={appearance.reducedMotion} onChange={(event) => updateAppearance({ ...appearance, reducedMotion: event.target.checked })} /></label>
           </div>
         </section>
       )}
 
-      {tab === "updates" && <section className="settings-page-section desktop-update-settings"><div className="settings-page-title"><h1>Atualizacoes</h1><p>Canal, verificacao manual e notas da release assinada.</p></div><div className="desktop-update-hero"><Download size={24}/><div><strong>{updateStatus?.available?`Ginga ${updateStatus.version} disponivel`:updateChecking?"Verificando...":"Ginga atualizado"}</strong><span>Versao atual {updateStatus?.currentVersion??"-"}</span></div><button type="button" className="secondary-button" disabled={updateChecking} onClick={()=>void checkDesktopUpdate()}><RefreshCw size={15}/> Verificar</button></div><div className="update-channel-choice"><button type="button" className={updateChannel==="stable"?"active":""} onClick={()=>void changeDesktopUpdateChannel("stable")}><strong>Estavel</strong><span>Somente releases finais</span></button><button type="button" className={updateChannel==="beta"?"active":""} onClick={()=>void changeDesktopUpdateChannel("beta")}><strong>Beta</strong><span>Recebe prereleases assinadas</span></button></div>{updateStatus?.releaseNotes&&<pre className="update-release-notes">{updateStatus.releaseNotes}</pre>}</section>}
+      {tab === "updates" && (
+        <section className="settings-page-section desktop-update-settings">
+          <div className="settings-page-title"><h1>Desktop e atualizacoes</h1><p>Inicializacao com o Windows, canal de release e verificacao manual.</p></div>
+          <div className="desktop-startup-card">
+            <span className="desktop-startup-icon"><MonitorUp size={22}/></span>
+            <div><strong>Abrir Ginga com o Windows</strong><span>Inicia automaticamente o aplicativo quando voce entrar na sua conta do Windows.</span></div>
+            <label className="desktop-startup-switch" title={autoStartSupported ? "Abrir Ginga com o Windows" : "Disponivel somente no Ginga Desktop para Windows"}>
+              <input type="checkbox" checked={autoStartEnabled} disabled={!autoStartSupported || autoStartBusy} onChange={(event)=>void changeDesktopAutoStart(event.target.checked)}/><i/>
+            </label>
+          </div>
+          <div className={`desktop-startup-card ${!autoStartEnabled?"disabled":""}`}>
+            <span className="desktop-startup-icon"><Download size={22}/></span>
+            <div><strong>Iniciar minimizado</strong><span>Quando o Ginga abrir junto com o Windows, mantem a janela na bandeja ate voce clicar no icone.</span></div>
+            <label className="desktop-startup-switch" title={autoStartEnabled ? "Iniciar minimizado" : "Ative primeiro Abrir com o Windows"}>
+              <input type="checkbox" checked={startMinimizedEnabled} disabled={!autoStartSupported || !autoStartEnabled || startMinimizedBusy} onChange={(event)=>void changeDesktopStartMinimized(event.target.checked)}/><i/>
+            </label>
+          </div>
+          <div className="desktop-update-hero"><Download size={24}/><div><strong>{updateStatus?.available?`Ginga ${updateStatus.version} disponivel`:updateChecking?"Verificando...":"Ginga atualizado"}</strong><span>Versao atual {updateStatus?.currentVersion??"-"}</span></div><button type="button" className="secondary-button" disabled={updateChecking} onClick={()=>void checkDesktopUpdate()}><RefreshCw size={15}/> Verificar</button></div>
+          <div className="update-channel-choice"><button type="button" className={updateChannel==="stable"?"active":""} onClick={()=>void changeDesktopUpdateChannel("stable")}><strong>Estavel</strong><span>Somente releases finais</span></button><button type="button" className={updateChannel==="beta"?"active":""} onClick={()=>void changeDesktopUpdateChannel("beta")}><strong>Beta</strong><span>Recebe prereleases assinadas</span></button></div>
+          {updateStatus?.releaseNotes&&<pre className="update-release-notes">{updateStatus.releaseNotes}</pre>}
+        </section>
+      )}
+
+      {tab === "diagnostics" && (
+        <section className="settings-page-section diagnostics-settings">
+          <div className="settings-page-title"><span className="settings-eyebrow">SUPORTE</span><h1>Diagnostico do Ginga</h1><p>Veja rapidamente se Web, API, banco, voz e Desktop estao conversando corretamente.</p></div>
+          <div className="diagnostics-actions"><button type="button" className="secondary-button" disabled={diagnosticsLoading} onClick={()=>void refreshDiagnostics()}><RefreshCw size={15}/>{diagnosticsLoading?" Testando...":" Testar novamente"}</button><button type="button" className="primary-button" disabled={!diagnostics} onClick={()=>void copyDiagnostics()}><Copy size={15}/> Copiar diagnostico</button></div>
+          {diagnosticsLoading&&!diagnostics&&<div className="diagnostics-loading"><Activity size={18}/><span>Consultando servidor e cliente...</span></div>}
+          {diagnostics&&<>
+            <div className="diagnostics-summary">
+              <article className={diagnostics.server.status==="healthy"&&diagnostics.server.version===diagnostics.webVersion?"ok":"warn"}><Activity size={20}/><div><small>API / WEB</small><strong>{diagnostics.server.version!==diagnostics.webVersion?"Versoes divergentes":diagnostics.server.status==="healthy"?"Saudavel":"Degradada"}</strong><span>API {diagnostics.server.version} · Web {diagnostics.webVersion} · {diagnostics.requestLatencyMs} ms</span></div></article>
+              <article className={diagnostics.server.database.ok?"ok":"danger"}><ShieldCheck size={20}/><div><small>POSTGRESQL</small><strong>{diagnostics.server.database.ok?"Conectado":"Falha"}</strong><span>{diagnostics.server.database.latencyMs} ms</span></div></article>
+              <article className={diagnostics.server.livekit.ok?"ok":"danger"}><Headphones size={20}/><div><small>VOZ / LIVEKIT</small><strong>{diagnostics.server.livekit.ok?"Disponivel":"Indisponivel"}</strong><span>{diagnostics.server.livekit.latencyMs} ms</span></div></article>
+              <article className={!diagnostics.online?"danger":diagnostics.desktop&&diagnostics.desktop.appVersion!==diagnostics.server.version?"warn":"ok"}><MonitorUp size={20}/><div><small>CLIENTE</small><strong>{diagnostics.desktop?`Desktop ${diagnostics.desktop.appVersion}`:"Web"}{diagnostics.desktop&&diagnostics.desktop.appVersion!==diagnostics.server.version?" · versao divergente":""}</strong><span>{diagnostics.viewport.width}x{diagnostics.viewport.height} · DPR {diagnostics.viewport.dpr}</span></div></article>
+            </div>
+            <div className="diagnostics-detail-grid">
+              <div className="settings-section-card"><div className="settings-section-card-title"><Activity size={18}/><div><strong>Servidor</strong><span>Informacoes seguras para suporte.</span></div></div><dl><div><dt>Web</dt><dd>{diagnostics.webVersion}</dd></div><div><dt>API</dt><dd>{diagnostics.server.version}</dd></div><div><dt>Uptime</dt><dd>{formatDuration(diagnostics.server.uptimeSeconds)}</dd></div><div><dt>Socket.IO cliente</dt><dd>{diagnostics.socketConnected?"Conectado":"Desconectado"}</dd></div><div><dt>Armazenamento</dt><dd>{diagnostics.server.storage.ok?`${diagnostics.server.storage.usedPercent}% usado`:"Falha"}</dd></div></dl></div>
+              <div className="settings-section-card"><div className="settings-section-card-title"><MonitorUp size={18}/><div><strong>Cliente</strong><span>{diagnostics.desktop?"Electron Desktop":"Navegador Web"}</span></div></div><dl>{diagnostics.desktop?<><div><dt>Plataforma</dt><dd>{diagnostics.desktop.platform}-{diagnostics.desktop.arch}</dd></div><div><dt>Electron</dt><dd>{diagnostics.desktop.electron}</dd></div><div><dt>Zoom</dt><dd>{diagnostics.desktop.window?`${Math.round(diagnostics.desktop.window.zoomFactor*100)}%`:"-"}</dd></div><div><dt>Escala do monitor</dt><dd>{Math.round(diagnostics.desktop.display.scaleFactor*100)}%</dd></div><div><dt>Updater</dt><dd>{diagnostics.desktop.updateChannel}</dd></div></>:<><div><dt>Navegador</dt><dd>{navigator.userAgent.split(" ").slice(-2).join(" ")}</dd></div><div><dt>Online</dt><dd>{diagnostics.online?"Sim":"Nao"}</dd></div></>}</dl></div>
+            </div>
+            <div className="diagnostics-footnote"><TriangleAlert size={15}/><span>O relatorio nao inclui senha, token de sessao, chave 2FA ou conteudo de mensagens.</span></div>
+          </>}
+        </section>
+      )}
 
       {tab === "developer" && (
         <section className="settings-page-section developer-user-settings">

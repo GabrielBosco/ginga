@@ -1,0 +1,152 @@
+/* Ginga 0.4.3 RC8 - Settings navigation + spacing polish */
+
+/* Sidebar de configuracoes: grupos recolhiveis, hierarquia clara e mais respiro. */
+.settings-sidebar nav {
+  padding: 2px 4px 10px 0;
+  scrollbar-gutter: stable;
+}
+
+.settings-nav-group-toggle {
+  width: calc(100% - 6px);
+  min-height: 30px;
+  margin: 12px 3px 5px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: #8f98a4;
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 760;
+  letter-spacing: .065em;
+  text-align: left;
+  transition: background-color .12s ease, color .12s ease;
+}
+
+.settings-nav-group-toggle:first-child { margin-top: 2px; }
+.settings-nav-group-toggle:hover { background: rgba(255,255,255,.045); color: #d6dbe1; }
+.settings-nav-group-toggle > svg { flex: 0 0 auto; color: #747e8b; transition: color .12s ease; }
+.settings-nav-group-toggle:hover > svg { color: #b6bec8; }
+.settings-nav-group-toggle > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-nav-group-toggle.is-collapsed { margin-bottom: 2px; color: #78818d; }
+
+.settings-nav-wrap {
+  margin: 2px 0;
+  padding-left: 7px;
+}
+
+.settings-nav-wrap button,
+.settings-sidebar nav .settings-nav-wrap button {
+  min-height: 40px !important;
+  padding: 0 12px !important;
+  border-radius: 8px !important;
+  gap: 10px !important;
+  font-size: 13px !important;
+  font-weight: 590 !important;
+  letter-spacing: 0 !important;
+}
+
+.settings-nav-wrap button > svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  opacity: .86;
+}
+
+.settings-nav-wrap button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-nav-wrap button.active {
+  position: relative;
+  background: rgba(120,103,232,.17) !important;
+  color: #f0eefc !important;
+}
+
+.settings-nav-wrap button.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: #8b78f5;
+}
+
+.settings-sidebar-head {
+  padding-bottom: 20px !important;
+}
+.settings-sidebar-head strong { font-size: 15px !important; line-height: 1.25; }
+.settings-sidebar-head span { margin-top: 4px !important; font-size: 11.5px !important; line-height: 1.35; }
+.settings-sidebar-footer { margin-top: 12px; }
+
+/* Conteudo de configuracoes: menos elementos grudados e cards mais legiveis. */
+.settings-page-inner { padding-bottom: 88px !important; }
+.settings-page-section { gap: 24px !important; }
+.settings-page-title { margin-bottom: 4px !important; }
+.settings-page-title h1 { margin-bottom: 8px !important; line-height: 1.18; }
+.settings-page-title p { line-height: 1.58 !important; max-width: 690px !important; }
+
+.settings-card,
+.settings-section-card,
+.settings-control-block,
+.avatar-settings-card,
+.server-banner-editor,
+.settings-danger-zone,
+.settings-toggle-list,
+.settings-form-grid,
+.profile-editor-section,
+.voice-settings-section {
+  scroll-margin-top: 24px;
+}
+
+.settings-card,
+.settings-section-card,
+.settings-control-block,
+.avatar-settings-card,
+.server-banner-editor {
+  border-radius: 12px !important;
+}
+
+.settings-form-grid { gap: 18px 16px !important; }
+.settings-page-section label { line-height: 1.35 !important; }
+.settings-page-section label > small { margin-top: 6px !important; line-height: 1.45 !important; }
+.settings-toggle-list { gap: 8px !important; }
+.settings-toggle-row { padding-block: 13px !important; }
+.settings-toggle-row + .settings-toggle-row { border-top-color: rgba(255,255,255,.055) !important; }
+.settings-action-row { padding-top: 4px; }
+
+/* Toolbar do chat continua contextual: invisivel ate o composer receber foco. */
+.message-format-toolbar:not(.is-visible) {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.message-format-toolbar.is-visible {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+@media (min-width: 781px) {
+  .settings-sidebar { min-width: 228px; }
+}
+
+/* No layout mobile os grupos nao devem virar uma segunda linha de navegacao. */
+@media (max-width: 780px) {
+  .settings-nav-group-toggle { display: none !important; }
+  .settings-nav-wrap { padding-left: 0; margin: 0; }
+  .settings-sidebar nav { gap: 5px !important; padding: 0; }
+  .settings-nav-wrap button,
+  .settings-sidebar nav .settings-nav-wrap button {
+    min-height: 36px !important;
+    width: auto !important;
+    padding-inline: 10px !important;
+  }
+}

@@ -8,6 +8,8 @@ import { Avatar } from "./Avatar";
 import { AudioPlayer } from "./AudioPlayer";
 import { MediaViewer } from "./MediaViewer";
 import { VoiceMessageRecorder } from "./VoiceMessageRecorder";
+import { MessageContent } from "./MessageContent";
+import { MessageFormattingToolbar, handleMessageFormatShortcut } from "./MessageFormattingToolbar";
 
 import { gingaConfirm } from "../lib/dialogs";
 interface DirectChatProps {
@@ -146,6 +148,7 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [mediaViewer, setMediaViewer] = useState<Attachment | null>(null);
   const [content, setContent] = useState("");
+  const [composerFocused, setComposerFocused] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [replyTo, setReplyTo] = useState<DirectMessage | null>(null);
   const [editingId, setEditingId] = useState("");
@@ -365,6 +368,7 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (handleMessageFormatShortcut(event, { textareaRef, value: content, onChange: setContent })) return;
     if (event.key === "Escape" && (replyTo || editingId)) { event.preventDefault(); cancelComposerMode(); return; }
     if (event.key === "ArrowUp" && !content.trim() && !replyTo && !editingId) {
       const lastOwn = [...messages].reverse().find((message) => message.authorId === currentUser.id && message.content.trim() && !serverInviteCode(message.content));
@@ -431,7 +435,7 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
               <div className="message-body">
                 {!compact && <div className="message-meta"><button className="message-author-button" type="button" onClick={(event) => onUserClick?.(message.author, event.currentTarget.getBoundingClientRect())}><strong>{message.author.displayName}</strong><span>@{message.author.username}</span></button><time>{timeFormatter.format(new Date(message.createdAt))}{message.editedAt ? " · editada" : ""}</time></div>}
                 {replied && <button className="direct-reply-reference" type="button" onClick={() => document.querySelector(`[data-direct-message-id="${replied.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}><Reply size={13}/><strong>{replied.author.displayName}</strong><span>{directReplyPreview(replied)}</span></button>}
-                <div data-direct-message-id={message.id}>{inviteCode ? <DirectServerInviteCard code={inviteCode} onJoin={onJoinServerInvite}/> : message.content ? <p className="message-text">{message.content}</p> : null}</div>
+                <div data-direct-message-id={message.id}>{inviteCode ? <DirectServerInviteCard code={inviteCode} onJoin={onJoinServerInvite}/> : message.content ? <div className="message-text"><MessageContent content={message.content}/></div> : null}</div>
                 {message.attachments.length > 0 && <div className="message-attachments">{message.attachments.map((attachment) => <MessageAttachment key={attachment.id} attachment={attachment} onPreview={setMediaViewer} />)}</div>}
               </div>
               <div className="direct-message-actions">
@@ -449,9 +453,10 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
         {error && <div className="composer-error">{error}</div>}
         {(replyTo || editingId) && <div className="direct-composer-context"><div>{editingId ? <><Pencil size={14}/><span>Editando mensagem</span></> : <><Reply size={14}/><span>Respondendo a <strong>{replyTo?.author.displayName}</strong></span></>}</div><button type="button" onClick={cancelComposerMode} aria-label="Cancelar"><X size={15}/></button></div>}
         {pendingAttachments.length > 0 && <div className="pending-files">{pendingAttachments.map((attachment) => <div className="pending-file" key={attachment.id}><AttachmentIcon mimeType={attachment.mimeType} /><span>{attachment.originalName}</span><button type="button" onClick={() => void removePendingAttachment(attachment)}>×</button></div>)}</div>}
+        <MessageFormattingToolbar textareaRef={textareaRef} value={content} onChange={setContent} active={composerFocused} />
         <div className="composer">
           <label className={`composer-attach ${uploading || editingId ? "disabled" : ""}`} aria-label="Adicionar arquivo">{uploading ? <LoaderCircle className="spin" size={20} /> : <Paperclip size={20} />}<input type="file" multiple disabled={uploading || Boolean(editingId) || pendingAttachments.length >= 10} onChange={chooseFiles} /></label>
-          <textarea ref={textareaRef} value={content} onChange={(event) => setContent(event.target.value)} onKeyDown={onKeyDown} onPaste={onPaste} placeholder={editingId ? "Edite sua mensagem" : `Mensagem para ${other.displayName}`} rows={1} maxLength={4000} />
+          <textarea ref={textareaRef} value={content} onChange={(event) => setContent(event.target.value)} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} onKeyDown={onKeyDown} onPaste={onPaste} placeholder={editingId ? "Edite sua mensagem" : `Mensagem para ${other.displayName}`} rows={1} maxLength={4000} />
           {!editingId && <VoiceMessageRecorder disabled={sending || uploading} onSendFile={sendVoiceMessage} />}
           <button className="send-button" type="submit" disabled={sending || (!content.trim() && pendingAttachments.length === 0)} aria-label={editingId ? "Salvar edicao" : "Enviar"}>{sending ? <LoaderCircle className="spin" size={19} /> : <Send size={19} />}</button>
         </div>

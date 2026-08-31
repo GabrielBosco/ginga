@@ -21,12 +21,30 @@ import {
 import { inviteCode, randomColor, routeParam } from "../utils.js";
 import { SECURITY_POLICY_VERSION } from "../security.js";
 import { getServerTemplate, publicServerTemplates } from "../serverTemplates.js";
-import { guildBannerBlob, guildBannerUrl, guildBannerUrlMap, guildIconBlob, guildIconUrl, guildIconUrlMap, removeGuildBanner, removeGuildIcon, saveGuildBanner, saveGuildIcon } from "../guildAppearance.js";
+import { DEFAULT_GUILD_APPEARANCE, guildAppearance, guildAppearanceMap, guildBannerBlob, guildBannerUrl, guildBannerUrlMap, guildIconBlob, guildIconUrl, guildIconUrlMap, removeGuildBanner, removeGuildIcon, saveGuildAppearance, saveGuildBanner, saveGuildIcon, type GuildImageMime } from "../guildAppearance.js";
 import { postGuildMemberSystemMessage } from "../guildSystemMessages.js";
+import { checkGuildJoinSecurity } from "../v090Security.js";
+import { reasonableGifDimensions, signatureMatches } from "../fileValidation.js";
 
 export const guildsRouter = Router();
 
+const GUILD_IMAGE_MIMES = ["image/webp", "image/gif"] as const;
+
+function guildImageMime(req: Request): GuildImageMime {
+  const mime = String(req.headers["content-type"] || "").split(";", 1)[0]!.trim().toLowerCase();
+  if (!(GUILD_IMAGE_MIMES as readonly string[]).includes(mime)) throw new HttpError(415, "Use WebP ou GIF para esta imagem");
+  return mime as GuildImageMime;
+}
+
 const createGuildSchema = z.object({ name: z.string().trim().min(2).max(64), templateId: z.string().trim().max(32).optional().default("basic") });
+const guildAppearanceSchema = z.object({
+  accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  sidebarStyle: z.enum(["SOLID", "TINTED", "GLASS"]),
+  bannerPosition: z.number().int().min(0).max(100),
+  channelDensity: z.enum(["COMPACT", "COZY"]),
+  showBannerInSidebar: z.boolean()
+}).strict();
 const updateGuildSchema = z.object({
   name: z.string().trim().min(2).max(64).optional(),
   iconColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
@@ -146,19 +164,19 @@ function emitGuildStructure(req: Request, guildId: string) {
 
 function emitModeration(req: Request, guildId: string, userId: string, action: "KICK" | "BAN") {
   const io = req.app.get("io");
-  const userRoom = `user:${userId}`;
-  io?.to?.(userRoom)?.emit?.("guild:moderation", { guildId, action, at: new Date().toISOString() });
-  // Derruba as conexoes do alvo para remover imediatamente salas de texto/voz antigas.
-  // O cliente pode reconectar, mas nao conseguira entrar novamente no espaco sem membership.
-  io?.in?.(userRoom)?.disconnectSockets?.(true);
+  io?.to?.(`user:${userId}`)?.emit?.("guild:moderation", { guildId, action, at: new Date().toISOString() });
+}
+
+function removeUserFromKnownGuildSocketRooms(req: Request, guildId: string, userId: string, channelIds: readonly string[]) {
+  const io = req.app.get("io");
+  if (!io?.in) return;
+  const rooms = [`guild:${guildId}`, ...channelIds.map((channelId) => `channel:${channelId}`)];
+  io.in(`user:${userId}`).socketsLeave?.(rooms);
 }
 
 async function removeUserFromGuildSocketRooms(req: Request, guildId: string, userId: string) {
-  const io = req.app.get("io");
-  if (!io?.in) return;
   const channels = await prisma.channel.findMany({ where: { guildId }, select: { id: true } });
-  const rooms = [`guild:${guildId}`, ...channels.map((channel) => `channel:${channel.id}`)];
-  io.in(`user:${userId}`).socketsLeave?.(rooms);
+  removeUserFromKnownGuildSocketRooms(req, guildId, userId, channels.map((channel) => channel.id));
 }
 
 function removeUserFromLogicalGuildVoice(req: Request, guildId: string, userId: string, reason: string) {
@@ -268,7 +286,7 @@ guildsRouter.get("/guilds", requireAuth, asyncHandler(async (req, res) => {
     select: { guildId: true, roleId: true }
   });
   const guildIds = memberships.map((item) => item.guild.id);
-  const [iconUrls, bannerUrls] = await Promise.all([guildIconUrlMap(guildIds), guildBannerUrlMap(guildIds)]);
+  const [iconUrls, bannerUrls, appearances] = await Promise.all([guildIconUrlMap(guildIds), guildBannerUrlMap(guildIds), guildAppearanceMap(guildIds, new Map(memberships.map(({ guild }) => [guild.id, guild.iconColor])))]);
   const roleIdsByGuild = new Map<string, Set<string>>();
   for (const assignment of assignments) {
     const ids = roleIdsByGuild.get(assignment.guildId) ?? new Set<string>();
@@ -284,6 +302,7 @@ guildsRouter.get("/guilds", requireAuth, asyncHandler(async (req, res) => {
       iconColor: guild.iconColor,
       iconUrl: iconUrls.get(guild.id) ?? null,
       bannerUrl: bannerUrls.get(guild.id) ?? null,
+      appearance: appearances.get(guild.id) ?? { ...DEFAULT_GUILD_APPEARANCE, accentColor: guild.iconColor },
       description: guild.description,
       welcomeMessage: guild.welcomeMessage,
       rules: guild.rules,
@@ -413,6 +432,7 @@ guildsRouter.post("/guilds", requireAuth, asyncHandler(async (req, res) => {
       iconColor: guild.iconColor,
       iconUrl: await guildIconUrl(guild.id),
       bannerUrl: await guildBannerUrl(guild.id),
+      appearance: await guildAppearance(guild.id, guild.iconColor),
       description: guild.description,
       welcomeMessage: guild.welcomeMessage,
       rules: guild.rules,
@@ -436,9 +456,19 @@ guildsRouter.post("/guilds", requireAuth, asyncHandler(async (req, res) => {
   });
 }));
 
+guildsRouter.patch("/guilds/:guildId/appearance", requireAuth, asyncHandler(async (req, res) => {
+  const guildId = routeParam(req.params.guildId, "guildId");
+  const data = guildAppearanceSchema.parse(req.body);
+  await requireGuildCapability(req.auth!.sub, guildId, "manageServer");
+  const appearance = await saveGuildAppearance(guildId, data);
+  await writeAudit({ guildId, actorId: req.auth!.sub, action: "GUILD_APPEARANCE_UPDATE", targetType: "GUILD", targetId: guildId, metadata: data, request: req });
+  emitGuildStructure(req, guildId);
+  res.json({ appearance });
+}));
+
 guildsRouter.get("/guilds/:guildId/icon/:etag", asyncHandler(async (req, res) => {
   const guildId = routeParam(req.params.guildId, "guildId");
-  const etag = routeParam(req.params.etag, "etag").replace(/\.webp$/i, "");
+  const etag = routeParam(req.params.etag, "etag").replace(/\.(?:webp|gif)$/i, "");
   const icon = await guildIconBlob(guildId, etag);
   if (!icon?.icon_blob) throw new HttpError(404, "Icone do servidor nao encontrado");
   res.setHeader("Content-Type", icon.icon_mime || "image/webp");
@@ -452,16 +482,18 @@ guildsRouter.get("/guilds/:guildId/icon/:etag", asyncHandler(async (req, res) =>
 guildsRouter.post(
   "/guilds/:guildId/icon",
   requireAuth,
-  raw({ type: "image/webp", limit: "1mb" }),
+  raw({ type: ["image/webp", "image/gif"], limit: "8mb" }),
   asyncHandler(async (req, res) => {
     const guildId = routeParam(req.params.guildId, "guildId");
     await requireGuildManager(req.auth!.sub, guildId);
     const body = req.body;
-    if (!Buffer.isBuffer(body) || body.length < 16) throw new HttpError(400, "Icone WebP invalido");
-    const isWebp = body.subarray(0, 4).toString("ascii") === "RIFF" && body.subarray(8, 12).toString("ascii") === "WEBP";
-    if (!isWebp) throw new HttpError(400, "O icone precisa ser uma imagem WebP valida");
-    const icon = await saveGuildIcon(guildId, body);
-    await writeAudit({ guildId, actorId: req.auth!.sub, action: "GUILD_ICON_UPDATE", targetType: "GUILD", targetId: guildId, request: req });
+    if (!Buffer.isBuffer(body) || body.length < 16) throw new HttpError(400, "Icone do servidor invalido");
+    if (body.length > 8 * 1024 * 1024) throw new HttpError(413, "Icone muito grande. Limite: 8 MB");
+    const mime = guildImageMime(req);
+    if (!signatureMatches(mime, body)) throw new HttpError(415, "O conteudo do icone nao corresponde ao tipo informado");
+    if (mime === "image/gif" && !reasonableGifDimensions(body)) throw new HttpError(415, "GIF invalido ou com resolucao grande demais");
+    const icon = await saveGuildIcon(guildId, body, mime);
+    await writeAudit({ guildId, actorId: req.auth!.sub, action: "GUILD_ICON_UPDATE", targetType: "GUILD", targetId: guildId, metadata: { mime, size: body.length }, request: req });
     emitGuildStructure(req, guildId);
     res.json(icon);
   })
@@ -476,8 +508,8 @@ guildsRouter.delete("/guilds/:guildId/icon", requireAuth, asyncHandler(async (re
   res.status(204).end();
 }));
 
-guildsRouter.get("/guilds/:guildId/banner/:etag", asyncHandler(async (req,res)=>{const guildId=routeParam(req.params.guildId,"guildId"),etag=routeParam(req.params.etag,"etag").replace(/\.webp$/i,"");const banner=await guildBannerBlob(guildId,etag);if(!banner?.banner_blob)throw new HttpError(404,"Banner do servidor nao encontrado");res.setHeader("Content-Type",banner.banner_mime||"image/webp");res.setHeader("X-Content-Type-Options","nosniff");res.setHeader("Content-Disposition","inline");res.setHeader("Cache-Control","public, max-age=31536000, immutable");res.setHeader("ETag",`"${etag}"`);res.send(Buffer.from(banner.banner_blob));}));
-guildsRouter.post("/guilds/:guildId/banner",requireAuth,raw({type:"image/webp",limit:"2mb"}),asyncHandler(async(req,res)=>{const guildId=routeParam(req.params.guildId,"guildId");await requireGuildManager(req.auth!.sub,guildId);const body=req.body;if(!Buffer.isBuffer(body)||body.length<16)throw new HttpError(400,"Banner WebP invalido");if(body.subarray(0,4).toString("ascii")!=="RIFF"||body.subarray(8,12).toString("ascii")!=="WEBP")throw new HttpError(400,"O banner precisa ser uma imagem WebP valida");const banner=await saveGuildBanner(guildId,body);await writeAudit({guildId,actorId:req.auth!.sub,action:"GUILD_BANNER_UPDATE",targetType:"GUILD",targetId:guildId,request:req});emitGuildStructure(req,guildId);res.json(banner);}));
+guildsRouter.get("/guilds/:guildId/banner/:etag", asyncHandler(async (req,res)=>{const guildId=routeParam(req.params.guildId,"guildId"),etag=routeParam(req.params.etag,"etag").replace(/\.(?:webp|gif)$/i,"");const banner=await guildBannerBlob(guildId,etag);if(!banner?.banner_blob)throw new HttpError(404,"Banner do servidor nao encontrado");res.setHeader("Content-Type",banner.banner_mime||"image/webp");res.setHeader("X-Content-Type-Options","nosniff");res.setHeader("Content-Disposition","inline");res.setHeader("Cache-Control","public, max-age=31536000, immutable");res.setHeader("ETag",`"${etag}"`);res.send(Buffer.from(banner.banner_blob));}));
+guildsRouter.post("/guilds/:guildId/banner",requireAuth,raw({type:["image/webp","image/gif"],limit:"12mb"}),asyncHandler(async(req,res)=>{const guildId=routeParam(req.params.guildId,"guildId");await requireGuildManager(req.auth!.sub,guildId);const body=req.body;if(!Buffer.isBuffer(body)||body.length<16)throw new HttpError(400,"Banner do servidor invalido");if(body.length>12*1024*1024)throw new HttpError(413,"Banner muito grande. Limite: 12 MB");const mime=guildImageMime(req);if(!signatureMatches(mime,body))throw new HttpError(415,"O conteudo do banner nao corresponde ao tipo informado");if(mime==="image/gif"&&!reasonableGifDimensions(body))throw new HttpError(415,"GIF invalido ou com resolucao grande demais");const banner=await saveGuildBanner(guildId,body,mime);await writeAudit({guildId,actorId:req.auth!.sub,action:"GUILD_BANNER_UPDATE",targetType:"GUILD",targetId:guildId,metadata:{mime,size:body.length},request:req});emitGuildStructure(req,guildId);res.json(banner);}));
 guildsRouter.delete("/guilds/:guildId/banner",requireAuth,asyncHandler(async(req,res)=>{const guildId=routeParam(req.params.guildId,"guildId");await requireGuildManager(req.auth!.sub,guildId);await removeGuildBanner(guildId);await writeAudit({guildId,actorId:req.auth!.sub,action:"GUILD_BANNER_REMOVE",targetType:"GUILD",targetId:guildId,request:req});emitGuildStructure(req,guildId);res.status(204).end();}));
 
 guildsRouter.patch("/guilds/:guildId", requireAuth, asyncHandler(async (req, res) => {
@@ -518,7 +550,7 @@ guildsRouter.patch("/guilds/:guildId", requireAuth, asyncHandler(async (req, res
   const guild = await prisma.guild.update({ where: { id: guildId }, data: updateData });
   await writeAudit({ guildId, actorId: req.auth!.sub, action: "GUILD_UPDATE", targetType: "GUILD", targetId: guildId, metadata: data, request: req });
   emitGuildStructure(req, guildId);
-  res.json({ guild: { ...guild, iconUrl: await guildIconUrl(guildId), bannerUrl: await guildBannerUrl(guildId) } });
+  res.json({ guild: { ...guild, iconUrl: await guildIconUrl(guildId), bannerUrl: await guildBannerUrl(guildId), appearance: await guildAppearance(guildId, guild.iconColor) } });
 }));
 
 guildsRouter.patch("/guilds/:guildId/lockdown", requireAuth, asyncHandler(async (req, res) => {
@@ -562,17 +594,29 @@ guildsRouter.delete("/guilds/:guildId", requireAuth, asyncHandler(async (req, re
   deleteGuildSchema.parse(req.body ?? {});
   const guild = await prisma.guild.findUnique({
     where: { id: guildId },
-    select: { id: true, name: true, ownerId: true, members: { select: { userId: true } } }
+    select: {
+      id: true,
+      name: true,
+      ownerId: true,
+      members: { select: { userId: true } },
+      channels: { select: { id: true } }
+    }
   });
   if (!guild) throw new HttpError(404, "Espaco nao encontrado");
   if (guild.ownerId !== req.auth!.sub) throw new HttpError(403, "Somente o proprietario pode excluir este espaco");
 
+  const channelIds = guild.channels.map((channel) => channel.id);
   for (const member of guild.members) {
+    removeUserFromLogicalGuildVoice(req, guildId, member.userId, "GUILD_DELETED");
     await removeUserFromGuildMedia(guildId, member.userId).catch(() => undefined);
+    removeUserFromKnownGuildSocketRooms(req, guildId, member.userId, channelIds);
   }
-  await removeGuildIcon(guildId).catch(() => undefined);
+  await Promise.allSettled([removeGuildIcon(guildId), removeGuildBanner(guildId)]);
   await prisma.guild.delete({ where: { id: guildId } });
-  req.app.get("io")?.to?.(`guild:${guildId}`)?.emit?.("guild:deleted", { guildId, name: guild.name });
+  const io = req.app.get("io");
+  for (const member of guild.members) {
+    io?.to?.(`user:${member.userId}`)?.emit?.("guild:deleted", { guildId, name: guild.name });
+  }
   res.status(204).end();
 }));
 
@@ -1182,6 +1226,10 @@ guildsRouter.get("/invites/:code", asyncHandler(async (req, res) => {
 guildsRouter.post("/invites/:code/join", requireAuth, asyncHandler(async (req, res) => {
   const code = routeParam(req.params.code, "code").toUpperCase();
   const userId = req.auth!.sub;
+  const preview = await prisma.invite.findUnique({ where: { code }, select: { guildId: true } });
+  if (!preview) throw new HttpError(404, "Convite nao encontrado");
+  const existing = await prisma.guildMember.findUnique({ where: { guildId_userId: { guildId: preview.guildId, userId } } });
+  const joinSecurity = existing ? { timeoutUntil:null, timeoutReason:"" } : await checkGuildJoinSecurity(preview.guildId,userId);
   const joinResult = await prisma.$transaction(async (tx) => {
     const invite = await tx.invite.findUnique({ where: { code }, include: { guild: { select: { lockdownEnabled: true, welcomeChannelId: true } } } });
     if (!invite) throw new HttpError(404, "Convite nao encontrado");
@@ -1208,7 +1256,7 @@ guildsRouter.post("/invites/:code/join", requireAuth, asyncHandler(async (req, r
       } else {
         await tx.invite.update({ where: { code }, data: { uses: { increment: 1 } } });
       }
-      await tx.guildMember.create({ data: { guildId: invite.guildId, userId, role: "MEMBER" } });
+      await tx.guildMember.create({ data: { guildId: invite.guildId, userId, role: "MEMBER", timeoutUntil: joinSecurity.timeoutUntil, timeoutReason: joinSecurity.timeoutReason } });
     }
     return { guildId: invite.guildId, welcomeChannelId: invite.guild.welcomeChannelId, joined };
   });

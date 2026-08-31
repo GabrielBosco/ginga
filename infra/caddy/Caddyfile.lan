@@ -1,0 +1,11 @@
+{$APP_DOMAIN} {
+    tls internal
+    encode zstd gzip
+    reverse_proxy web:80
+}
+
+{$LIVEKIT_DOMAIN} {
+    tls internal
+    encode zstd gzip
+    reverse_proxy livekit:7880
+}

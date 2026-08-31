@@ -1,0 +1,21 @@
+{
+  "name": "@ginga/bot-sdk",
+  "version": "0.4.1",
+  "description": "SDK JavaScript/TypeScript para bots do Ginga",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.1"
+  },
+  "license": "MIT"
+}

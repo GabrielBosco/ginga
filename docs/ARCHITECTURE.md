@@ -1,62 +1,49 @@
 # Arquitetura
 
-## Visão geral
+## Fluxo principal
 
 ```text
-                  Internet / rede local
-                         |
-               +---------+---------+
-               |                   |
-            Web/API             mídia WebRTC
-            80/443              7881/TCP
-               |                7882/UDP
-               |                3478/UDP
-               v                   |
-         +-------------+           v
-         | Web / borda |      +-----------+
-         | React/Nginx |      | LiveKit   |
-         +------+------+      +-----+-----+
-                |                   |
-        +-------+-------+-----------+
-        |               |
-        v               v
-   +---------+       +-------+
-   | API     |       | Redis |
-   | Ginga   |       +-------+
-   +----+----+
-        |
-        v
-   +------------+
-   | PostgreSQL |
-   +------------+
+Navegador / Desktop / Android
+            |
+            v
+          Web
+            |
+       HTTP + Socket.IO
+            |
+            v
+           API  -------- PostgreSQL
+            |  \\------- Redis
+            |
+            +---------- LiveKit
 ```
 
-Em produção, a sinalização do LiveKit permanece interna à stack. Os clientes usam WSS pelo domínio de mídia configurado.
+## Serviços Docker
 
-## `apps/web`
+- `postgres`: catálogo persistente;
+- `redis`: cache/presença e suporte ao LiveKit;
+- `livekit-config`: gera a configuração de runtime;
+- `livekit`: mídia WebRTC;
+- `api`: autenticação, regras, dados e tempo real;
+- `web`: frontend e publicação de `/updates/`;
+- `caddy` / `caddy-lan`: perfis opcionais de entrada.
 
-Aplicação React/TypeScript compilada pelo Vite e servida pelo Nginx. O mesmo serviço encaminha `/api`, `/uploads` e `/socket.io` para a API dentro da rede Docker.
+## Código
 
-## `apps/api`
+- `apps/api`: Node.js/TypeScript/Prisma;
+- `apps/web`: React/TypeScript/Vite;
+- `apps/desktop`: Electron;
+- `apps/android`: base Android experimental;
+- `sdk/python`: Ginga Bot SDK;
+- `infra`: Caddy/LiveKit;
+- `scripts`: manutenção, auditoria e releases.
 
-API Node.js/Express responsável por autenticação, comunidades, mensagens, permissões, moderação, integrações e emissão de tokens LiveKit. Socket.IO mantém os eventos em tempo real.
+## Dados que não pertencem ao Git
 
-## PostgreSQL
-
-Armazena usuários, servidores, canais, mensagens, permissões, auditoria e demais entidades persistentes.
-
-## Redis
-
-Usado em operações de baixa latência e por componentes da implantação do LiveKit. Não deve ser publicado diretamente no host.
-
-## LiveKit
-
-Servidor SFU/WebRTC usado para voz, vídeo e compartilhamento de tela. Em produção, a sinalização fica atrás do endpoint HTTPS/WSS e as portas de mídia necessárias são publicadas diretamente.
-
-## Cliente Desktop
-
-O Electron carrega a instalação Ginga configurada e adiciona integrações nativas como sobreposição, presença de jogos, atalhos globais e atualização automática.
-
-## Cliente Android
-
-A fase inicial usa uma camada Android nativa com `WebView` seguro sobre a interface responsiva. O objetivo é evoluir gradualmente recursos específicos de celular sem duplicar toda a aplicação Web.
+- `.env`;
+- `secrets/`;
+- banco e volumes Docker;
+- uploads;
+- backups;
+- `updates/` gerados;
+- `node_modules` e `dist`;
+- backups de hotfix/release.

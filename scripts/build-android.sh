@@ -11,7 +11,7 @@ if [[ -z "$SERVER_URL" || "$SERVER_URL" != https://* ]]; then
 fi
 
 command -v gradle >/dev/null 2>&1 || {
-  echo "Gradle nao encontrado. Use Android Studio ou o workflow Gerar APK Android do GitHub Actions." >&2
+  echo "Gradle nao encontrado. Use Android Studio ou o workflow Android APK do GitHub Actions." >&2
   exit 1
 }
 
@@ -19,8 +19,8 @@ cd "$ROOT/apps/android"
 gradle --no-daemon clean assembleDebug -PGINGA_SERVER_URL="$SERVER_URL"
 
 mkdir -p "$ROOT/dist/android"
-cp -f app/build/outputs/apk/debug/app-debug.apk "$ROOT/dist/android/Ginga-0.3.1-debug.apk"
+cp -f app/build/outputs/apk/debug/app-debug.apk "$ROOT/dist/android/Ginga-0.2.0-debug.apk"
 
 echo
 echo "APK gerado:"
-echo "$ROOT/dist/android/Ginga-0.3.1-debug.apk"
+echo "$ROOT/dist/android/Ginga-0.2.0-debug.apk"

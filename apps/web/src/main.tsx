@@ -5,6 +5,15 @@ import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import "./styles.css";
 import "./remember-device.css";
 import "./ui-audit-pass.css";
+import "./v090.css";
+import "./ui-foundation-v043.css";
+import "./ui-release-v043.css";
+import "./ui-rc5-v043.css";
+import "./ui-rc6-v043.css";
+import "./ui-rc7-v043.css";
+import "./ui-rc8-v043.css";
+import "./ui-rc9-v043.css";
+import "./ui-hotfix-v045.css";
 
 type DesktopRuntimeLogger = { logRuntime?: (payload: unknown) => Promise<unknown> | unknown };
 
@@ -52,3 +61,6 @@ createRoot(rootElement).render(
     <AppErrorBoundary><App /></AppErrorBoundary>
   </StrictMode>
 );
+
+
+if ("serviceWorker" in navigator && !(window as unknown as { gingaDesktop?: unknown }).gingaDesktop) { window.addEventListener("load",()=>{void navigator.serviceWorker.register("/sw.js",{scope:"/"}).catch(()=>undefined);}); }

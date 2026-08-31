@@ -7,8 +7,8 @@ import {
   type MouseEvent as ReactMouseEvent
 } from "react";
 import {
-  Camera,
-  CameraOff,
+  Video,
+  VideoOff,
   Ban,
   Check,
   ChevronRight,
@@ -17,16 +17,18 @@ import {
   Headphones,
   Keyboard,
   Copy,
+  Eye,
   LoaderCircle,
   LogOut,
   Maximize2,
   Mic,
   MicOff,
   MessageCircle,
-  MonitorUp,
+  ScreenShare,
   Phone,
   PhoneOff,
   Radio,
+  RefreshCw,
   Settings2,
   Shield,
   ShieldCheck,
@@ -52,6 +54,7 @@ import { playUiSound, unlockUiAudio } from "../lib/sounds";
 import { loadNotificationPreferences } from "../lib/preferences";
 import { isGuildSilent, loadGuildPreferences } from "../lib/serverPreferences";
 import { loadVoicePreferences, type PersistedVoiceSession, type VoicePreferences } from "../lib/voicePreferences";
+import { switchVoiceScreenSource } from "../lib/voiceScreenShare";
 import { formatPushToTalkBinding } from "../lib/pushToTalkBinding";
 import type { Channel, LiveKitCredentials } from "../types";
 import { Avatar } from "./Avatar";
@@ -296,13 +299,15 @@ function ParticipantTile({
   onContextMenu,
   onActivate,
   onWatchStream,
-  deafened = false
+  deafened = false,
+  viewerCount = 0
 }: {
   participant: Participant;
   onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
   onActivate?: (event: ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>) => void;
   onWatchStream?: () => void;
   deafened?: boolean;
+  viewerCount?: number;
 }) {
   // Participant pode ser local ou remoto. Converter para a classe base evita a uniao
   // de iteradores LocalTrackPublication/RemoteTrackPublication que quebrava o TS.
@@ -382,12 +387,12 @@ function ParticipantTile({
         <span>{displayName}{participant.isLocal ? " (voce)" : ""}</span>
         {participant.isLocal && deafened ? <VolumeX size={14} /> : participant.isMicrophoneEnabled ? <Mic size={14} /> : <MicOff size={14} />}
       </div>
-      {screenPublication && <span className="screen-badge live"><Radio size={13} /> AO VIVO</span>}
+      {screenPublication && <span className="screen-badge live"><Radio size={13} /> AO VIVO {viewerCount > 0 && <><Eye size={12}/>{viewerCount}</>}</span>}
     </article>
   );
 }
 
-function StreamViewer({ participant, availableStreams, sinkId = "", onSwitch, onClose }: { participant: Participant; availableStreams: Participant[]; sinkId?: string; onSwitch: (identity: string) => void; onClose: () => void }) {
+function StreamViewer({ participant, availableStreams, sinkId = "", viewerCount = 0, onSwitch, onClose }: { participant: Participant; availableStreams: Participant[]; sinkId?: string; viewerCount?: number; onSwitch: (identity: string) => void; onClose: () => void }) {
   const containerRef = useRef<HTMLElement>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const volumeKey = `ginga.voice.streamVolume.${participant.identity}`;
@@ -432,7 +437,7 @@ function StreamViewer({ participant, availableStreams, sinkId = "", onSwitch, on
   return <div className="stream-viewer-backdrop" onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
     <section className="stream-viewer" ref={containerRef} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
       <header className="stream-viewer-header">
-        <div><span className="stream-live-pill"><Radio size={13}/> AO VIVO</span><strong>{displayName}</strong><small>Compartilhamento de tela</small></div>
+        <div><span className="stream-live-pill"><Radio size={13}/> AO VIVO</span><strong>{displayName}</strong><small>Compartilhamento de tela {viewerCount > 0 ? `· ${viewerCount} assistindo` : ""}</small></div>
         <div className="stream-viewer-actions">
           <button type="button" onClick={() => void toggleFullscreen()} aria-label={fullscreen ? "Sair da tela cheia" : "Tela cheia"}><Maximize2 size={18}/></button>
           <button type="button" onClick={onClose} aria-label="Fechar transmissao"><X size={19}/></button>
@@ -497,6 +502,8 @@ export function VoiceRoom({
   const [micEnabled, setMicEnabled] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [screenEnabled, setScreenEnabled] = useState(false);
+  const [screenMenuOpen, setScreenMenuOpen] = useState(false);
+  const [streamViewerCounts, setStreamViewerCounts] = useState<Record<string, number>>({});
   const [mediaPermissions, setMediaPermissions] = useState({ canShareScreen, canUseVideo });
   const [watchingStreamIdentity, setWatchingStreamIdentity] = useState("");
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -1024,6 +1031,16 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
   }, [channel.id]);
 
   useEffect(() => {
+    if (!socket) return;
+    const onViewerCount = (payload: { channelId?: string; broadcasterId?: string; count?: number }) => {
+      if (payload.channelId !== channel.id || !payload.broadcasterId) return;
+      setStreamViewerCounts((current) => ({ ...current, [payload.broadcasterId!]: Math.max(0, Number(payload.count) || 0) }));
+    };
+    socket.on("voice:stream-viewers", onViewerCount);
+    return () => { socket.off("voice:stream-viewers", onViewerCount); };
+  }, [channel.id, socket]);
+
+  useEffect(() => {
     const onExternalDeafen = (event: Event) => {
       const detail = (event as CustomEvent<{ channelId?: string; deafened?: boolean }>).detail;
       if (detail?.channelId && detail.channelId !== channel.id) return;
@@ -1273,6 +1290,13 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
     if (watchingStreamIdentity && !watchingStreamParticipant) setWatchingStreamIdentity("");
   }, [watchingStreamIdentity, watchingStreamParticipant]);
 
+  const watchingBroadcasterUserId = watchingStreamParticipant ? participantUserId(watchingStreamParticipant) : "";
+  useEffect(() => {
+    if (!socket || !watchingBroadcasterUserId || watchingBroadcasterUserId === currentUserId) return;
+    socket.emit("voice:stream-watch", { channelId: channel.id, broadcasterId: watchingBroadcasterUserId });
+    return () => { socket.emit("voice:stream-unwatch", { channelId: channel.id, broadcasterId: watchingBroadcasterUserId }); };
+  }, [channel.id, currentUserId, socket, watchingBroadcasterUserId]);
+
   useEffect(() => {
     if (!autoWatchUserId || lastAutoWatchRef.current === autoWatchUserId) return;
     const target = streamingParticipants.find((participant) => participant.identity === autoWatchUserId);
@@ -1280,6 +1304,21 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
     lastAutoWatchRef.current = autoWatchUserId;
     setWatchingStreamIdentity(autoWatchUserId);
   }, [autoWatchUserId, streamingParticipants, revision]);
+
+  async function switchCurrentScreenSource() {
+    if (!room || busy || status !== ConnectionState.Connected || !room.localParticipant.isScreenShareEnabled) return;
+    setBusy(true);
+    setMediaWarning("");
+    try {
+      await switchVoiceScreenSource(room);
+      setRevision((value) => value + 1);
+      setScreenMenuOpen(false);
+    } catch (caught) {
+      setMediaWarning(caught instanceof Error ? caught.message : "Nao foi possivel trocar a janela compartilhada.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function toggleMedia(kind: "mic" | "camera" | "screen") {
     if (!room || busy || status !== ConnectionState.Connected) return;
@@ -1309,6 +1348,7 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
       }
       if (kind === "screen") {
         await enableScreen(room, !room.localParticipant.isScreenShareEnabled);
+        if (!room.localParticipant.isScreenShareEnabled) setScreenMenuOpen(false);
         playVoiceEventSound(room.localParticipant.isScreenShareEnabled ? "streamStart" : "streamStop");
       }
       setMicEnabled(room.localParticipant.isMicrophoneEnabled);
@@ -1506,6 +1546,7 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
                 key={participant.sid || participant.identity}
                 participant={participant}
                 deafened={participant.isLocal ? deafened : false}
+                viewerCount={streamViewerCounts[participantUserId(participant)] ?? 0}
                 onWatchStream={() => setWatchingStreamIdentity(participant.identity)}
                 onContextMenu={participant.isLocal || participant.isScreenShareEnabled ? undefined : (event) => openParticipantMenu(participant, event)}
                 onActivate={participant.isLocal || participant.isScreenShareEnabled ? undefined : (event) => openParticipantMenu(participant, event)}
@@ -1521,6 +1562,7 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
           participant={watchingStreamParticipant}
           availableStreams={streamingParticipants}
           sinkId={outputDevice}
+          viewerCount={streamViewerCounts[participantUserId(watchingStreamParticipant)] ?? 0}
           onSwitch={setWatchingStreamIdentity}
           onClose={() => setWatchingStreamIdentity("")}
         />
@@ -1608,12 +1650,20 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
           <button className={`media-button ${!micEnabled ? "off" : ""}`} onClick={() => void toggleMedia("mic")} disabled={busy || status !== ConnectionState.Connected} aria-label={micEnabled ? "Desativar microfone" : "Ativar microfone"}>
             {micEnabled ? <Mic /> : <MicOff />}
           </button>
-          <button className={`media-button ${!cameraEnabled ? "off" : ""}`} onClick={() => void toggleMedia("camera")} disabled={busy || status !== ConnectionState.Connected || !mediaPermissions.canUseVideo} title={!mediaPermissions.canUseVideo ? "Video desativado pelas permissoes do servidor" : undefined} aria-label={cameraEnabled ? "Desativar camera" : "Ativar camera"}>
-            {cameraEnabled ? <Camera /> : <CameraOff />}
+          <button className={`media-button camera-control ${!cameraEnabled ? "off" : ""}`} onClick={() => void toggleMedia("camera")} disabled={busy || status !== ConnectionState.Connected || !mediaPermissions.canUseVideo} title={!mediaPermissions.canUseVideo ? "Video desativado pelas permissoes do servidor" : undefined} aria-label={cameraEnabled ? "Desativar camera" : "Ativar camera"}>
+            {cameraEnabled ? <Video size={21} strokeWidth={2.15}/> : <VideoOff size={21} strokeWidth={2.15}/>}
           </button>
-          <button className={`media-button ${screenEnabled ? "active" : ""}`} onClick={() => void toggleMedia("screen")} disabled={busy || status !== ConnectionState.Connected || !mediaPermissions.canShareScreen} title={!mediaPermissions.canShareScreen ? "Transmissao de tela desativada pelas permissoes do servidor" : undefined} aria-label={`Compartilhar tela em ${quality}`}>
-            <MonitorUp />
-          </button>
+          <div className="voice-screen-control-wrap">
+            <button className={`media-button screen-control ${screenEnabled ? "active" : ""}`} onClick={() => screenEnabled ? setScreenMenuOpen((value) => !value) : void toggleMedia("screen")} disabled={busy || status !== ConnectionState.Connected || !mediaPermissions.canShareScreen} title={!mediaPermissions.canShareScreen ? "Transmissao de tela desativada pelas permissoes do servidor" : screenEnabled ? "Opcoes da transmissao" : undefined} aria-label={screenEnabled ? "Opcoes da transmissao" : `Compartilhar tela em ${quality}`}>
+              <ScreenShare size={21} strokeWidth={2.15} />
+              {screenEnabled && (streamViewerCounts[currentUserId] ?? 0) > 0 && <span className="screen-viewer-count"><Eye size={11}/>{streamViewerCounts[currentUserId]}</span>}
+            </button>
+            {screenEnabled && screenMenuOpen && <div className="voice-screen-menu">
+              <div className="voice-screen-menu-status"><span><Radio size={13}/> Transmitindo</span><strong><Eye size={13}/>{streamViewerCounts[currentUserId] ?? 0} assistindo</strong></div>
+              <button type="button" onClick={() => void switchCurrentScreenSource()} disabled={busy}><RefreshCw size={15}/> Trocar janela</button>
+              <button type="button" className="danger" onClick={() => void toggleMedia("screen")} disabled={busy}><X size={15}/> Encerrar transmissao</button>
+            </div>}
+          </div>
           <button className={`media-button ${deafened ? "deafened" : ""}`} onClick={toggleLocalDeafen} disabled={status !== ConnectionState.Connected} aria-label={deafened ? "Ativar audio da chamada" : "Silenciar audio da chamada"}>
             {deafened ? <VolumeX /> : <Volume2 />}
           </button>

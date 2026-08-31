@@ -1,0 +1,10 @@
+{
+  "name": "ginga",
+  "version": "0.4.5",
+  "private": true,
+  "description": "Plataforma brasileira, open source e auto-hospedada para comunidades.",
+  "scripts": {
+    "check": "bash ./scripts/prepare-github.sh",
+    "check:build": "bash ./scripts/prepare-github.sh --build"
+  }
+}

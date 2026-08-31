@@ -6,6 +6,7 @@ import { requireAuth } from "../middleware.js";
 import { requireDirectMember } from "../permissions.js";
 import { routeParam } from "../utils.js";
 import { usersBlockEachOther } from "../socialPrivacy.js";
+import { publicGamingProfileForViewer } from "./gamingProfile.js";
 
 export const socialRouter = Router();
 
@@ -190,12 +191,12 @@ socialRouter.get("/users/:userId/profile", requireAuth, asyncHandler(async (req,
   // Identidades internas (SYSTEM/BOT/WEBHOOK) possuem perfil somente leitura.
   // Elas nao participam do grafo social humano, evitando amizade, bloqueio e DM acidentais.
   if (profile.accountType !== "HUMAN") {
-    res.json({ profile, friendship: null, sharedGuilds: [], guildMembership: null, block: null });
+    res.json({ profile, gamingProfile: null, friendship: null, sharedGuilds: [], guildMembership: null, block: null });
     return;
   }
 
   await ensureSocialSafetyStorage();
-  const [friendship, sharedGuilds, blockRelation] = await Promise.all([
+  const [friendship, sharedGuilds, blockRelation, gamingProfile] = await Promise.all([
     userId === viewerId ? null : prisma.friendship.findFirst({
       where: {
         OR: [
@@ -218,7 +219,8 @@ socialRouter.get("/users/:userId/profile", requireAuth, asyncHandler(async (req,
     userId === viewerId ? null : prisma.userBlock.findFirst({
       where: { OR: [{ blockerId: viewerId, blockedId: userId }, { blockerId: userId, blockedId: viewerId }] },
       select: { blockerId: true, blockedId: true }
-    })
+    }),
+    publicGamingProfileForViewer(viewerId, userId)
   ]);
 
   let guildMembership: { role: string; joinedAt: Date } | null = null;
@@ -235,6 +237,7 @@ socialRouter.get("/users/:userId/profile", requireAuth, asyncHandler(async (req,
 
   res.json({
     profile,
+    gamingProfile,
     friendship: friendship
       ? {
           id: friendship.id,

@@ -13,17 +13,9 @@ import gingabot
 - distribuicao PyPI: `ginga-bot`
 - modulo: `gingabot`
 - Python: `3.10+`
-- versao atual: `0.1.1`
+- versao atual: `0.1.0`
 
 > O modulo `ginga` nao e usado porque esse namespace ja pertence a outro projeto Python. O import oficial deste SDK e `gingabot`.
-
-
-## 0.1.1 — compatibilidade do Gateway
-
-- corrige handlers Socket.IO quando o servidor/cliente entrega argumentos adicionais em eventos;
-- `bot:ready`, `message:new`, `guild:message:new` e `voice:presence` agora toleram metadados extras;
-- evita `TypeError: ... takes 1 positional argument but 2 were given`;
-- payloads invalidos sao ignorados com log de aviso em vez de derrubar o processo.
 
 ## Quickstart
 

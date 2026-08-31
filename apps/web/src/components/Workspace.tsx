@@ -11,14 +11,17 @@ import {
   Command,
   Compass,
   ShieldCheck,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CirclePlus,
   Clock3,
   Copy,
+  Crown,
   FolderInput,
   FolderOpen,
   FolderPlus,
+  Eye,
   EyeOff,
   Gamepad2,
   GraduationCap,
@@ -40,6 +43,8 @@ import {
   PhoneOff,
   Plus,
   Radio,
+  RefreshCw,
+  ScreenShare,
   Search,
   Send,
   Settings,
@@ -62,6 +67,7 @@ import { getDirectCallsBridge, type DirectCall } from "../lib/directCalls";
 import { DEVELOPER_MODE_EVENT, loadDeveloperPreferences } from "../lib/developerMode";
 import { loadNotificationPreferences } from "../lib/preferences";
 import { setOwnPresenceMode, type PresenceMode } from "../lib/gamingProfile";
+import { setVoiceScreenShare, switchVoiceScreenSource } from "../lib/voiceScreenShare";
 import { GUILD_PREFERENCES_EVENT, guildAllowsMessageActivity, guildNotificationMode, isChannelMuted, isGuildSilent, loadGuildPreferences, muteChannelFor, muteGuildFor, setGuildNotificationMode, unmuteChannel, unmuteGuild, updateGuildPreferences } from "../lib/serverPreferences";
 import { setDesktopUnreadCount, showSystemNotification } from "../lib/notifications";
 import { playUiSound } from "../lib/sounds";
@@ -122,11 +128,15 @@ interface ProfileCardState {
   guildId?: string;
   role?: GuildMember["role"];
   joinedAt?: string;
+  topRole?: CustomRole;
+  guildOwner?: boolean;
 }
 
 interface ProfileModalState {
   user: User;
   guildId?: string;
+  topRole?: CustomRole;
+  guildOwner?: boolean;
 }
 
 type ServerFolder = {
@@ -257,6 +267,8 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [draggedChannelId, setDraggedChannelId] = useState("");
   const [draggedCategoryId, setDraggedCategoryId] = useState("");
+  const [draggedVoiceMember, setDraggedVoiceMember] = useState<{ userId: string; sourceChannelId: string; guildId: string; displayName: string } | null>(null);
+  const [voiceDropTargetChannelId, setVoiceDropTargetChannelId] = useState("");
   const [channelMenu, setChannelMenu] = useState<{ x: number; y: number; channel: Channel; page?: "root" | "mute-duration" } | null>(null);
   const [categoryMenu, setCategoryMenu] = useState<{ x: number; y: number; category: ChannelCategory } | null>(null);
   const [showUserSettings, setShowUserSettings] = useState(false);
@@ -268,6 +280,10 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   const [serverSettingsInitialTab, setServerSettingsInitialTab] = useState<ServerSettingsTab | undefined>(undefined);
   const [profileCard, setProfileCard] = useState<ProfileCardState | null>(null);
   const [profileModal, setProfileModal] = useState<ProfileModalState | null>(null);
+  const [collapsedMemberGroups, setCollapsedMemberGroups] = useState<Set<string>>(() => new Set());
+  const [collapsedChannelCategories, setCollapsedChannelCategories] = useState<Set<string>>(() => new Set());
+  const [persistentScreenMenuOpen, setPersistentScreenMenuOpen] = useState(false);
+  const [streamViewerCounts, setStreamViewerCounts] = useState<Record<string, number>>({});
   const [inviteCode, setInviteCode] = useState("");
   const [inviteOrigin, setInviteOrigin] = useState("");
   const [copied, setCopied] = useState(false);
@@ -340,6 +356,25 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   useEffect(() => {
     try { localStorage.setItem(SERVER_FOLDERS_KEY, JSON.stringify(serverFolders)); } catch { /* Preferencia local opcional. */ }
   }, [serverFolders]);
+
+  useEffect(() => {
+    if (!selectedGuildId) { setCollapsedChannelCategories(new Set()); return; }
+    try {
+      const raw = JSON.parse(localStorage.getItem(`ginga.collapsedChannelCategories.v1.${selectedGuildId}`) || "[]") as unknown;
+      setCollapsedChannelCategories(new Set(Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : []));
+    } catch { setCollapsedChannelCategories(new Set()); }
+  }, [selectedGuildId]);
+
+  const toggleChannelCategoryCollapsed = useCallback((categoryId: string) => {
+    setCollapsedChannelCategories((current) => {
+      const next = new Set(current);
+      if (next.has(categoryId)) next.delete(categoryId); else next.add(categoryId);
+      if (selectedGuildId) {
+        try { localStorage.setItem(`ginga.collapsedChannelCategories.v1.${selectedGuildId}`, JSON.stringify([...next])); } catch {}
+      }
+      return next;
+    });
+  }, [selectedGuildId]);
 
   useEffect(() => {
     const validIds = new Set(guilds.map((guild) => guild.id));
@@ -606,6 +641,16 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
       if (selectedGuildId === payload.guildId) setSelectedChannelId("");
       void loadGuilds();
     };
+    const onGuildDeleted = (payload: { guildId: string; name?: string }) => {
+      disconnectVoiceIfGuildMatches(payload.guildId);
+      setShowServerSettings(false);
+      if (selectedGuildId === payload.guildId) {
+        setSelectedChannelId("");
+        setSelectedGuildId("");
+      }
+      setToast(payload.name ? `${payload.name} foi excluido` : "Este espaco foi excluido");
+      void loadGuilds();
+    };
     const onVoiceModerationState = (payload: { guildId: string; muted?: boolean; deafened?: boolean }) => {
       window.dispatchEvent(new CustomEvent("ginga:voice-server-moderation", { detail: payload }));
       if (payload.guildId === selectedGuildId) void loadMembers(payload.guildId);
@@ -635,6 +680,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
     socket.on("guild:timeout", onGuildTimeout);
     socket.on("guild:timeout:removed", onGuildTimeoutRemoved);
     socket.on("guild:left", onGuildLeft);
+    socket.on("guild:deleted", onGuildDeleted);
     socket.on("voice:moved", onVoiceMoved);
     socket.on("voice:moderation-state", onVoiceModerationState);
     setSocketConnected(socket.connected);
@@ -652,6 +698,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
       socket.off("guild:timeout", onGuildTimeout);
       socket.off("guild:timeout:removed", onGuildTimeoutRemoved);
       socket.off("guild:left", onGuildLeft);
+      socket.off("guild:deleted", onGuildDeleted);
       socket.off("voice:moved", onVoiceMoved);
       socket.off("voice:moderation-state", onVoiceModerationState);
     };
@@ -943,6 +990,15 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
     };
   }, []);
 
+  useEffect(() => {
+    const onViewerCount = (payload: { channelId?: string; broadcasterId?: string; count?: number }) => {
+      if (!payload.channelId || !payload.broadcasterId) return;
+      setStreamViewerCounts((current) => ({ ...current, [`${payload.channelId}:${payload.broadcasterId}`]: Math.max(0, Number(payload.count) || 0) }));
+    };
+    socket.on("voice:stream-viewers", onViewerCount);
+    return () => { socket.off("voice:stream-viewers", onViewerCount); };
+  }, [socket]);
+
   const selectedGuild = guilds.find((guild) => guild.id === selectedGuildId);
   const selectedGuildPreferences = useMemo(() => selectedGuild ? loadGuildPreferences(selectedGuild.id) : null, [selectedGuild?.id, guildPreferencesRevision]);
   const selectedChannel = selectedGuild?.channels.find((channel) => channel.id === selectedChannelId);
@@ -959,6 +1015,8 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   // O card compacto serve apenas como controle persistente quando o usuario saiu da tela de voz.
   // Em qualquer sala de voz a barra principal ja esta visivel, entao mostrar os dois controles duplica a UI.
   const showPersistentVoiceCard = Boolean(activeVoiceChannelId && activeVoiceChannel && !voiceViewVisible);
+  const persistentScreenEnabled = Boolean(window.__gingaVoiceSession?.channelId === activeVoiceChannelId && window.__gingaVoiceSession.room.localParticipant.isScreenShareEnabled) || Boolean(localVoicePresence?.streaming);
+  const persistentViewerCount = activeVoiceChannelId ? (streamViewerCounts[`${activeVoiceChannelId}:${user.id}`] ?? 0) : 0;
 
   useEffect(() => {
     const onVoiceDisconnected = (payload: { guildId: string }) => {
@@ -1110,29 +1168,60 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   const orderedCategories = [...(selectedGuild?.categories ?? [])].sort((a, b) => a.position - b.position);
   const memberGroups = useMemo(() => {
     const groups = new Map<string, { id: string; name: string; color?: string; icon?: string; position: number; members: GuildMember[] }>();
-    for (const member of members) {
+    const onlineState = (member: GuildMember) => {
       const presence = member.user.id === user.id
         ? (socketConnected ? (presenceModes[member.user.id] ?? "ONLINE") : "OFFLINE")
         : (presenceModes[member.user.id] ?? (onlineUserIds.has(member.user.id) ? "ONLINE" : "OFFLINE"));
-      const online = presence !== "OFFLINE";
-      const hoisted = online ? [...(member.customRoles ?? [])].filter((role) => role.hoist).sort((a, b) => b.position - a.position)[0] : undefined;
+      return presence !== "OFFLINE";
+    };
+
+    for (const member of members) {
+      const online = onlineState(member);
+      // Discord-style: somente cargos marcados como "Exibir membros separadamente"
+      // criam uma secao. Se houver varios, a maior posicao da hierarquia vence.
+      // O criador do servidor NAO ganha um grupo artificial "Dono"; a coroa cuida disso.
+      const hoisted = online
+        ? [...(member.customRoles ?? [])]
+            .filter((role) => role.hoist)
+            .sort((a, b) => b.position - a.position)[0]
+        : undefined;
+      // Discord-style: cargo separado e valido apenas para membros online.
+      // Qualquer membro offline fica exclusivamente na secao Offline,
+      // independentemente do cargo/hierarquia que possua.
       const key = online ? (hoisted?.id ?? "__online") : "__offline";
-      const group: { id: string; name: string; color?: string; icon?: string; position: number; members: GuildMember[] } = groups.get(key) ?? {
+      const group = groups.get(key) ?? {
         id: key,
         name: online ? (hoisted?.name ?? "Online") : "Offline",
-        color: hoisted?.color,
-        icon: hoisted?.icon,
-        position: online ? (hoisted?.position ?? 0) : -100000,
+        color: online ? hoisted?.color : undefined,
+        icon: online ? hoisted?.icon : undefined,
+        position: online ? (hoisted?.position ?? -10000) : -20000,
         members: []
       };
       group.members.push(member);
       groups.set(key, group);
     }
+
     for (const group of groups.values()) {
-      group.members.sort((a, b) => (a.nickname || a.user.displayName).localeCompare(b.nickname || b.user.displayName, "pt-BR", { sensitivity: "base" }));
+      group.members.sort((a, b) => {
+        const onlineDelta = Number(onlineState(b)) - Number(onlineState(a));
+        if (onlineDelta) return onlineDelta;
+        return (a.nickname || a.user.displayName).localeCompare(b.nickname || b.user.displayName, "pt-BR", { sensitivity: "base" });
+      });
     }
     return Array.from(groups.values()).sort((a, b) => b.position - a.position || a.name.localeCompare(b.name, "pt-BR"));
   }, [members, onlineUserIds, presenceModes, socketConnected, user.id]);
+
+  useEffect(() => {
+    setCollapsedMemberGroups(new Set());
+  }, [selectedGuildId]);
+
+  function toggleMemberGroup(groupId: string) {
+    setCollapsedMemberGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
+      return next;
+    });
+  }
   const railItems = useMemo<RailItem[]>(() => {
     const folderByGuild = new Map<string, ServerFolder>();
     serverFolders.forEach((folder) => folder.guildIds.forEach((guildId) => folderByGuild.set(guildId, folder)));
@@ -1203,6 +1292,40 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
     setVoiceControlRevision((value) => value + 1);
   }
 
+  async function togglePersistentVoiceScreen() {
+    const session = window.__gingaVoiceSession;
+    if (!session || session.channelId !== activeVoiceChannelId) return;
+    if (session.mediaPermissions?.canShareScreen === false) { setToast("Voce nao tem permissao para compartilhar a tela nesta sala.", "error"); return; }
+    try {
+      const enabled = await setVoiceScreenShare(session.room, !session.room.localParticipant.isScreenShareEnabled);
+      socket.emit("voice:state", {
+        channelId: session.channelId,
+        micMuted: !session.room.localParticipant.isMicrophoneEnabled,
+        deafened: Boolean(session.deafened),
+        streaming: enabled
+      });
+      setPersistentScreenMenuOpen(enabled);
+      setVoiceControlRevision((value) => value + 1);
+      setToast(enabled ? "Transmissao iniciada" : "Transmissao encerrada");
+    } catch (caught) {
+      setToast(caught instanceof Error ? caught.message : "Nao foi possivel alterar a transmissao.", "error");
+    }
+  }
+
+  async function switchPersistentVoiceScreen() {
+    const session = window.__gingaVoiceSession;
+    if (!session || session.channelId !== activeVoiceChannelId || !session.room.localParticipant.isScreenShareEnabled) return;
+    try {
+      await switchVoiceScreenSource(session.room);
+      socket.emit("voice:state", { channelId: session.channelId, micMuted: !session.room.localParticipant.isMicrophoneEnabled, deafened: Boolean(session.deafened), streaming: true });
+      setPersistentScreenMenuOpen(false);
+      setVoiceControlRevision((value) => value + 1);
+      setToast("Janela da transmissao alterada sem interromper os espectadores");
+    } catch (caught) {
+      setToast(caught instanceof Error ? caught.message : "Nao foi possivel trocar a janela.", "error");
+    }
+  }
+
   function disconnectPersistentVoice() {
     const session = window.__gingaVoiceSession;
     if (!session || session.channelId !== activeVoiceChannelId) return;
@@ -1270,10 +1393,11 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
     const type = String(form.get("type") ?? "TEXT") as ChannelType;
     const categoryIdRaw = String(form.get("categoryId") ?? "").trim();
     const categoryId = categoryIdRaw || null;
+    const slowModeSeconds = Number(form.get("slowModeSeconds") ?? 0) || 0;
     if (!name) { setError("O canal precisa ter um nome. Espacos, maiusculas, acentos, emojis e simbolos sao permitidos."); return; }
     try {
       const result = await api<{ channel: Channel }>(`/api/guilds/${selectedGuild.id}/channels`, {
-        method: "POST", body: JSON.stringify({ name, type, categoryId })
+        method: "POST", body: JSON.stringify({ name, type, categoryId, slowModeSeconds })
       });
       await loadGuilds(selectedGuild.id);
       setSelectedChannelId(result.channel.id);
@@ -1325,6 +1449,35 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
       if (!existing.includes(candidate)) return candidate;
     }
     return `${base.slice(0, 40)}-${Date.now().toString().slice(-6)}`;
+  }
+
+  async function configureSlowModeQuick(channel: Channel) {
+    const current = String(channel.slowModeSeconds ?? 0);
+    const answer = await gingaPrompt("Intervalo em segundos entre mensagens de membros. Use 0 para desativar. Exemplos: 5, 10, 30, 60, 300.", current, { title: `Modo lento · #${channel.name}`, confirmLabel: "Salvar", placeholder: "0 a 21600" });
+    if (answer === null) return;
+    const seconds = Number(answer.trim());
+    if (!Number.isInteger(seconds) || seconds < 0 || seconds > 21600) { setError("Informe um numero inteiro entre 0 e 21600 segundos."); return; }
+    try {
+      await api(`/api/channels/${channel.id}`, { method: "PATCH", body: JSON.stringify({ slowModeSeconds: seconds }) });
+      await loadGuilds(selectedGuildId);
+      setToast(seconds ? `Modo lento: ${seconds}s` : "Modo lento desativado");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Nao foi possivel alterar o modo lento"); }
+    finally { setChannelMenu(null); }
+  }
+
+  async function clearChannelMessagesQuick(channel: Channel) {
+    const answer = await gingaPrompt("Quantas mensagens deseja remover? Informe 1 a 500 ou digite tudo.", "50", { title: `Limpar #${channel.name}`, confirmLabel: "Continuar", placeholder: "50 ou tudo" });
+    if (!answer) return;
+    const normalized = answer.trim().toLowerCase();
+    const count: number | "all" = ["all","tudo","todos"].includes(normalized) ? "all" : Number(normalized);
+    if (count !== "all" && (!Number.isInteger(count) || count < 1 || count > 500)) { setError("Informe um numero entre 1 e 500 ou digite tudo."); return; }
+    const label = count === "all" ? "TODAS as mensagens" : `as ultimas ${count} mensagens`;
+    if (!(await gingaConfirm(`Remover ${label} de #${channel.name}? Esta acao nao pode ser desfeita.`, { title: "Limpar mensagens", confirmLabel: "Limpar", cancelLabel: "Cancelar", tone: "danger" }))) return;
+    try {
+      const result = await api<{ deleted: number }>(`/api/channels/${channel.id}/messages/clear`, { method: "POST", body: JSON.stringify({ count }) });
+      setToast(`${result.deleted} mensagem${result.deleted === 1 ? "" : "s"} removida${result.deleted === 1 ? "" : "s"}`);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Nao foi possivel limpar as mensagens"); }
+    finally { setChannelMenu(null); }
   }
 
   async function duplicateChannelQuick(channel: Channel) {
@@ -1815,19 +1968,31 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   }
 
   function openUserCard(target: User, rect: DOMRect, member?: GuildMember, explicitGuildId?: string) {
+    const guildId = explicitGuildId ?? (member ? selectedGuildId : undefined);
+    const guild = guilds.find((item) => item.id === guildId) ?? null;
+    const topRole = member ? [...(member.customRoles ?? [])].sort((a, b) => b.position - a.position)[0] : undefined;
     setProfileModal(null);
     setProfileCard({
       user: target,
       anchor: { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
-      guildId: explicitGuildId ?? (member ? selectedGuildId : undefined),
+      guildId,
       role: member?.role,
-      joinedAt: member?.joinedAt
+      joinedAt: member?.joinedAt,
+      topRole,
+      guildOwner: Boolean(guild && guild.ownerId === target.id)
     });
   }
 
   function openFullProfile(target: User, guildId?: string) {
+    const member = guildId && guildId === selectedGuildId ? members.find((item) => item.user.id === target.id) : undefined;
+    const guild = guilds.find((item) => item.id === guildId) ?? null;
     setProfileCard(null);
-    setProfileModal({ user: target, guildId });
+    setProfileModal({
+      user: target,
+      guildId,
+      topRole: member ? [...(member.customRoles ?? [])].sort((a, b) => b.position - a.position)[0] : undefined,
+      guildOwner: Boolean(guild && guild.ownerId === target.id)
+    });
   }
 
   function leaveVoice() {
@@ -2008,7 +2173,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
       onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const draggedId = event.dataTransfer.getData("text/ginga-guild") || draggedGuildId; groupGuilds(draggedId, guild.id); setDraggedGuildId(""); }}
       onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setGuildMenu({ x: event.clientX, y: event.clientY, guild }); }}
     >
-      <span className={`space-nav-icon ${guild.iconUrl ? "with-image" : ""}`} style={{ "--space-color": guild.iconColor } as CSSProperties}>{guild.iconUrl ? <img src={guild.iconUrl} alt=""/> : guild.name.slice(0, 1).toUpperCase()}</span>
+      <span className={`space-nav-icon ${guild.iconUrl ? "with-image" : ""}`} style={{ "--space-color": guild.appearance?.accentColor ?? guild.iconColor } as CSSProperties}>{guild.iconUrl ? <img src={guild.iconUrl} alt=""/> : guild.name.slice(0, 1).toUpperCase()}</span>
       {activeVoiceGuild?.id === guild.id ? <span className="rail-voice-badge" aria-label="Conectado em uma sala de voz deste espaco"><Volume2 size={12}/></span> : null}
       {guildPreferences.muted ? <span className="rail-muted-badge" aria-label="Servidor silenciado"><BellOff size={10}/></span> : null}
       {guildUnreadCount > 0 ? <b className={`rail-mention-badge ${guildHasMention ? "mention" : ""}`}>{guildUnreadCount > 99 ? "99+" : guildUnreadCount}</b> : null}
@@ -2039,13 +2204,43 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
     if (selectedGuildPreferences?.hideMutedChannels && channelMuted && selectedChannelId !== channel.id) return null;
     return (
       <div
-        className={`channel-dnd-wrap ${draggedChannelId === channel.id ? "dragging" : ""} ${channelMuted ? "muted-channel" : ""}`}
+        className={`channel-dnd-wrap ${draggedChannelId === channel.id ? "dragging" : ""} ${voiceDropTargetChannelId === channel.id ? "voice-member-drop-target" : ""} ${channelMuted ? "muted-channel" : ""}`}
         key={channel.id}
         draggable={canManageChannels}
-        onDragStart={(event) => { event.stopPropagation(); setDraggedCategoryId(""); setDraggedChannelId(channel.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/ginga-channel", channel.id); }}
-        onDragEnd={() => setDraggedChannelId("")}
-        onDragOver={(event) => { if (canManageChannels && draggedChannelId) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
-        onDrop={(event) => { event.preventDefault(); const draggedId = event.dataTransfer.getData("text/ginga-channel") || draggedChannelId; if (draggedId) void reorderChannelBefore(draggedId, channel.id); }}
+        onDragStart={(event) => { event.stopPropagation(); setDraggedVoiceMember(null); setVoiceDropTargetChannelId(""); setDraggedCategoryId(""); setDraggedChannelId(channel.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/ginga-channel", channel.id); }}
+        onDragEnd={() => { setDraggedChannelId(""); setVoiceDropTargetChannelId(""); }}
+        onDragOver={(event) => {
+          const draggingVoiceUser = draggedVoiceMember || Array.from(event.dataTransfer.types).includes("text/ginga-voice-user");
+          if (channel.type === "VOICE" && draggingVoiceUser) {
+            if (draggedVoiceMember && (draggedVoiceMember.guildId !== channel.guildId || draggedVoiceMember.sourceChannelId === channel.id)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "move";
+            if (voiceDropTargetChannelId !== channel.id) setVoiceDropTargetChannelId(channel.id);
+            return;
+          }
+          if (canManageChannels && draggedChannelId) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }
+        }}
+        onDrop={(event) => {
+          const transferredVoiceUser = event.dataTransfer.getData("text/ginga-voice-user");
+          if (channel.type === "VOICE" && (draggedVoiceMember || transferredVoiceUser)) {
+            event.preventDefault();
+            event.stopPropagation();
+            let voiceDrag = draggedVoiceMember;
+            if (!voiceDrag && transferredVoiceUser) {
+              try { voiceDrag = JSON.parse(transferredVoiceUser) as { userId: string; sourceChannelId: string; guildId: string; displayName: string }; } catch { voiceDrag = null; }
+            }
+            setDraggedVoiceMember(null);
+            setVoiceDropTargetChannelId("");
+            if (!voiceDrag || voiceDrag.guildId !== channel.guildId || voiceDrag.sourceChannelId === channel.id) return;
+            void moveVoiceParticipant(voiceDrag.userId, channel.id).catch((caught) => setToast(caught instanceof Error ? caught.message : "Nao foi possivel mover o usuario", "error"));
+            return;
+          }
+          if (!canManageChannels || !draggedChannelId) return;
+          event.preventDefault();
+          const draggedId = event.dataTransfer.getData("text/ginga-channel") || draggedChannelId;
+          if (draggedId) void reorderChannelBefore(draggedId, channel.id);
+        }}
         onContextMenu={(event) => { event.preventDefault(); setCategoryMenu(null); setChannelMenu({ x: event.clientX, y: event.clientY, channel }); }}
       >
         <button className={`modern-channel ${selectedChannelId === channel.id ? "active" : ""} ${unreadChannels[channel.id] ? "unread" : ""} ${mentionedChannels.has(channel.id) ? "mentioned" : ""}`} onClick={() => { setSelectedChannelId(channel.id); setMobileContextOpen(false); }}>
@@ -2065,14 +2260,29 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
             const speaking = speakingVoiceUserIds.has(voiceUser.id) && !voiceUser.micMuted;
             const openVoiceMenu = (x: number, y: number) => setVoiceUserMenu({ user: voiceUser, channelId: channel.id, guildId: channel.guildId, x, y });
             return <button
-              className={`voice-channel-user ${speaking ? "speaking" : ""}`}
+              className={`voice-channel-user ${speaking ? "speaking" : ""} ${draggedVoiceMember?.userId === voiceUser.id && draggedVoiceMember.sourceChannelId === channel.id ? "voice-member-dragging" : ""}`}
               type="button"
               key={voiceUser.id}
+              draggable={Boolean(selectedGuild?.permissions.canMoveMembers && voiceUser.id !== user.id)}
+              title={selectedGuild?.permissions.canMoveMembers && voiceUser.id !== user.id ? `Arraste ${voiceUser.displayName} para outra sala de voz` : undefined}
               data-user-id={voiceUser.id}
               data-member-id={voiceUser.id}
               data-channel-id={channel.id}
               data-guild-id={channel.guildId}
               data-speaking={speaking ? "true" : "false"}
+              data-voice-draggable={selectedGuild?.permissions.canMoveMembers && voiceUser.id !== user.id ? "true" : "false"}
+              onDragStart={(event) => {
+                if (!selectedGuild?.permissions.canMoveMembers || voiceUser.id === user.id) { event.preventDefault(); return; }
+                event.stopPropagation();
+                const payload = { userId: voiceUser.id, sourceChannelId: channel.id, guildId: channel.guildId, displayName: voiceUser.displayName };
+                setDraggedChannelId("");
+                setDraggedCategoryId("");
+                setVoiceDropTargetChannelId("");
+                setDraggedVoiceMember(payload);
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/ginga-voice-user", JSON.stringify(payload));
+              }}
+              onDragEnd={() => { setDraggedVoiceMember(null); setVoiceDropTargetChannelId(""); }}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -2103,7 +2313,16 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   }
 
   return (
-    <main className={`nexora-shell ${section === "space" ? "with-inspector" : "no-inspector"} ${mobileContextOpen ? "mobile-context-open" : ""}`}>
+    <main
+      className={`nexora-shell ${section === "space" ? "with-inspector" : "no-inspector"} ${mobileContextOpen ? "mobile-context-open" : ""}`}
+      data-guild-sidebar-style={section === "space" ? (selectedGuild?.appearance?.sidebarStyle ?? "TINTED") : undefined}
+      data-guild-channel-density={section === "space" ? (selectedGuild?.appearance?.channelDensity ?? "COZY") : undefined}
+      style={section === "space" && selectedGuild ? {
+        "--guild-accent": selectedGuild.appearance?.accentColor ?? selectedGuild.iconColor ?? "#7c3cff",
+        "--guild-accent-2": selectedGuild.appearance?.secondaryColor ?? "#2c74ff",
+        "--guild-banner-position": `${selectedGuild.appearance?.bannerPosition ?? 50}%`
+      } as CSSProperties : undefined}
+    >
       <button type="button" className="mobile-context-toggle" onClick={() => setMobileContextOpen((value) => !value)} aria-label={mobileContextOpen ? "Fechar navegacao" : "Abrir navegacao"} aria-expanded={mobileContextOpen}>
         {mobileContextOpen ? <X size={21}/> : <Menu size={21}/>}
       </button>
@@ -2210,6 +2429,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
         {section === "space" && selectedGuild && (
           <>
             <header className="context-header space-context-header"><div><small>ESPACO</small><strong>{selectedGuild.name}</strong></div><span className="space-context-actions-v3"><button onClick={() => setShowGlobalSearch(true)} aria-label="Buscar mensagens no servidor" title="Buscar no servidor (Ctrl+Shift+F)"><Search size={17}/></button>{canOpenServerSettings && <button onClick={() => { setServerSettingsInitialTab(undefined); setShowServerSettings(true); }} aria-label="Configuracoes do espaco"><Settings size={17} /></button>}</span></header>
+            {selectedGuild.bannerUrl && selectedGuild.appearance?.showBannerInSidebar !== false && <div className="space-context-banner"><img src={selectedGuild.bannerUrl} alt="" style={{ objectPosition: `50% ${selectedGuild.appearance?.bannerPosition ?? 50}%` }}/><div><strong>{selectedGuild.name}</strong>{selectedGuild.description && <span>{selectedGuild.description}</span>}</div></div>}
             <div className="context-scroll channel-list">
               {canManageChannels && <div className="channel-list-toolbar"><button onClick={() => setShowCategoryModal(true)}><FolderPlus size={15} /> Categoria</button><button onClick={() => { setChannelModalDefaultType("TEXT"); setShowChannelModal(true); }}><Plus size={15} /> Canal</button></div>}
               {orderedCategories.map((category) => {
@@ -2223,9 +2443,15 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
                   onDragOver={(event) => { if (canManageChannels && (draggedChannelId || draggedCategoryId)) event.preventDefault(); }}
                   onDrop={(event) => { event.preventDefault(); const movedCategory = event.dataTransfer.getData("text/ginga-category") || draggedCategoryId; if (movedCategory) { void reorderCategoryBefore(movedCategory, category.id); return; } const channelId = event.dataTransfer.getData("text/ginga-channel") || draggedChannelId; const channel = selectedGuild.channels.find((item) => item.id === channelId); if (channel) void moveChannelToCategory(channel, category.id); }}
                 >
-                  <div className="context-group-title" onContextMenu={(event) => { event.preventDefault(); setChannelMenu(null); setCategoryMenu({ x: event.clientX, y: event.clientY, category }); }}><span>{category.name.toUpperCase()}</span>{canManageChannels && <button onClick={() => { setChannelModalDefaultType("TEXT"); setShowChannelModal(true); }}><Plus size={15} /></button>}</div>
-                  {categoryChannels.map(renderChannel)}
-                  {categoryChannels.length === 0 && canManageChannels && <div className="category-empty-drop">Arraste um canal para ca</div>}
+                  <div className="context-group-title category-heading" onContextMenu={(event) => { event.preventDefault(); setChannelMenu(null); setCategoryMenu({ x: event.clientX, y: event.clientY, category }); }}>
+                    <button type="button" className="category-collapse-button" aria-expanded={!collapsedChannelCategories.has(category.id)} onClick={() => toggleChannelCategoryCollapsed(category.id)} title={collapsedChannelCategories.has(category.id) ? "Expandir categoria" : "Recolher categoria"}>
+                      <ChevronDown size={13} className={collapsedChannelCategories.has(category.id) ? "collapsed" : ""}/>
+                      <span>{category.name.toUpperCase()}</span>
+                    </button>
+                    {canManageChannels && <button type="button" onClick={(event) => { event.stopPropagation(); setChannelModalDefaultType("TEXT"); setShowChannelModal(true); }} aria-label={`Criar canal em ${category.name}`}><Plus size={15} /></button>}
+                  </div>
+                  {!collapsedChannelCategories.has(category.id) && categoryChannels.map(renderChannel)}
+                  {!collapsedChannelCategories.has(category.id) && categoryChannels.length === 0 && canManageChannels && <div className="category-empty-drop">Arraste um canal para ca</div>}
                 </section>;
               })}
               <section
@@ -2255,6 +2481,14 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
             <div className="voice-connection-actions">
               <button type="button" className={localVoiceMuted ? "active off" : ""} onClick={() => void togglePersistentVoiceMic()} aria-label={localVoiceMuted ? "Ativar microfone" : "Desativar microfone"}>{localVoiceMuted ? <MicOff size={16}/> : <Mic size={16}/>}</button>
               <button type="button" className={localVoiceDeafened ? "active off" : ""} onClick={togglePersistentVoiceDeafen} aria-label={localVoiceDeafened ? "Ativar som da chamada" : "Silenciar som da chamada"}>{localVoiceDeafened ? <VolumeX size={16}/> : <Volume2 size={16}/>}</button>
+              <span className="persistent-screen-control">
+                <button type="button" className={persistentScreenEnabled ? "active streaming" : ""} onClick={() => persistentScreenEnabled ? setPersistentScreenMenuOpen((value) => !value) : void togglePersistentVoiceScreen()} aria-label={persistentScreenEnabled ? "Opcoes da transmissao" : "Compartilhar tela"} title={persistentScreenEnabled ? `${persistentViewerCount} assistindo` : "Compartilhar tela"}><ScreenShare size={16}/>{persistentScreenEnabled && persistentViewerCount > 0 && <b>{persistentViewerCount}</b>}</button>
+                {persistentScreenEnabled && persistentScreenMenuOpen && <span className="persistent-screen-menu">
+                  <span className="persistent-screen-audience"><Eye size={13}/><strong>{persistentViewerCount}</strong> assistindo</span>
+                  <button type="button" onClick={() => void switchPersistentVoiceScreen()}><RefreshCw size={14}/> Trocar janela</button>
+                  <button type="button" className="danger" onClick={() => void togglePersistentVoiceScreen()}><X size={14}/> Encerrar transmissao</button>
+                </span>}
+              </span>
               <button type="button" onClick={() => { setUserSettingsTab("voice"); setShowUserSettings(true); }} aria-label="Abrir configuracoes de voz"><Settings size={16}/></button>
               <button type="button" className="hangup" onClick={disconnectPersistentVoice} aria-label="Sair da sala de voz"><PhoneOff size={16}/></button>
             </div>
@@ -2308,7 +2542,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
             <div className="server-onboarding-tip"><Sparkles size={16}/><span>Depois voce pode organizar servidores em pastas, convidar amigos por DM e instalar bots pelo Portal de Desenvolvedores.</span></div>
           </section>
         )}
-        {section === "space" && selectedGuild && selectedChannel && ["TEXT","ANNOUNCEMENT"].includes(selectedChannel.type) && <ChatView key={selectedChannel.id} channel={selectedChannel} currentUser={user} socket={socket} permissions={selectedGuild.permissions} members={members} forwardChannels={selectedGuild.channels.filter((item) => ["TEXT","ANNOUNCEMENT"].includes(item.type))} onUserClick={(target, rect) => openUserCard(target, rect, members.find((member) => member.user.id === target.id), selectedGuild.id)} onModerateMember={(action,target)=>{ setVoiceBanReason(""); setVoiceTimeoutReason(""); if(action==="ban")setVoiceBanDuration("7D"); if(action==="timeout")setVoiceTimeoutDuration(10); setVoiceModerationTarget({action,user:target,guildId:selectedGuild.id}); }} />}
+        {section === "space" && selectedGuild && selectedChannel && ["TEXT","ANNOUNCEMENT"].includes(selectedChannel.type) && <ChatView key={selectedChannel.id} channel={selectedChannel} currentUser={user} socket={socket} permissions={selectedGuild.permissions} guildOwnerId={selectedGuild.ownerId} members={members} forwardChannels={selectedGuild.channels.filter((item) => ["TEXT","ANNOUNCEMENT"].includes(item.type))} onUserClick={(target, rect) => openUserCard(target, rect, members.find((member) => member.user.id === target.id), selectedGuild.id)} onModerateMember={(action,target)=>{ setVoiceBanReason(""); setVoiceTimeoutReason(""); if(action==="ban")setVoiceBanDuration("7D"); if(action==="timeout")setVoiceTimeoutDuration(10); setVoiceModerationTarget({action,user:target,guildId:selectedGuild.id}); }} />}
         {section === "space" && selectedGuild && selectedChannel?.type === "FORUM" && <ForumView key={selectedChannel.id} channel={selectedChannel} currentUser={user} socket={socket} canManage={selectedGuild.permissions.canManageForums} />}
         {section === "space" && selectedGuild && selectedChannel?.type === "EVENT" && <EventsView key={selectedChannel.id} channel={selectedChannel} guild={selectedGuild} currentUser={user} socket={socket} />}
         {section === "space" && selectedGuild && selectedChannel?.type === "VOICE" && <VoiceRoom key={selectedChannel.id} channel={selectedChannel} currentUserId={user.id} voiceChannels={selectedGuild.channels.filter((item) => item.type === "VOICE")} socket={socket} onLeave={leaveVoice} onOpenVoiceSettings={() => { setUserSettingsTab("voice"); setShowUserSettings(true); }} onOpenParticipantProfile={openUserProfileById} onMessageParticipant={startConversation} onCallParticipant={startDirectCallWithUser} onKickParticipant={kickVoiceParticipant} onBanParticipant={banVoiceParticipant} onTimeoutParticipant={timeoutVoiceParticipant} onServerMuteParticipant={(userId, muted) => setServerVoiceModeration(userId, { muted }, selectedGuild.id)} onServerDeafenParticipant={(userId, deafened) => setServerVoiceModeration(userId, { deafened }, selectedGuild.id)} onMoveParticipant={moveVoiceParticipant} onDisconnectParticipant={(userId) => disconnectVoiceParticipant(selectedGuild.id, userId)} canKickParticipants={selectedGuild.permissions.canKickMembers} canMoveParticipants={selectedGuild.permissions.canMoveMembers} canBanParticipants={selectedGuild.permissions.canBanMembers} canTimeoutParticipants={selectedGuild.permissions.canManageMembers || selectedGuild.permissions.canKickMembers} canMuteParticipants={selectedGuild.permissions.canMuteMembers} canDeafenParticipants={selectedGuild.permissions.canDeafenMembers} canManageParticipantRoles={selectedGuild.permissions.canManageRoles} canShareScreen={selectedGuild.permissions.canShareScreen} canUseVideo={selectedGuild.permissions.canUseVideo} autoWatchUserId={voiceStreamTarget?.channelId === selectedChannel.id ? voiceStreamTarget.userId : ""} onManageParticipantRoles={() => { setServerSettingsInitialTab("members"); setShowServerSettings(true); }} />}
@@ -2320,23 +2554,29 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
             <>
               <header className="inspector-header"><Users size={17} /> Pessoas <span>{members.length}</span></header>
               <div className="member-list">
-                {memberGroups.map((group) => <section className="member-group-block" key={group.id}>
-                  <div className="member-group-heading"><span>{group.color && <i style={{ background: group.color }} />}{group.icon ? `${group.icon} ` : ""}{group.name}</span><b>{group.members.length}</b></div>
-                  {group.members.map((member) => {
-                    const topRole = [...(member.customRoles ?? [])].sort((a, b) => b.position - a.position)[0];
-                    const voiceEntry = Object.entries(voicePresence).find(([, users]) => users.some((entry) => entry.id === member.user.id));
-                    const voiceChannel = voiceEntry ? selectedGuild.channels.find((channel) => channel.id === voiceEntry[0]) : null;
-                    const speaking = speakingVoiceUserIds.has(member.user.id) && !member.serverMuted;
-                    const memberPresence = member.user.id === user.id
-                      ? (socketConnected ? (presenceModes[member.user.id] ?? "ONLINE") : "OFFLINE")
-                      : (presenceModes[member.user.id] ?? (onlineUserIds.has(member.user.id) ? "ONLINE" : "OFFLINE"));
-                    const online = memberPresence !== "OFFLINE";
-                    return <button className={`member-row ${online ? "" : "member-row-offline"}`} type="button" key={member.user.id} onClick={(event) => openUserCard(member.user, event.currentTarget.getBoundingClientRect(), member, selectedGuild.id)} onContextMenu={(event) => { event.preventDefault(); setMemberMenu({ x: event.clientX, y: event.clientY, member }); }}>
-                      <Avatar user={member.user} size="sm" status={presenceModeToAvatarStatus(memberPresence)} />
-                      <div><strong className="member-display-name" style={topRole ? { color: topRole.color } : undefined}>{member.nickname || member.user.displayName} <UserBadges user={member.user} compact /></strong><span>{member.role === "OWNER" ? "Proprietario" : member.role === "ADMIN" ? "Administrador" : member.role === "MODERATOR" ? "Moderador" : `@${member.user.username}`}{member.nickname ? ` · ${member.user.displayName}` : ""}</span>{voiceChannel && <small className={`member-voice-location ${speaking ? "speaking" : ""}`}><Headphones size={11}/>{voiceChannel.name}{speaking ? " · falando" : ""}</small>}{(member.serverMuted || member.serverDeafened) && <small className="member-voice-flags">{member.serverMuted ? "Mic mutado" : ""}{member.serverMuted && member.serverDeafened ? " · " : ""}{member.serverDeafened ? "Ensurdecido" : ""}</small>}{(member.customRoles ?? []).length > 0 && <div className="member-custom-role-chips">{(member.customRoles ?? []).slice(0,3).map((role)=><span key={role.id} style={{borderColor:role.color}}>{role.icon ? `${role.icon} ` : ""}{role.name}</span>)}</div>}{member.user.statusMessage && <small>{member.user.statusMessage}</small>}</div>
-                    </button>;
-                  })}
-                </section>)}
+                {memberGroups.map((group) => {
+                  const collapsed = collapsedMemberGroups.has(group.id);
+                  return <section className={`member-group-block ${collapsed ? "collapsed" : ""} ${group.id === "__offline" ? "offline-group" : ""}`} key={group.id}>
+                    <button type="button" className="member-group-heading" onClick={() => toggleMemberGroup(group.id)} aria-expanded={!collapsed} title={collapsed ? `Expandir ${group.name}` : `Recolher ${group.name}`}>
+                      <span><ChevronRight size={12} className="member-group-chevron" />{group.color && <i style={{ background: group.color }} />}{group.icon ? `${group.icon} ` : ""}{group.name}</span><b>{group.members.length}</b>
+                    </button>
+                    {!collapsed && group.members.map((member) => {
+                      const topRole = [...(member.customRoles ?? [])].sort((a, b) => b.position - a.position)[0];
+                      const voiceEntry = Object.entries(voicePresence).find(([, users]) => users.some((entry) => entry.id === member.user.id));
+                      const voiceChannel = voiceEntry ? selectedGuild.channels.find((channel) => channel.id === voiceEntry[0]) : null;
+                      const speaking = speakingVoiceUserIds.has(member.user.id) && !member.serverMuted;
+                      const memberPresence = member.user.id === user.id
+                        ? (socketConnected ? (presenceModes[member.user.id] ?? "ONLINE") : "OFFLINE")
+                        : (presenceModes[member.user.id] ?? (onlineUserIds.has(member.user.id) ? "ONLINE" : "OFFLINE"));
+                      const online = memberPresence !== "OFFLINE";
+                      const isGuildOwner = selectedGuild.ownerId === member.user.id;
+                      return <button className={`member-row ${online ? "" : "member-row-offline"}`} type="button" key={member.user.id} onClick={(event) => openUserCard(member.user, event.currentTarget.getBoundingClientRect(), member, selectedGuild.id)} onContextMenu={(event) => { event.preventDefault(); setMemberMenu({ x: event.clientX, y: event.clientY, member }); }}>
+                        <Avatar user={member.user} size="sm" status={presenceModeToAvatarStatus(memberPresence)} />
+                        <div><strong className="member-display-name" style={topRole ? { color: topRole.color } : undefined}>{member.nickname || member.user.displayName}{isGuildOwner && <Crown size={13} className="guild-owner-crown" aria-label="Criador do servidor" />} <UserBadges user={member.user} compact /></strong><span>@{member.user.username}{member.nickname ? ` · ${member.user.displayName}` : ""}</span>{voiceChannel && <small className={`member-voice-location ${speaking ? "speaking" : ""}`}><Headphones size={11}/>{voiceChannel.name}{speaking ? " · falando" : ""}</small>}{(member.serverMuted || member.serverDeafened) && <small className="member-voice-flags">{member.serverMuted ? "Mic mutado" : ""}{member.serverMuted && member.serverDeafened ? " · " : ""}{member.serverDeafened ? "Ensurdecido" : ""}</small>}{member.user.statusMessage && <small>{member.user.statusMessage}</small>}</div>
+                      </button>;
+                    })}
+                  </section>;
+                })}
               </div>
             </>
           )}
@@ -2393,6 +2633,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
             </div></label>
             <label>Categoria<select name="categoryId" defaultValue={selectedGuild.categories[0]?.id ?? ""}><option value="">Sem categoria</option>{orderedCategories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
             <label>Nome do canal<input name="name" required minLength={1} maxLength={48} placeholder="Geral, Sala da Galera 🎮, Suporte #1..." autoFocus /><small>Use espacos, maiusculas, acentos, emojis e simbolos. So nao pode ficar sem nome.</small></label>
+            <label>Modo lento<select name="slowModeSeconds" defaultValue="0"><option value="0">Desativado</option><option value="5">5 segundos</option><option value="10">10 segundos</option><option value="15">15 segundos</option><option value="30">30 segundos</option><option value="60">1 minuto</option><option value="120">2 minutos</option><option value="300">5 minutos</option><option value="600">10 minutos</option></select><small>Evita spam exigindo um intervalo entre mensagens de membros. Administradores e quem gerencia mensagens nao sao limitados.</small></label>
             <button className="primary-button">Criar canal</button>
           </form>
         </Modal>
@@ -2454,7 +2695,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
         </Modal>
       )}
 
-      {showUserSettings && <UserSettingsModal user={user} initialTab={userSettingsTab} onClose={() => setShowUserSettings(false)} onSessionUpdate={onSessionUpdate} />}
+      {showUserSettings && <UserSettingsModal user={user} initialTab={userSettingsTab} socketConnected={socketConnected} onClose={() => setShowUserSettings(false)} onSessionUpdate={onSessionUpdate} />}
       {showServerSettings && selectedGuild && canOpenServerSettings && <ServerSettingsModal guild={selectedGuild} members={members} initialTab={serverSettingsInitialTab} onClose={() => { setShowServerSettings(false); setServerSettingsInitialTab(undefined); }} onGuildsRefresh={() => loadGuilds(selectedGuildId)} onMembersRefresh={() => loadMembers(selectedGuildId)} />}
 
       {selfPresenceMenu && <ContextMenu x={selfPresenceMenu.x} y={selfPresenceMenu.y} onClose={() => setSelfPresenceMenu(null)}>
@@ -2467,8 +2708,8 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
         <button type="button" onClick={() => { setSelfPresenceMenu(null); setUserSettingsTab("account"); setShowUserSettings(true); }}><Settings size={15}/> Configuracoes</button>
       </ContextMenu>}
 
-      {profileCard && <ProfileErrorBoundary key={`card:${profileCard.user.id}:${profileCard.guildId ?? "direct"}`} onClose={() => setProfileCard(null)}><UserProfileCard user={profileCard.user} currentUser={user} guildId={profileCard.guildId} online={profileCard.user.id === user.id || onlineUserIds.has(profileCard.user.id)} anchor={profileCard.anchor} role={profileCard.role} joinedAt={profileCard.joinedAt} onClose={() => setProfileCard(null)} onMessage={startConversation} onOpenProfile={(target) => openFullProfile(target, profileCard.guildId)} onEditProfile={() => { setUserSettingsTab("profile"); setShowUserSettings(true); }} onSocialRefresh={async () => { await Promise.all([loadFriends(), loadConversations()]); }} /></ProfileErrorBoundary>}
-      {profileModal && <ProfileErrorBoundary key={`${profileModal.user.id}:${profileModal.guildId ?? "direct"}`} onClose={() => setProfileModal(null)}><UserProfileModal user={profileModal.user} currentUser={user} guildId={profileModal.guildId} online={profileModal.user.id === user.id || onlineUserIds.has(profileModal.user.id)} onClose={() => setProfileModal(null)} onMessage={startConversation} onSocialRefresh={async () => { await Promise.all([loadFriends(), loadConversations()]); }} /></ProfileErrorBoundary>}
+      {profileCard && <ProfileErrorBoundary key={`card:${profileCard.user.id}:${profileCard.guildId ?? "direct"}`} onClose={() => setProfileCard(null)}><UserProfileCard user={profileCard.user} currentUser={user} guildId={profileCard.guildId} online={profileCard.user.id === user.id || onlineUserIds.has(profileCard.user.id)} anchor={profileCard.anchor} role={profileCard.role} joinedAt={profileCard.joinedAt} topRole={profileCard.topRole} guildOwner={profileCard.guildOwner} onClose={() => setProfileCard(null)} onMessage={startConversation} onOpenProfile={(target) => openFullProfile(target, profileCard.guildId)} onEditProfile={() => { setUserSettingsTab("profile"); setShowUserSettings(true); }} onSocialRefresh={async () => { await Promise.all([loadFriends(), loadConversations()]); }} /></ProfileErrorBoundary>}
+      {profileModal && <ProfileErrorBoundary key={`${profileModal.user.id}:${profileModal.guildId ?? "direct"}`} onClose={() => setProfileModal(null)}><UserProfileModal user={profileModal.user} currentUser={user} guildId={profileModal.guildId} topRole={profileModal.topRole} guildOwner={profileModal.guildOwner} online={profileModal.user.id === user.id || onlineUserIds.has(profileModal.user.id)} onClose={() => setProfileModal(null)} onMessage={startConversation} onSocialRefresh={async () => { await Promise.all([loadFriends(), loadConversations()]); }} /></ProfileErrorBoundary>}
 
       {voiceUserMenu && (() => {
         const voiceMenuGuild = guilds.find((guild) => guild.id === voiceUserMenu.guildId) ?? null;
@@ -2699,6 +2940,8 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
         {channelMuted ? <button onClick={()=>{unmuteChannel(selectedGuild.id,channelMenu.channel.id);setGuildPreferencesRevision(v=>v+1);setToast("Som do canal reativado");setChannelMenu(null)}}><Bell size={15}/> Ativar som do canal</button> : <button onClick={()=>setChannelMenu({...channelMenu,page:"mute-duration"})}><BellOff size={15}/> Silenciar canal <ChevronRight className="context-menu-trailing" size={15}/></button>}
         {canManageChannels && <><div className="context-menu-separator"/><button onClick={() => void renameChannelQuick(channelMenu.channel)}><Pencil size={15} /> Editar canal</button></>}
         {canManageChannels && <button onClick={() => void duplicateChannelQuick(channelMenu.channel)}><Copy size={15} /> Duplicar canal</button>}
+        {canManageChannels && ["TEXT","ANNOUNCEMENT","FORUM","EVENT"].includes(channelMenu.channel.type) && <button onClick={() => void configureSlowModeQuick(channelMenu.channel)}><Clock3 size={15}/> Modo lento <span className="context-menu-trailing">{channelMenu.channel.slowModeSeconds ? `${channelMenu.channel.slowModeSeconds}s` : "OFF"}</span></button>}
+        {selectedGuild.permissions.canManageMessages && ["TEXT","ANNOUNCEMENT","FORUM","EVENT"].includes(channelMenu.channel.type) && <button className="danger-soft" onClick={() => void clearChannelMessagesQuick(channelMenu.channel)}><Trash2 size={15}/> Limpar mensagens</button>}
         {canManageChannelPermissions && <button onClick={() => { setChannelMenu(null); setServerSettingsInitialTab("roles"); setShowServerSettings(true); }}><ShieldCheck size={15}/> Permissoes</button>}
         {canManageChannels && channelMenu.channel.categoryId && <button onClick={() => void setChannelPermissionInheritance(channelMenu.channel, !channelMenu.channel.syncPermissionsWithCategory)}><Link2 size={15}/> {channelMenu.channel.syncPermissionsWithCategory ? "Desvincular da categoria" : "Sincronizar com a categoria"}<span className="context-menu-trailing">{channelMenu.channel.syncPermissionsWithCategory ? "SIM" : "NAO"}</span></button>}
         {canManageChannels && <><div className="context-menu-label">MOVER PARA</div>

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
@@ -5,15 +6,18 @@ import { writeAudit } from "../audit.js";
 import { enforceAutoMod } from "../automod.js";
 import { prisma } from "../db.js";
 import { asyncHandler, HttpError } from "../errors.js";
+import { emitChannelEventToAuthorizedHumans, emitNewGuildMessage } from "../guildMessageEvents.js";
 import { requireAuth } from "../middleware.js";
 import { requireChannelCapability, requireGuildCapability, requireGuildMember } from "../permissions.js";
 import { validateGuildMentions } from "../mentions.js";
 import { routeParam } from "../utils.js";
+import { ensureV090Storage } from "../v090Storage.js";
 
 export const messagesRouter = Router();
 
 const editSchema = z.object({ content: z.string().trim().min(1).max(4000) });
 const reactionSchema = z.object({ emoji: z.string().trim().min(1).max(64) });
+const clearChannelMessagesSchema = z.object({ count: z.union([z.literal("all"), z.coerce.number().int().min(1).max(500)]).default(50) });
 const forwardSchema = z.object({ targetChannelId: z.string().min(1) });
 const bookmarkSchema = z.object({ note: z.string().trim().max(160).default("") });
 const taskSchema = z.object({
@@ -109,8 +113,12 @@ messagesRouter.patch("/messages/:messageId", requireAuth, asyncHandler(async (re
   const mentions = await validateGuildMentions(message.channel.guildId, data.content);
   if (mentions.mentionEveryone) await requireGuildCapability(req.auth!.sub, message.channel.guildId, "mentionEveryone");
   await enforceAutoMod({ guildId: message.channel.guildId, channelId: message.channelId, userId: req.auth!.sub, content: data.content });
+  if (message.content !== data.content) {
+    await ensureV090Storage();
+    await prisma.$executeRawUnsafe(`INSERT INTO "GingaMessageEditHistory"(id,message_id,editor_id,previous_content,edited_at) VALUES($1,$2,$3,$4,NOW())`, randomUUID(), messageId, req.auth!.sub, message.content);
+  }
   const updated = await prisma.message.update({ where: { id: messageId }, data: { content: data.content, editedAt: new Date() }, include: messageInclude });
-  req.app.get("io")?.to?.(`channel:${message.channelId}`)?.emit?.("message:updated", updated);
+  { const io = req.app.get("io"); if (io) await emitChannelEventToAuthorizedHumans(io, message.channelId, "message:updated", updated); }
   res.json({ message: updated });
 }));
 
@@ -122,8 +130,40 @@ messagesRouter.delete("/messages/:messageId", requireAuth, asyncHandler(async (r
   if (message.authorId !== req.auth!.sub) await requireGuildCapability(req.auth!.sub, message.channel.guildId, "manageMessages");
   await prisma.message.delete({ where: { id: messageId } });
   if (message.authorId !== req.auth!.sub) await writeAudit({ guildId: message.channel.guildId, actorId: req.auth!.sub, action: "MESSAGE_DELETE", targetType: "MESSAGE", targetId: messageId, targetUserId: message.authorId, request: req });
-  req.app.get("io")?.to?.(`channel:${message.channelId}`)?.emit?.("message:deleted", { id: messageId, channelId: message.channelId });
+  { const io = req.app.get("io"); if (io) await emitChannelEventToAuthorizedHumans(io, message.channelId, "message:deleted", { id: messageId, channelId: message.channelId }); }
   res.status(204).end();
+}));
+
+messagesRouter.post("/channels/:channelId/messages/clear", requireAuth, asyncHandler(async (req, res) => {
+  const channelId = routeParam(req.params.channelId, "channelId");
+  const { count } = clearChannelMessagesSchema.parse(req.body ?? {});
+  const { channel } = await requireChannelCapability(req.auth!.sub, channelId, "view");
+  if (!["TEXT", "ANNOUNCEMENT", "FORUM", "EVENT"].includes(channel.type)) throw new HttpError(400, "Este canal nao aceita mensagens de texto");
+  await requireGuildCapability(req.auth!.sub, channel.guildId, "manageMessages");
+
+  let messageIds: string[] = [];
+  let deleted = 0;
+  if (count === "all") {
+    const result = await prisma.message.deleteMany({ where: { channelId } });
+    deleted = result.count;
+  } else {
+    const targets = await prisma.message.findMany({
+      where: { channelId },
+      orderBy: { createdAt: "desc" },
+      take: count,
+      select: { id: true }
+    });
+    messageIds = targets.map((item) => item.id);
+    if (messageIds.length) {
+      const result = await prisma.message.deleteMany({ where: { id: { in: messageIds }, channelId } });
+      deleted = result.count;
+    }
+  }
+
+  await writeAudit({ guildId: channel.guildId, actorId: req.auth!.sub, action: "CHANNEL_MESSAGES_CLEAR", targetType: "CHANNEL", targetId: channelId, request: req, metadata: { count, deleted } });
+  const io = req.app.get("io");
+  if (io) await emitChannelEventToAuthorizedHumans(io, channelId, "channel:messages:cleared", { channelId, messageIds, clearAll: count === "all", deleted });
+  res.json({ deleted, messageIds, clearAll: count === "all" });
 }));
 
 messagesRouter.post("/messages/:messageId/forward", requireAuth, asyncHandler(async (req, res) => {
@@ -160,20 +200,7 @@ messagesRouter.post("/messages/:messageId/forward", requireAuth, asyncHandler(as
     include: messageInclude
   });
   const io = req.app.get("io");
-  io?.to?.(`channel:${target.id}`)?.emit?.("message:new", created);
-  const guildMessageEvent = {
-    messageId: created.id,
-    channelId: target.id,
-    channelName: target.name,
-    guildId: target.guildId,
-    authorId: created.authorId,
-    author: created.author,
-    content: created.content,
-    hasAttachments: created.attachments.length > 0,
-    createdAt: created.createdAt
-  };
-  io?.to?.(`guild:${target.guildId}`)?.emit?.("guild:message:new", guildMessageEvent);
-  io?.to?.(`botguild:${target.guildId}`)?.emit?.("guild:message:new", guildMessageEvent);
+  if (io) await emitNewGuildMessage(io, { id: target.id, guildId: target.guildId, name: target.name }, created);
   res.status(201).json({ message: created });
 }));
 
@@ -188,7 +215,7 @@ messagesRouter.post("/messages/:messageId/reactions", requireAuth, asyncHandler(
     update: {}, create: { messageId, userId: req.auth!.sub, emoji }
   });
   const reactions = await prisma.messageReaction.findMany({ where: { messageId }, include: { user: { select: { id: true, username: true, displayName: true } } }, orderBy: { createdAt: "asc" } });
-  req.app.get("io")?.to?.(`channel:${message.channelId}`)?.emit?.("message:reactions", { messageId, reactions });
+  { const io = req.app.get("io"); if (io) await emitChannelEventToAuthorizedHumans(io, message.channelId, "message:reactions", { messageId, reactions }); }
   res.json({ reactions });
 }));
 
@@ -200,7 +227,7 @@ messagesRouter.delete("/messages/:messageId/reactions", requireAuth, asyncHandle
   await requireChannelCapability(req.auth!.sub, message.channelId, "view");
   await prisma.messageReaction.deleteMany({ where: { messageId, userId: req.auth!.sub, emoji } });
   const reactions = await prisma.messageReaction.findMany({ where: { messageId }, include: { user: { select: { id: true, username: true, displayName: true } } }, orderBy: { createdAt: "asc" } });
-  req.app.get("io")?.to?.(`channel:${message.channelId}`)?.emit?.("message:reactions", { messageId, reactions });
+  { const io = req.app.get("io"); if (io) await emitChannelEventToAuthorizedHumans(io, message.channelId, "message:reactions", { messageId, reactions }); }
   res.json({ reactions });
 }));
 
@@ -211,7 +238,7 @@ messagesRouter.put("/messages/:messageId/pin", requireAuth, asyncHandler(async (
   await requireGuildCapability(req.auth!.sub, message.channel.guildId, "pinMessages");
   const updated = await prisma.message.update({ where: { id: messageId }, data: { isPinned: true, pinnedAt: new Date(), pinnedById: req.auth!.sub }, include: messageInclude });
   await writeAudit({ guildId: message.channel.guildId, actorId: req.auth!.sub, action: "MESSAGE_PIN", targetType: "MESSAGE", targetId: messageId, request: req });
-  req.app.get("io")?.to?.(`channel:${message.channelId}`)?.emit?.("message:updated", updated);
+  { const io = req.app.get("io"); if (io) await emitChannelEventToAuthorizedHumans(io, message.channelId, "message:updated", updated); }
   res.json({ message: updated });
 }));
 
@@ -221,7 +248,7 @@ messagesRouter.delete("/messages/:messageId/pin", requireAuth, asyncHandler(asyn
   if (!message) throw new HttpError(404, "Mensagem nao encontrada");
   await requireGuildCapability(req.auth!.sub, message.channel.guildId, "pinMessages");
   const updated = await prisma.message.update({ where: { id: messageId }, data: { isPinned: false, pinnedAt: null, pinnedById: null }, include: messageInclude });
-  req.app.get("io")?.to?.(`channel:${message.channelId}`)?.emit?.("message:updated", updated);
+  { const io = req.app.get("io"); if (io) await emitChannelEventToAuthorizedHumans(io, message.channelId, "message:updated", updated); }
   res.json({ message: updated });
 }));
 
@@ -344,6 +371,7 @@ messagesRouter.post("/channels/:channelId/scheduled-messages", requireAuth, asyn
   await requireGuildCapability(req.auth!.sub, channel.guildId, "scheduleMessages");
   const mentions = await validateGuildMentions(channel.guildId, data.content);
   if (mentions.mentionEveryone) await requireGuildCapability(req.auth!.sub, channel.guildId, "mentionEveryone");
+  await enforceAutoMod({ guildId: channel.guildId, channelId, userId: req.auth!.sub, content: data.content });
   const scheduled = await prisma.scheduledMessage.create({ data: { channelId, authorId: req.auth!.sub, content: data.content, scheduledFor: new Date(data.scheduledFor) } });
   res.status(201).json({ scheduled });
 }));

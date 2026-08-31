@@ -2,20 +2,25 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data: blob: https: http:; connect-src 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Ginga Overlay</title>
 <style>
   *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;color:#f1f3f7;font-family:Inter,"Segoe UI",system-ui,sans-serif;user-select:none}
   #root{width:100%;height:100%;display:flex;align-items:flex-start;justify-content:flex-start;padding:0}
-  .card{width:340px;max-height:280px;overflow:hidden;border:1px solid rgba(255,255,255,.09);border-radius:13px;background:rgba(17,20,27,.91);box-shadow:0 18px 50px rgba(0,0,0,.35);backdrop-filter:blur(15px)}
+  .card{width:360px;max-height:360px;overflow:hidden;border:1px solid rgba(255,255,255,.09);border-radius:13px;background:rgba(17,20,27,.92);box-shadow:0 18px 50px rgba(0,0,0,.35);backdrop-filter:blur(15px)}
   .head{display:flex;align-items:center;gap:9px;padding:11px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
   .logo{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#7668e8,#5146a9);font-size:14px;font-weight:900}
   .headcopy{min-width:0;display:flex;flex-direction:column;gap:1px}.headcopy small{font-size:8px;font-weight:900;letter-spacing:.11em;color:#8f86df}.headcopy strong{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hotkey{margin-left:auto;color:#767d8b;font-size:8.5px}
   .game{display:flex;align-items:center;gap:9px;padding:10px 12px;background:rgba(119,105,235,.055)}.gameicon{width:27px;height:27px;border-radius:8px;display:grid;place-items:center;background:rgba(124,111,239,.13);color:#b6afff;font-size:14px}.game div{min-width:0;display:flex;flex-direction:column}.game small{font-size:8px;color:#7f789d;font-weight:900;letter-spacing:.07em}.game strong{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .voice{padding:9px 10px 10px}.voicehead{display:flex;align-items:center;gap:7px;padding:0 2px 7px}.voicehead strong{font-size:10px}.voicehead span{color:#747b88;font-size:8.5px}.statuspill{margin-left:auto;padding:3px 6px;border-radius:999px;background:rgba(255,255,255,.055);color:#89909d;font-size:8px}.statuspill.live{background:rgba(52,167,112,.12);color:#82d8ad}
-  .participants{display:flex;flex-direction:column;gap:3px}.person{height:31px;display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:8px;border:1px solid transparent}.person.speaking{background:rgba(54,176,113,.095);border-color:rgba(76,208,139,.19)}.avatar{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#333947;color:#d8dce6;font-size:8.5px;font-weight:800;position:relative}.person.speaking .avatar{box-shadow:0 0 0 2px #3fbd7b}.name{min-width:0;flex:1;font-size:9.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.self{color:#777f8d;font-size:8px}.mic{font-size:9px;color:#838b97}.mic.off{color:#d07179}.ptt{padding:7px 10px 8px;border-top:1px solid rgba(255,255,255,.055);display:flex;align-items:center;justify-content:space-between;color:#7d8491;font-size:8.5px}.ptt kbd{font:700 8px Inter,"Segoe UI",sans-serif;padding:3px 6px;border-radius:5px;background:rgba(255,255,255,.06);color:#c5c9d2;border:1px solid rgba(255,255,255,.07)}
+  .voice{padding:9px 10px 10px}.voicehead{display:flex;align-items:center;gap:7px;padding:0 2px 7px}.voicehead strong{font-size:10px}.voicehead span{color:#747b88;font-size:8.5px}.statuspill{margin-left:auto;display:inline-flex;align-items:center;gap:4px;padding:3px 6px;border-radius:999px;background:rgba(255,255,255,.055);color:#89909d;font-size:8px;font-style:normal;font-weight:800}.statuspill.live{background:rgba(208,53,60,.13);color:#ff9196}.statuspill svg{width:10px;height:10px;fill:currentColor}
+  .participants{display:flex;flex-direction:column;gap:3px}.person{height:34px;display:flex;align-items:center;gap:7px;padding:3px 6px;border-radius:8px;border:1px solid transparent}.person.speaking{background:rgba(54,176,113,.095);border-color:rgba(76,208,139,.19)}
+  .avatar{width:24px;height:24px;flex:0 0 24px;border-radius:50%;display:grid;place-items:center;background:#333947;color:#d8dce6;font-size:8.5px;font-weight:800;position:relative;overflow:hidden}.avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.person.speaking .avatar{box-shadow:0 0 0 2px #3fbd7b}
+  .name{min-width:0;flex:1;font-size:9.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.self{color:#777f8d;font-size:8px}.states{display:flex;align-items:center;gap:4px;flex:0 0 auto}.state{height:20px;min-width:20px;padding:0 5px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;gap:3px;background:rgba(255,255,255,.055);color:#9299a6;font-size:7.5px;font-style:normal;font-weight:850}.state svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.state.off{color:#e17b82;background:rgba(216,72,83,.09)}.state.camera{width:20px;padding:0;color:#9bd2ff;background:rgba(53,137,207,.14);animation:cameraPulse 1.65s ease-in-out infinite}.state.live{color:#ff8c92;background:rgba(211,54,63,.12)}.state.live svg{fill:currentColor;stroke:none;animation:livePulse 1.2s ease-in-out infinite}
+  .ptt{padding:7px 10px 8px;border-top:1px solid rgba(255,255,255,.055);display:flex;align-items:center;justify-content:space-between;color:#7d8491;font-size:8.5px}.ptt kbd{font:700 8px Inter,"Segoe UI",sans-serif;padding:3px 6px;border-radius:5px;background:rgba(255,255,255,.06);color:#c5c9d2;border:1px solid rgba(255,255,255,.07)}
   .empty{padding:14px 12px;color:#808793;font-size:9.5px;line-height:1.4}
+  @keyframes cameraPulse{0%,100%{box-shadow:0 0 0 0 rgba(74,161,230,.28);opacity:.88}50%{box-shadow:0 0 0 4px rgba(74,161,230,0);opacity:1}}
+  @keyframes livePulse{0%,100%{opacity:.62;transform:scale(.88)}50%{opacity:1;transform:scale(1.08)}}
 </style>
 </head>
 <body><div id="root"></div>
@@ -24,6 +29,12 @@
   const root=document.getElementById('root');
   const esc=(v)=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const initial=(name)=>String(name||'?').trim().slice(0,1).toUpperCase();
+  const icon={
+    camera:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 8l5-3v14l-5-3v2H4V6h10z"/></svg>',
+    micOff:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9v3a3 3 0 0 0 4.3 2.7M15 10V6a3 3 0 0 0-5.2-2M5 10v2a7 7 0 0 0 10.4 6.1M12 19v3M8 22h8M3 3l18 18"/></svg>',
+    deafen:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14v-2a8 8 0 0 1 13.2-6M20 14v-2c0-.7-.1-1.4-.3-2M4 14h3v6H5a1 1 0 0 1-1-1zM17 14h3v5a1 1 0 0 1-1 1h-2zM3 3l18 18"/></svg>',
+    live:'<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="4"/></svg>'
+  };
   function render(state){
     const settings=state?.settings||{}; const game=state?.game; const voice=state?.voice;
     let html='<section class="card"><header class="head"><div class="logo">G</div><div class="headcopy"><small>GINGA OVERLAY</small><strong>'+(state?.preview?'Prévia da sobreposição':'Em jogo')+'</strong></div><span class="hotkey">Ctrl + Shift + O</span></header>';
@@ -31,8 +42,18 @@
     if(settings.showVoice!==false){
       if(voice?.connected){
         const parts=Array.isArray(voice.participants)?voice.participants:[];
-        html+='<div class="voice"><div class="voicehead"><strong>'+esc(voice.channelName||'Canal de voz')+'</strong><span>'+parts.length+' conectado'+(parts.length===1?'':'s')+'</span><i class="statuspill live">AO VIVO</i></div><div class="participants">';
-        for(const p of parts){html+='<div class="person '+(p.speaking?'speaking':'')+'"><div class="avatar">'+esc(initial(p.name))+'</div><span class="name">'+esc(p.name)+'</span>'+(p.local?'<span class="self">você</span>':'')+'<span class="mic '+(p.microphoneEnabled?'':'off')+'">'+(p.microphoneEnabled?'●':'×')+'</span></div>'}
+        const anyLive=parts.some(p=>p?.screenShareEnabled);
+        html+='<div class="voice"><div class="voicehead"><strong>'+esc(voice.channelName||'Canal de voz')+'</strong><span>'+parts.length+' conectado'+(parts.length===1?'':'s')+'</span>'+(anyLive?'<i class="statuspill live">'+icon.live+' AO VIVO</i>':'<i class="statuspill">VOZ</i>')+'</div><div class="participants">';
+        for(const p of parts){
+          const avatar='<div class="avatar"><span>'+esc(initial(p.name))+'</span>'+(p.avatarUrl?'<img src="'+esc(p.avatarUrl)+'" alt="" />':'')+'</div>';
+          let states='<span class="states">';
+          if(p.screenShareEnabled) states+='<i class="state live" title="AO VIVO">'+icon.live+' AO VIVO</i>';
+          if(p.cameraEnabled) states+='<i class="state camera" title="Câmera ativa">'+icon.camera+'</i>';
+          if(!p.microphoneEnabled) states+='<i class="state off" title="Microfone mutado">'+icon.micOff+'</i>';
+          if(p.deafened) states+='<i class="state off" title="Som mutado">'+icon.deafen+'</i>';
+          states+='</span>';
+          html+='<div class="person '+(p.speaking?'speaking':'')+'">'+avatar+'<span class="name">'+esc(p.name)+'</span>'+(p.local?'<span class="self">você</span>':'')+states+'</div>';
+        }
         html+='</div></div>';
         html+='<div class="ptt"><span>'+(voice.deafened?'Som desativado':voice.muted?'Microfone silenciado':voice.inputMode==='ptt'?'Push-to-Talk':'Atividade de voz')+'</span>'+(voice.inputMode==='ptt'?'<kbd>'+esc(voice.pushToTalkLabel||'PTT')+'</kbd>':'')+'</div>';
       } else if(settings.showOnlyInVoice!==true){ html+='<div class="empty">Você não está em uma chamada de voz agora.</div>'; }

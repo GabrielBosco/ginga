@@ -1,18 +1,23 @@
 {
   "name": "@ginga/desktop",
-  "version": "0.3.1",
+  "version": "0.4.5",
   "private": true,
   "description": "Cliente desktop auto-hospedado do Ginga",
   "main": "src/main.cjs",
-  "author": "Ginga",
+  "author": {
+    "name": "Ginga",
+    "email": "noreply@ginga.local"
+  },
   "license": "MIT",
   "scripts": {
     "start": "electron .",
     "dist:win": "node ../../scripts/update-signing.cjs ensure ../.. && electron-builder --win nsis --x64 --publish never",
-    "dist:portable": "node ../../scripts/update-signing.cjs ensure ../.. && electron-builder --win portable --x64 --publish never"
+    "dist:portable": "node ../../scripts/update-signing.cjs ensure ../.. && electron-builder --win portable --x64 --publish never",
+    "dist:linux:x64": "electron-builder --linux AppImage deb rpm --x64 --publish never",
+    "dist:linux:arm64": "electron-builder --linux AppImage deb --arm64 --publish never"
   },
   "dependencies": {
-    "electron-updater": "6.6.2"
+    "electron-updater": "6.8.9"
   },
   "devDependencies": {
     "electron": "43.4.0",
@@ -35,7 +40,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "http://127.0.0.1/updates/windows"
+        "url": "https://example.invalid/updates/windows"
       }
     ],
     "win": {
@@ -61,6 +66,36 @@
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico"
     },
-    "detectUpdateChannel": false
-  }
+    "detectUpdateChannel": false,
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "artifactName": "Ginga-${version}-linux-${arch}.${ext}",
+      "category": "Network",
+      "icon": "assets/icon.png",
+      "executableName": "ginga",
+      "synopsis": "Comunicacao auto-hospedada do Ginga",
+      "description": "Cliente desktop do Ginga para texto, voz, video e compartilhamento de tela.",
+      "maintainer": "Ginga <noreply@ginga.local>",
+      "vendor": "Ginga",
+      "protocols": [
+        {
+          "name": "Ginga",
+          "schemes": [
+            "ginga"
+          ]
+        }
+      ]
+    },
+    "deb": {
+      "packageName": "ginga"
+    },
+    "rpm": {
+      "packageName": "ginga"
+    }
+  },
+  "homepage": "https://github.com/GabrielBosco/ginga"
 }

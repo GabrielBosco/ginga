@@ -4,7 +4,7 @@ O **Ginga Bot SDK** e o SDK Python oficial para criar bots conectados ao Ginga.
 
 - pacote no PyPI: `ginga-bot`
 - modulo Python: `gingabot`
-- versao atual do SDK: `0.1.1`
+- versao atual do SDK: `0.1.0`
 - Python suportado: `3.10+`
 - transporte em tempo real: Socket.IO
 - chamadas explicitas: REST
@@ -76,7 +76,7 @@ python -c "import gingabot; print(gingabot.__version__)"
 Esperado para esta documentacao:
 
 ```text
-0.1.1
+0.1.0
 ```
 
 ### Linux
@@ -665,8 +665,8 @@ A versao do SDK e independente da versao do servidor Ginga.
 Exemplo:
 
 ```text
-Servidor Ginga: 0.3.1
-Ginga Bot SDK: 0.1.1
+Servidor Ginga: 0.4.5
+Ginga Bot SDK: 0.1.0
 ```
 
 A publicacao oficial usa GitHub Actions + PyPI Trusted Publishing. Nao salve senha nem API token do PyPI no repositorio.
@@ -680,8 +680,8 @@ Workflow:
 Tag:
 
 ```bash
-git tag -a sdk-python-v0.1.1 -m "Ginga Bot SDK 0.1.1"
-git push origin sdk-python-v0.1.1
+git tag -a sdk-python-v0.1.0 -m "Ginga Bot SDK 0.1.0"
+git push origin sdk-python-v0.1.0
 ```
 
 Releases do PyPI sao imutaveis: um arquivo de `0.1.0` que ja foi publicado nao pode ser sobrescrito. Mudancas no SDK exigem uma nova versao, por exemplo `0.1.1`.

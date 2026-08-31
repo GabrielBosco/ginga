@@ -129,7 +129,7 @@ Sao ciclos independentes:
 
 ```text
 Ginga Server/Desktop: 0.3.1
-Ginga Bot SDK:        0.1.1
+Ginga Bot SDK:        0.1.0
 ```
 
 Uma atualizacao de documentacao do servidor nao obriga um novo SDK. Uma alteracao no codigo publicado do SDK obriga uma nova versao do pacote Python.

@@ -5,6 +5,8 @@ import {
   Copy,
   Filter,
   Hash,
+  Image as ImageIcon,
+  ImagePlus,
   Lock,
   MessageCircle,
   MessageSquareText,
@@ -19,7 +21,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useDeveloperMode } from "../lib/developerMode";
-import type { Channel, ForumPost, ForumTag, User } from "../types";
+import type { Channel, ForumAppearance, ForumPost, ForumTag, User } from "../types";
 import { Avatar } from "./Avatar";
 import { UserBadges } from "./UserBadges";
 
@@ -97,6 +99,9 @@ export function ForumView({ channel, currentUser, socket, canManage = false }: F
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [readMap, setReadMap] = useState<ForumReadMap>(() => loadReadMap(channel.id));
+  const [appearance, setAppearance] = useState<ForumAppearance>({ iconUrl: null, bannerUrl: null });
+  const [showAppearance, setShowAppearance] = useState(false);
+  const [appearanceBusy, setAppearanceBusy] = useState<"icon" | "banner" | "">("");
 
   useEffect(() => {
     setReadMap(loadReadMap(channel.id));
@@ -105,6 +110,8 @@ export function ForumView({ channel, currentUser, socket, canManage = false }: F
     setFilter("ALL");
     setQuery("");
     setDebouncedQuery("");
+    setAppearance({ iconUrl: null, bannerUrl: null });
+    setShowAppearance(false);
   }, [channel.id]);
 
   useEffect(() => {
@@ -119,9 +126,10 @@ export function ForumView({ channel, currentUser, socket, canManage = false }: F
       const params = new URLSearchParams({ includeClosed: "true" });
       if (debouncedQuery) params.set("q", debouncedQuery);
       if (selectedTagId) params.set("tagId", selectedTagId);
-      const result = await api<{ tags: ForumTag[]; posts: ForumPost[] }>(`/api/channels/${channel.id}/forum?${params.toString()}`);
+      const result = await api<{ tags: ForumTag[]; posts: ForumPost[]; appearance?: ForumAppearance }>(`/api/channels/${channel.id}/forum?${params.toString()}`);
       setTags(result.tags);
       setPosts(result.posts);
+      if (result.appearance) setAppearance(result.appearance);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Falha ao carregar o fórum");
     } finally {
@@ -139,11 +147,16 @@ export function ForumView({ channel, currentUser, socket, canManage = false }: F
       if (payload.postId && selected?.id === payload.postId) void openPost(payload.postId);
       void load();
     };
+    const onAppearance = (payload: { channelId?: string; appearance?: ForumAppearance }) => {
+      if (payload.channelId === channel.id && payload.appearance) setAppearance(payload.appearance);
+    };
     socket?.on?.("forum:changed", onChanged);
     socket?.on?.("forum:comment:new", onComment);
+    socket?.on?.("forum:appearance", onAppearance);
     return () => {
       socket?.off?.("forum:changed", onChanged);
       socket?.off?.("forum:comment:new", onComment);
+      socket?.off?.("forum:appearance", onAppearance);
     };
   }, [channel.id, load, selected?.id, socket]);
 
@@ -281,13 +294,57 @@ export function ForumView({ channel, currentUser, socket, canManage = false }: F
     }
   }
 
+  async function uploadAppearanceAsset(kind: "icon" | "banner", file: File | null) {
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) {
+      setError("Use PNG, JPG, WebP ou GIF.");
+      return;
+    }
+    const max = kind === "icon" ? 4 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (file.size > max) {
+      setError(kind === "icon" ? "A foto do fórum pode ter no máximo 4 MB." : "O banner do fórum pode ter no máximo 10 MB.");
+      return;
+    }
+    setAppearanceBusy(kind);
+    setError("");
+    try {
+      const result = await api<{ appearance: ForumAppearance }>(`/api/channels/${channel.id}/forum/${kind}`, {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file
+      });
+      setAppearance(result.appearance);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Não foi possível atualizar a imagem do fórum");
+    } finally {
+      setAppearanceBusy("");
+    }
+  }
+
+  async function removeAppearanceAsset(kind: "icon" | "banner") {
+    setAppearanceBusy(kind);
+    setError("");
+    try {
+      await api<void>(`/api/channels/${channel.id}/forum/${kind}`, { method: "DELETE" });
+      setAppearance((current) => ({ ...current, [kind === "icon" ? "iconUrl" : "bannerUrl"]: null }));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Não foi possível remover a imagem do fórum");
+    } finally {
+      setAppearanceBusy("");
+    }
+  }
+
   return (
     <section className="feature-view forum-view ginga-surface-forum forum-v2">
-      <header className="content-header forum-content-header">
-        <div className="channel-title"><MessageSquareText size={20}/><strong>{channel.name}</strong></div>
-        <span className="channel-topic">{channel.topic || "Discussões organizadas por tópicos e tags"}</span>
+      <header className={`content-header forum-content-header ${appearance.bannerUrl ? "with-banner" : ""}`}>
+        {appearance.bannerUrl && <img className="forum-channel-banner" src={appearance.bannerUrl} alt=""/>}
+        <div className="forum-channel-brand">
+          <span className="forum-channel-icon">{appearance.iconUrl ? <img src={appearance.iconUrl} alt=""/> : <MessageSquareText size={21}/>}</span>
+          <div><div className="channel-title"><strong>{channel.name}</strong></div><span className="channel-topic">{channel.topic || "Discussões organizadas por tópicos e tags"}</span></div>
+        </div>
         <div className="forum-header-actions">
           {unreadCount > 0 && <button type="button" className="forum-ghost-action" onClick={markAllRead}><Check size={15}/> Marcar como lido</button>}
+          {canManage && <button type="button" className="forum-ghost-action" onClick={() => setShowAppearance(true)}><ImageIcon size={15}/> Aparência</button>}
           {canManage && <button type="button" className="forum-ghost-action" onClick={() => setShowTagManager(true)}><Tag size={15}/> Tags</button>}
           <button className="primary-button compact" onClick={() => setShowCreate(true)}><Plus size={16}/> Novo tópico</button>
         </div>
@@ -362,6 +419,28 @@ export function ForumView({ channel, currentUser, socket, canManage = false }: F
             {tags.length > 0 && <fieldset className="tag-picker-v2"><legend>Tags</legend>{tags.map((tag) => <label key={tag.id}><input type="checkbox" name="tagIds" value={tag.id}/><span style={{ "--tag-color": tag.color } as CSSProperties}>{tag.name}</span></label>)}</fieldset>}
             <footer className="sheet-actions"><button type="button" className="secondary-button" onClick={() => setShowCreate(false)}>Cancelar</button><button className="primary-button"><Plus size={15}/> Publicar tópico</button></footer>
           </form>
+        </div>
+      )}
+
+      {showAppearance && canManage && (
+        <div className="overlay-sheet forum-appearance-overlay">
+          <div className="sheet-card forum-appearance-sheet">
+            <header><div><span className="sheet-eyebrow">IDENTIDADE DO FÓRUM</span><h3>Banner e foto</h3><p>PNG, JPG, WebP e GIF são preservados. GIF continua animado no banner e na foto.</p></div><button type="button" onClick={() => setShowAppearance(false)}><X/></button></header>
+            <div className="forum-appearance-grid">
+              <section>
+                <div className="forum-appearance-preview icon">{appearance.iconUrl ? <img src={appearance.iconUrl} alt="Foto atual do fórum"/> : <MessageSquareText size={34}/>}</div>
+                <div><strong>Foto do fórum</strong><span>Quadrada, até 4 MB.</span></div>
+                <label className="secondary-button"><ImagePlus size={15}/> {appearanceBusy === "icon" ? "Enviando..." : "Escolher imagem"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={Boolean(appearanceBusy)} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ""; void uploadAppearanceAsset("icon", file); }}/></label>
+                {appearance.iconUrl && <button type="button" className="forum-remove-asset" disabled={Boolean(appearanceBusy)} onClick={() => void removeAppearanceAsset("icon")}><Trash2 size={14}/> Remover</button>}
+              </section>
+              <section>
+                <div className="forum-appearance-preview banner">{appearance.bannerUrl ? <img src={appearance.bannerUrl} alt="Banner atual do fórum"/> : <ImageIcon size={34}/>}</div>
+                <div><strong>Banner do fórum</strong><span>Até 10 MB. GIF animado suportado.</span></div>
+                <label className="secondary-button"><ImagePlus size={15}/> {appearanceBusy === "banner" ? "Enviando..." : "Escolher banner"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={Boolean(appearanceBusy)} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ""; void uploadAppearanceAsset("banner", file); }}/></label>
+                {appearance.bannerUrl && <button type="button" className="forum-remove-asset" disabled={Boolean(appearanceBusy)} onClick={() => void removeAppearanceAsset("banner")}><Trash2 size={14}/> Remover</button>}
+              </section>
+            </div>
+          </div>
         </div>
       )}
 

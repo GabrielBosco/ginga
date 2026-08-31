@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ginga - Reconectando</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, "Segoe UI", Arial, sans-serif; background:#0f191f; color:#eff7f5; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; background:#0f191f; }
+    .card { width:min(620px, calc(100vw - 40px)); padding:42px; border:1px solid #294048; border-radius:24px; background:#132229; box-shadow:0 24px 80px #0008; }
+    .brand { font-size:15px; letter-spacing:.16em; text-transform:uppercase; color:#64d5c2; font-weight:800; }
+    h1 { font-size:34px; margin:10px 0 6px; font-weight:850; }
+    p { color:#a9bdc3; line-height:1.55; }
+    .server { font-family:Consolas,monospace; font-size:12px; color:#9fb1b6; word-break:break-word; background:#0c151a; padding:12px; border-radius:10px; }
+    .status { margin-top:14px; font-size:13px; color:#82969c; }
+    .row { display:flex; gap:10px; margin-top:18px; flex-wrap:wrap; }
+    button { border:0; border-radius:12px; padding:12px 18px; background:#64d5c2; color:#071114; font-weight:800; cursor:pointer; }
+    button:disabled { opacity:.55; cursor:wait; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand">Ginga Desktop</div>
+    <h1>Reconectando ao Ginga</h1>
+    <p id="detail">Nao foi possivel conectar ao servidor agora. Isso pode acontecer durante uma troca de rede, proxy, VPN ou reinicio rapido do servidor.</p>
+    <div class="server" id="server"></div>
+    <div class="status" id="status">Nova tentativa automatica em 5 segundos.</div>
+    <div class="row"><button id="retry">Tentar agora</button></div>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const server = params.get('server') || 'Servidor Ginga';
+    const detail = params.get('detail') || 'Nao foi possivel conectar ao Ginga Server.';
+    document.getElementById('server').textContent = server;
+    document.getElementById('detail').textContent = detail;
+
+    const retry = document.getElementById('retry');
+    const status = document.getElementById('status');
+    let seconds = 5;
+    let busy = false;
+
+    async function tryAgain() {
+      if (busy) return;
+      busy = true;
+      retry.disabled = true;
+      status.textContent = 'Tentando conectar...';
+      try {
+        const ok = await window.gingaDesktop.retryServer();
+        if (!ok) {
+          busy = false;
+          retry.disabled = false;
+          seconds = 5;
+          status.textContent = 'Servidor ainda indisponivel. Tentaremos novamente.';
+        }
+      } catch {
+        busy = false;
+        retry.disabled = false;
+        seconds = 5;
+        status.textContent = 'Nao foi possivel reconectar. Tentaremos novamente.';
+      }
+    }
+
+    retry.addEventListener('click', tryAgain);
+    setInterval(() => {
+      if (busy || document.hidden) return;
+      seconds -= 1;
+      if (seconds <= 0) {
+        seconds = 5;
+        void tryAgain();
+        return;
+      }
+      status.textContent = `Nova tentativa automatica em ${seconds} segundo${seconds === 1 ? '' : 's'}.`;
+    }, 1000);
+  </script>
+</body>
+</html>

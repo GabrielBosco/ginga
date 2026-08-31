@@ -1,30 +1,27 @@
-# Ginga para Android — teste da versão 0.3.1
+# Ginga no Android (teste 0.2.0)
 
-A primeira versão Android é um cliente nativo leve que abre a interface responsiva do seu próprio servidor Ginga em um `WebView` controlado pelo aplicativo.
-
-Esta etapa serve para validar a experiência mobile sem manter duas interfaces completamente separadas.
+A primeira versao Android e um shell nativo leve que abre a interface web responsiva do seu proprio servidor Ginga em um `WebView` seguro.
 
 ## O que funciona nesta fase
 
 - login e cadastro;
 - chats e anexos;
-- navegação por servidores e canais;
-- seleção de arquivos;
-- microfone e câmera mediante permissão do Android;
-- WebRTC;
-- chamadas e salas de voz usando as mesmas rotas HTTPS/WSS do navegador.
+- navegacao por servidores e canais;
+- microfone, camera e WebRTC mediante permissao do Android;
+- selecao de arquivos;
+- chamadas e salas de voz dependem das mesmas rotas HTTPS/WSS usadas pelo navegador.
 
-O aplicativo exige **HTTPS** para servidores externos e bloqueia tráfego HTTP sem criptografia.
+A aplicacao exige HTTPS e bloqueia cleartext HTTP.
 
 ## Gerar pelo GitHub Actions
 
-1. Abra a aba **Actions** do repositório.
-2. Escolha **Gerar APK Android**.
-3. Clique em **Run workflow / Executar fluxo de trabalho** — o texto do botão é controlado pela interface do próprio GitHub.
-4. Informe a URL pública HTTPS do seu Ginga, sem caminho adicional.
-5. Ao terminar, baixe o artefato `Ginga-0.3.1-Android-debug`.
+1. Abra **Actions** no repositorio.
+2. Escolha **Android APK**.
+3. Clique **Run workflow**.
+4. Informe a URL publica HTTPS do seu Ginga, sem caminho adicional.
+5. Ao terminar, baixe o artefato `Ginga-0.2.0-Android-debug`.
 
-O APK gerado é de desenvolvimento/teste. Para distribuição pública ou Play Store, configure uma `keystore` de produção e assinatura própria.
+O APK resultante e de teste/debug. Para Play Store ou distribuicao publica, configure uma keystore de release e assinatura propria.
 
 ## Gerar localmente
 
@@ -34,20 +31,12 @@ Com Android SDK e Gradle instalados:
 ./scripts/build-android.sh https://ginga.exemplo.com
 ```
 
-Saída:
+Saida:
 
 ```text
-dist/android/Ginga-0.3.1-debug.apk
+dist/android/Ginga-0.2.0-debug.apk
 ```
 
-## Push-to-Talk no celular
+## Observacao sobre Push-to-Talk
 
-No Android, o modelo recomendado é um botão na tela do tipo **Segure para falar**, em vez de atalho global de teclado ou mouse.
-
-O atalho global continua sendo um recurso do cliente Desktop. O cliente Android pode evoluir depois para incluir:
-
-- Segure para falar;
-- ativação por voz;
-- escolha de saída entre alto-falante, telefone e Bluetooth;
-- chamada em segundo plano;
-- notificação persistente durante chamadas.
+No Android, um botao de PTT na tela e mais apropriado do que bind global de teclado/mouse. O bind global continua sendo um recurso do Desktop. Uma implementacao mobile dedicada pode ser adicionada depois.

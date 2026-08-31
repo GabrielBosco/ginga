@@ -12,10 +12,12 @@ done
 use_external_ip="${LIVEKIT_USE_EXTERNAL_IP:-true}"
 turn_enabled="${LIVEKIT_TURN_ENABLED:-true}"
 turn_udp_port="${LIVEKIT_TURN_UDP_PORT:-3478}"
+log_level="${LIVEKIT_LOG_LEVEL:-warn}"
 
 case "$use_external_ip" in true|false) ;; *) echo "LIVEKIT_USE_EXTERNAL_IP deve ser true ou false" >&2; exit 1 ;; esac
 case "$turn_enabled" in true|false) ;; *) echo "LIVEKIT_TURN_ENABLED deve ser true ou false" >&2; exit 1 ;; esac
 case "$turn_udp_port" in ''|*[!0-9]*) echo "LIVEKIT_TURN_UDP_PORT invalida" >&2; exit 1 ;; esac
+case "$log_level" in debug|info|warn|error) ;; *) echo "LIVEKIT_LOG_LEVEL deve ser debug, info, warn ou error" >&2; exit 1 ;; esac
 
 node_ip_line=""
 if [ "$use_external_ip" = "false" ]; then
@@ -52,7 +54,7 @@ room:
   empty_timeout: 300
   departure_timeout: 20
 logging:
-  level: info
+  level: ${log_level}
 EOF_INNER
 
 chmod 600 /out/livekit.yaml

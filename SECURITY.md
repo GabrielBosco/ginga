@@ -1,56 +1,36 @@
 # Política de segurança
 
-## Versões com suporte
+## Relato de vulnerabilidades
 
-Durante a fase `0.x`, somente a linha mais recente recebe correções de segurança.
+Não publique detalhes de uma vulnerabilidade explorável em uma Issue pública antes de existir correção.
 
-| Versão | Recebe correções |
-| --- | --- |
-| 0.2.x | Sim |
-| < 0.2 | Não |
-
-## Como relatar uma vulnerabilidade
-
-Não abra uma Issue pública para uma falha que possa ser explorada.
-
-Quando disponível, use o **Relato privado de vulnerabilidade do GitHub** no repositório. Inclua:
-
-- versão afetada;
-- componente afetado (`web`, `api`, `desktop`, Android, implantação ou SDK);
-- impacto observado;
-- passos mínimos para reproduzir;
-- logs sem tokens, senhas ou dados pessoais;
-- sugestão de correção, se houver.
-
-Durante os testes, não acesse dados de terceiros, não mantenha acesso persistente, não interrompa serviços e não execute ações destrutivas.
+Use o recurso de **Private vulnerability reporting** do GitHub quando ele estiver habilitado no repositório. Se não estiver disponível, entre em contato diretamente com o mantenedor do projeto por um canal privado.
 
 ## Segredos
 
-Nunca publique em Issue, Discussion, commit ou Pull Request:
+Nunca envie ao repositório:
 
-- `.env` real;
-- segredo JWT;
-- senha de PostgreSQL, Redis ou SMTP;
-- segredo da API do LiveKit;
-- chave privada do atualizador;
-- tokens de bots ou webhooks;
-- backups de produção;
-- certificados ou chaves privadas TLS.
+- `.env`;
+- senhas de PostgreSQL/Redis/SMTP;
+- tokens de bot/API;
+- `secrets/update-signing/private.pem`;
+- `.pfx`, `.p12`, `.key`, JKS/keystore privados;
+- backups de produção.
 
-Antes de publicar uma cópia do projeto, execute:
+A chave `apps/desktop/update-public.pem` é pública por definição e é usada para validação do updater.
+
+Antes de um push:
 
 ```bash
 ./scripts/prepare-github.sh
 ```
 
-## Boas práticas para quem hospeda
+## Instalações públicas
 
-- use HTTPS/WSS em instalações públicas;
-- mantenha Docker e Debian atualizados;
-- não publique PostgreSQL ou Redis na Internet;
-- use senhas e segredos gerados aleatoriamente;
-- habilite 2FA na conta administrativa;
-- mantenha backups testados e fora do servidor principal;
-- revise logs e atualizações de segurança regularmente.
-
-Consulte também [docs/HARDENING-DEBIAN13.md](docs/HARDENING-DEBIAN13.md).
+- use HTTPS/WSS;
+- não exponha PostgreSQL/Redis;
+- mantenha Docker e host atualizados;
+- revise CORS/origens;
+- limite uploads e armazenamento;
+- proteja SMTP e integrações externas;
+- preserve e proteja a chave privada do updater.

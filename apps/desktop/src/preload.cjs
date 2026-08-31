@@ -1,4 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const preloadArgs = Array.isArray(process.argv) ? process.argv : [];
+const brandArg = preloadArgs.find((value) => typeof value === 'string' && value.startsWith('--ginga-brand-name='));
+const BRAND_NAME = (() => {
+  try { return brandArg ? decodeURIComponent(brandArg.slice('--ginga-brand-name='.length)) : 'Ginga'; }
+  catch { return 'Ginga'; }
+})();
 
 const desktopApi = Object.freeze({
   isDesktop: true,
@@ -6,6 +12,11 @@ const desktopApi = Object.freeze({
   retryServer: () => ipcRenderer.invoke('ginga:retry-server'),
   showMainWindow: () => ipcRenderer.invoke('ginga:show-window'),
   getServerUrl: () => ipcRenderer.invoke('ginga:server-url'),
+  getAutoStart: () => ipcRenderer.invoke('ginga:auto-start-get'),
+  setAutoStart: (enabled) => ipcRenderer.invoke('ginga:auto-start-set', Boolean(enabled)),
+  getStartMinimized: () => ipcRenderer.invoke('ginga:start-minimized-get'),
+  setStartMinimized: (enabled) => ipcRenderer.invoke('ginga:start-minimized-set', Boolean(enabled)),
+  getDiagnostics: () => ipcRenderer.invoke('ginga:desktop-diagnostics'),
   minimizeWindow: () => ipcRenderer.invoke('ginga:window-minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('ginga:window-toggle-maximize'),
   closeWindow: () => ipcRenderer.invoke('ginga:window-close'),
@@ -40,7 +51,7 @@ function installDesktopChrome() {
     const button = document.querySelector('.ginga-desktop-update');
     if (!button) return;
     const label = button.querySelector('.ginga-desktop-update-label');
-    if (label) label.textContent = `Ginga ${payload.version} disponivel - Reiniciar para atualizar`;
+    if (label) label.textContent = `${BRAND_NAME} ${payload.version} disponivel - Reiniciar para atualizar`;
     button.hidden = false;
   };
 
@@ -49,6 +60,14 @@ function installDesktopChrome() {
   const apply = () => {
     try {
       document.documentElement.setAttribute('data-ginga-desktop', 'true');
+      document.documentElement.setAttribute('data-ginga-platform', process.platform);
+      document.documentElement.classList.add(`ginga-desktop-${process.platform}`);
+      if (process.platform === 'win32') document.documentElement.classList.add('ginga-desktop-windows');
+
+      // Windows usa frame customizado. Linux/macOS mantem a moldura nativa do SO:
+      // nao injete uma segunda titlebar, padding de 32px nem controles falsos nesses sistemas.
+      if (process.platform !== 'win32') return;
+
       if (!document.getElementById('ginga-desktop-chrome-style')) {
         const style = document.createElement('style');
         style.id = 'ginga-desktop-chrome-style';
@@ -82,7 +101,7 @@ function installDesktopChrome() {
         const bar = document.createElement('div');
         bar.className = 'ginga-desktop-titlebar';
         bar.innerHTML = `
-          <div class="ginga-desktop-titlebar-brand">Ginga</div>
+          <div class="ginga-desktop-titlebar-brand">${BRAND_NAME}</div>
           <button class="ginga-desktop-update" type="button" hidden aria-label="Reiniciar para instalar atualizacao"><span class="ginga-desktop-update-dot"></span><span class="ginga-desktop-update-label">Atualizacao disponivel</span></button>
           <div class="ginga-window-controls">
             <button class="ginga-window-control minimize" type="button" aria-label="Minimizar"><svg viewBox="0 0 16 16"><path d="M3.5 8.5h9"/></svg></button>
@@ -114,7 +133,7 @@ function installDesktopChrome() {
             const result = await desktopApi.restartToUpdate();
             if (!result?.restarting) {
               updateButton.disabled = false;
-              if (label) label.textContent = pendingUpdate?.version ? `Ginga ${pendingUpdate.version} disponivel - Reiniciar para atualizar` : 'Atualizacao disponivel';
+              if (label) label.textContent = pendingUpdate?.version ? `${BRAND_NAME} ${pendingUpdate.version} disponivel - Reiniciar para atualizar` : 'Atualizacao disponivel';
             }
           } catch {
             updateButton.disabled = false;

@@ -45,6 +45,21 @@ platformRouter.get("/platform/announcements", requireAuth, asyncHandler(async (_
   res.json({ announcements });
 }));
 
+platformRouter.get("/system/diagnostics", requireAuth, asyncHandler(async (req, res) => {
+  const io = req.app.get("io") as { engine?: { clientsCount?: number } } | undefined;
+  const health = await readSystemHealth(io?.engine?.clientsCount ?? 0);
+  res.json({
+    status: health.status,
+    version: health.version,
+    timestamp: health.timestamp,
+    uptimeSeconds: health.uptimeSeconds,
+    database: { ok: health.database.ok, latencyMs: health.database.latencyMs },
+    livekit: { ok: health.livekit.ok, latencyMs: health.livekit.latencyMs, publicUrl: health.livekit.publicUrl },
+    websocket: { ok: health.websocket.ok },
+    storage: { ok: health.storage.ok, usedPercent: health.storage.usedPercent }
+  });
+}));
+
 platformRouter.get("/platform/admin/system-health", requireAuth, asyncHandler(async (req, res) => {
   await requirePlatformAdmin(req.auth!.sub);
   const io = req.app.get("io") as { engine?: { clientsCount?: number } } | undefined;

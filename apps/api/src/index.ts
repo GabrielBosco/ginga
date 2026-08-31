@@ -25,6 +25,7 @@ import { socialRouter, ensureSocialSafetyStorage } from "./routes/social.js";
 import { directCallsRouter, ensureDirectCallStorage, scheduleDirectCallMaintenance } from "./routes/directCalls.js";
 import { gamingProfileRouter, ensureGamingProfileStorage } from "./routes/gamingProfile.js";
 import { uploadsRouter } from "./routes/uploads.js";
+import { v090Router } from "./routes/v090.js";
 import { musicRouter } from "./routes/music.js";
 import { setupSocket } from "./socket.js";
 import { scheduleBackgroundJobs } from "./scheduler.js";
@@ -32,6 +33,7 @@ import { applySecurityPolicyMigrations } from "./security.js";
 import { ensureInitialDatabaseSchema } from "./schemaBootstrap.js";
 import { GINGA_VERSION } from "./version.js";
 import { requirePlatformAdmin } from "./platformAccess.js";
+import { ensureV090Storage, expireCustomStatuses } from "./v090Storage.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -136,6 +138,7 @@ app.use("/api", botApiRouter);
 app.use("/api", rolesRouter);
 app.use("/api", messagesRouter);
 app.use("/api", communityRouter);
+app.use("/api", v090Router);
 app.use(webhookIngressRouter);
 app.use(uploadsRouter);
 
@@ -196,6 +199,8 @@ async function bootstrap() {
   await ensureDirectCallStorage();
   await ensureGamingProfileStorage();
   await ensureSocialSafetyStorage();
+  await ensureV090Storage();
+  setInterval(() => { void expireCustomStatuses().catch((error) => console.warn("Status temporario: falha na limpeza", error)); }, 60_000).unref();
   scheduleDirectCallMaintenance(io);
   scheduleBackgroundJobs(io);
   await ensureReleaseAnnouncement().catch((error) => console.warn("Ginga News: falha ao publicar release", error));

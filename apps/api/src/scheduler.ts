@@ -1,5 +1,10 @@
 import type { Server } from "socket.io";
+import { enforceAutoMod } from "./automod.js";
 import { prisma } from "./db.js";
+import { HttpError } from "./errors.js";
+import { emitNewGuildMessage } from "./guildMessageEvents.js";
+import { validateGuildMentions } from "./mentions.js";
+import { requireChannelCapability, requireGuildCapability } from "./permissions.js";
 
 async function flushScheduledMessages(io: Server) {
   const pending = await prisma.scheduledMessage.findMany({
@@ -10,6 +15,26 @@ async function flushScheduledMessages(io: Server) {
 
   for (const item of pending) {
     try {
+      let deliveryChannel: { id: string; guildId: string; name: string; type: string } | null = null;
+      try {
+        const result = await requireChannelCapability(item.authorId, item.channelId, "sendMessages");
+        deliveryChannel = { id: result.channel.id, guildId: result.channel.guildId, name: result.channel.name, type: result.channel.type };
+        if (!["TEXT", "ANNOUNCEMENT", "FORUM", "EVENT"].includes(deliveryChannel.type)) {
+          throw new HttpError(409, "O canal agendado nao aceita mensagens de texto");
+        }
+        await requireGuildCapability(item.authorId, deliveryChannel.guildId, "scheduleMessages");
+        const mentions = await validateGuildMentions(deliveryChannel.guildId, item.content);
+        if (mentions.mentionEveryone) await requireGuildCapability(item.authorId, deliveryChannel.guildId, "mentionEveryone");
+        await enforceAutoMod({ guildId: deliveryChannel.guildId, channelId: deliveryChannel.id, userId: item.authorId, content: item.content });
+      } catch (error) {
+        if (!(error instanceof HttpError)) throw error;
+        await prisma.scheduledMessage.updateMany({ where: { id: item.id, status: "PENDING" }, data: { status: "CANCELLED" } });
+        console.warn("Mensagem agendada cancelada por permissao/regra atual", item.id, error.message);
+        continue;
+      }
+
+      if (!deliveryChannel) continue;
+
       const message = await prisma.$transaction(async (tx) => {
         const channelState = await tx.channel.findUnique({
           where: { id: item.channelId },
@@ -63,7 +88,9 @@ async function flushScheduledMessages(io: Server) {
           }
         });
       });
-      if (message) io.to(`channel:${item.channelId}`).emit("message:new", message);
+      if (message) {
+        await emitNewGuildMessage(io, { id: deliveryChannel.id, guildId: deliveryChannel.guildId, name: deliveryChannel.name }, message);
+      }
     } catch (error) {
       console.error("Falha ao enviar mensagem agendada", item.id, error);
     }

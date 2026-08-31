@@ -1,0 +1,17 @@
+GINGA SERVER 0.1.0 - PRIMEIRO BOOT
+
+1) Instale Docker Engine + Compose plugin no Debian 13.
+2) Extraia este pacote em /opt/ginga.
+3) Entre em /opt/ginga e rode:
+   ./scripts/init.sh
+   docker compose up -d --build
+4) Valide:
+   docker compose ps
+   curl http://127.0.0.1:3090/api/health
+   docker compose logs --tail=200 api web livekit
+
+IMPORTANTE:
+- Neste pacote o Web e a sinalizacao LiveKit ficam presos em 127.0.0.1 no primeiro boot.
+- Nao use --profile production enquanto 80/443 publicas nao estiverem resolvidas.
+- Para producao, ajuste .env para HTTPS/WSS e configure um edge/reverse proxy/tunnel.
+- Nunca rode docker compose down -v se quiser preservar banco/uploads.

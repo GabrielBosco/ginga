@@ -1,10 +1,12 @@
-import { Router } from "express";
+import { Router, raw } from "express";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
+import { enforceAutoMod } from "../automod.js";
 import { prisma } from "../db.js";
 import { postGuildMemberSystemMessage } from "../guildSystemMessages.js";
 import { config } from "../config.js";
 import { asyncHandler, HttpError } from "../errors.js";
+import { emitChannelEventToAuthorizedHumans } from "../guildMessageEvents.js";
 import { requireAuth } from "../middleware.js";
 import {
   defaultGuildRolePermissionData,
@@ -18,6 +20,7 @@ import { randomColor, routeParam } from "../utils.js";
 import { SECURITY_POLICY_VERSION } from "../security.js";
 import { guildBannerUrlMap, guildIconUrlMap } from "../guildAppearance.js";
 import { onlineUserCountForIds } from "../socket.js";
+import { forumAppearance, forumAssetBlob, removeForumAsset, saveForumAsset, validForumImage } from "../forumAppearance.js";
 
 export const communityRouter = Router();
 
@@ -127,7 +130,7 @@ communityRouter.get("/channels/:channelId/forum", requireAuth, asyncHandler(asyn
   const channelId = routeParam(req.params.channelId, "channelId");
   await forumChannel(req.auth!.sub, channelId, "view");
   const query = forumQuerySchema.parse(req.query);
-  const [tags, posts] = await Promise.all([
+  const [tags, posts, appearance] = await Promise.all([
     prisma.forumTag.findMany({ where: { channelId }, orderBy: { name: "asc" } }),
     prisma.forumPost.findMany({
       where: {
@@ -143,10 +146,57 @@ communityRouter.get("/channels/:channelId/forum", requireAuth, asyncHandler(asyn
         tags: { include: { tag: true } },
         _count: { select: { comments: true } }
       }
-    })
+    }),
+    forumAppearance(channelId)
   ]);
-  res.json({ tags, posts: posts.map((post) => ({ ...post, tags: post.tags.map((item) => item.tag), commentCount: post._count.comments })) });
+  res.json({ tags, posts: posts.map((post) => ({ ...post, tags: post.tags.map((item) => item.tag), commentCount: post._count.comments })), appearance });
 }));
+
+const forumImageTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+communityRouter.get("/channels/:channelId/forum/:kind/:etag", asyncHandler(async (req, res) => {
+  const channelId = routeParam(req.params.channelId, "channelId");
+  const kindValue = routeParam(req.params.kind, "kind");
+  if (kindValue !== "icon" && kindValue !== "banner") throw new HttpError(404, "Imagem do forum nao encontrada");
+  const kind = kindValue as "icon" | "banner";
+  const etag = routeParam(req.params.etag, "etag").replace(/\.(?:gif|png|jpe?g|webp)$/i, "");
+  const asset = await forumAssetBlob(channelId, kind, etag);
+  if (!asset) throw new HttpError(404, "Imagem do forum nao encontrada");
+  res.setHeader("Content-Type", asset.mime);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Disposition", "inline");
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.setHeader("ETag", `"${etag}"`);
+  res.send(Buffer.from(asset.blob));
+}));
+
+for (const kind of ["icon", "banner"] as const) {
+  const limit = kind === "icon" ? "4mb" : "10mb";
+  communityRouter.post(`/channels/:channelId/forum/${kind}`, requireAuth, raw({ type: forumImageTypes, limit }), asyncHandler(async (req, res) => {
+    const channelId = routeParam(req.params.channelId, "channelId");
+    const channel = await forumChannel(req.auth!.sub, channelId, "view");
+    await requireAnyGuildCapability(req.auth!.sub, channel.guildId, ["manageForums", "manageChannels", "manageServer"]);
+    const mime = String(req.headers["content-type"] || "").split(";")[0].toLowerCase();
+    const body = req.body;
+    if (!Buffer.isBuffer(body) || !forumImageTypes.includes(mime) || !validForumImage(mime, body)) throw new HttpError(415, "Imagem invalida. Use PNG, JPG, WebP ou GIF.");
+    const saved = await saveForumAsset(channelId, kind, body, mime);
+    await writeAudit({ guildId: channel.guildId, actorId: req.auth!.sub, action: `FORUM_${kind.toUpperCase()}_UPDATE`, targetType: "CHANNEL", targetId: channelId, metadata: { mime, size: body.length }, request: req });
+    const io = req.app.get("io");
+    if (io) await emitChannelEventToAuthorizedHumans(io, channelId, "forum:appearance", { channelId, appearance: await forumAppearance(channelId) });
+    res.json({ appearance: await forumAppearance(channelId), url: saved.url });
+  }));
+
+  communityRouter.delete(`/channels/:channelId/forum/${kind}`, requireAuth, asyncHandler(async (req, res) => {
+    const channelId = routeParam(req.params.channelId, "channelId");
+    const channel = await forumChannel(req.auth!.sub, channelId, "view");
+    await requireAnyGuildCapability(req.auth!.sub, channel.guildId, ["manageForums", "manageChannels", "manageServer"]);
+    await removeForumAsset(channelId, kind);
+    await writeAudit({ guildId: channel.guildId, actorId: req.auth!.sub, action: `FORUM_${kind.toUpperCase()}_REMOVE`, targetType: "CHANNEL", targetId: channelId, request: req });
+    const io = req.app.get("io");
+    if (io) await emitChannelEventToAuthorizedHumans(io, channelId, "forum:appearance", { channelId, appearance: await forumAppearance(channelId) });
+    res.status(204).end();
+  }));
+}
 
 communityRouter.post("/channels/:channelId/forum/tags", requireAuth, asyncHandler(async (req, res) => {
   const channelId = routeParam(req.params.channelId, "channelId");
@@ -170,13 +220,15 @@ communityRouter.post("/channels/:channelId/forum/posts", requireAuth, asyncHandl
   const channelId = routeParam(req.params.channelId, "channelId");
   const channel = await forumChannel(req.auth!.sub, channelId, "sendMessages");
   const data = forumPostSchema.parse(req.body);
+  await enforceAutoMod({ guildId: channel.guildId, channelId, userId: req.auth!.sub, content: `${data.title}
+${data.content}` });
   const tags = data.tagIds.length ? await prisma.forumTag.findMany({ where: { channelId, id: { in: data.tagIds } }, select: { id: true } }) : [];
   if (tags.length !== new Set(data.tagIds).size) throw new HttpError(400, "Uma ou mais tags nao pertencem a este forum");
   const post = await prisma.forumPost.create({
     data: { guildId: channel.guildId, channelId, authorId: req.auth!.sub, title: data.title, content: data.content, tags: { create: tags.map((tag) => ({ tagId: tag.id })) } },
     include: { author: { select: { id: true, username: true, displayName: true, avatarColor: true, systemRole: true, platformOwner: true, accountType: true } }, tags: { include: { tag: true } }, _count: { select: { comments: true } } }
   });
-  req.app.get("io")?.to?.(`guild:${channel.guildId}`)?.emit?.("forum:changed", { channelId, postId: post.id });
+  { const io = req.app.get("io"); if (io) await emitChannelEventToAuthorizedHumans(io, channelId, "forum:changed", { channelId, postId: post.id }); }
   res.status(201).json({ post: { ...post, tags: post.tags.map((item) => item.tag), commentCount: post._count.comments } });
 }));
 
@@ -202,12 +254,13 @@ communityRouter.post("/forum/posts/:postId/comments", requireAuth, asyncHandler(
   if (!post) throw new HttpError(404, "Topico nao encontrado");
   await forumChannel(req.auth!.sub, post.channelId, "sendMessages");
   if (post.status === "CLOSED") throw new HttpError(409, "Este topico esta fechado");
+  await enforceAutoMod({ guildId: post.guildId, channelId: post.channelId, userId: req.auth!.sub, content });
   const comment = await prisma.$transaction(async (tx) => {
     const created = await tx.forumComment.create({ data: { postId, authorId: req.auth!.sub, content }, include: { author: { select: { id: true, username: true, displayName: true, avatarColor: true, systemRole: true, platformOwner: true, accountType: true } } } });
     await tx.forumPost.update({ where: { id: postId }, data: { lastActivityAt: new Date() } });
     return created;
   });
-  req.app.get("io")?.to?.(`guild:${post.guildId}`)?.emit?.("forum:comment:new", { postId, comment });
+  { const io = req.app.get("io"); if (io) await emitChannelEventToAuthorizedHumans(io, post.channelId, "forum:comment:new", { postId, comment }); }
   res.status(201).json({ comment });
 }));
 
@@ -220,7 +273,7 @@ communityRouter.patch("/forum/posts/:postId", requireAuth, asyncHandler(async (r
   const isAuthor = post.authorId === req.auth!.sub;
   if (data.pinned !== undefined || (!isAuthor && (data.status !== undefined || data.title !== undefined))) await requireGuildCapability(req.auth!.sub, post.guildId, "manageForums");
   const updated = await prisma.forumPost.update({ where: { id: postId }, data });
-  req.app.get("io")?.to?.(`guild:${post.guildId}`)?.emit?.("forum:changed", { channelId: post.channelId, postId });
+  { const io = req.app.get("io"); if (io) await emitChannelEventToAuthorizedHumans(io, post.channelId, "forum:changed", { channelId: post.channelId, postId }); }
   res.json({ post: updated });
 }));
 
@@ -236,7 +289,17 @@ communityRouter.get("/guilds/:guildId/events", requireAuth, asyncHandler(async (
       rsvps: { include: { user: { select: { id: true, username: true, displayName: true, avatarColor: true, systemRole: true, platformOwner: true, accountType: true } } } }
     }
   });
-  res.json({ events });
+  const visibleEvents = [];
+  for (const event of events) {
+    if (!event.channelId) { visibleEvents.push(event); continue; }
+    try {
+      await requireChannelCapability(req.auth!.sub, event.channelId, "view");
+      visibleEvents.push(event);
+    } catch {
+      // Eventos associados a canais privados seguem a visibilidade do canal.
+    }
+  }
+  res.json({ events: visibleEvents });
 }));
 
 communityRouter.post("/guilds/:guildId/events", requireAuth, asyncHandler(async (req, res) => {
@@ -249,7 +312,10 @@ communityRouter.post("/guilds/:guildId/events", requireAuth, asyncHandler(async 
   }
   const event = await prisma.guildEvent.create({ data: { guildId, createdById: req.auth!.sub, title: data.title, description: data.description, location: data.location, channelId: data.channelId ?? null, startsAt: new Date(data.startsAt), endsAt: data.endsAt ? new Date(data.endsAt) : null, capacity: data.capacity ?? null } });
   await writeAudit({ guildId, actorId: req.auth!.sub, action: "EVENT_CREATE", targetType: "EVENT", targetId: event.id, metadata: { title: event.title, startsAt: event.startsAt.toISOString() }, request: req });
-  req.app.get("io")?.to?.(`guild:${guildId}`)?.emit?.("event:changed", { guildId, eventId: event.id });
+  { const io = req.app.get("io"); if (io) {
+    if (event.channelId) await emitChannelEventToAuthorizedHumans(io, event.channelId, "event:changed", { guildId, eventId: event.id });
+    else io.to(`guild:${guildId}`).emit("event:changed", { guildId, eventId: event.id });
+  } }
   res.status(201).json({ event });
 }));
 
@@ -259,6 +325,11 @@ communityRouter.patch("/events/:eventId", requireAuth, asyncHandler(async (req, 
   const current = await prisma.guildEvent.findUnique({ where: { id: eventId } });
   if (!current) throw new HttpError(404, "Evento nao encontrado");
   await requireGuildCapability(req.auth!.sub, current.guildId, "manageEvents");
+
+  if (data.channelId) {
+    const channel = await prisma.channel.findUnique({ where: { id: data.channelId } });
+    if (!channel || channel.guildId !== current.guildId) throw new HttpError(400, "Canal do evento invalido");
+  }
 
   const nextStartsAt = data.startsAt ? new Date(data.startsAt) : current.startsAt;
   const nextEndsAt = data.endsAt !== undefined ? (data.endsAt ? new Date(data.endsAt) : null) : current.endsAt;
@@ -274,7 +345,13 @@ communityRouter.patch("/events/:eventId", requireAuth, asyncHandler(async (req, 
       ...(data.endsAt !== undefined ? { endsAt: data.endsAt ? new Date(data.endsAt) : null } : {})
     }
   });
-  req.app.get("io")?.to?.(`guild:${current.guildId}`)?.emit?.("event:changed", { guildId: current.guildId, eventId });
+  { const io = req.app.get("io"); if (io) {
+    if (current.channelId && current.channelId !== event.channelId) {
+      await emitChannelEventToAuthorizedHumans(io, current.channelId, "event:changed", { guildId: current.guildId, eventId, moved: true });
+    }
+    if (event.channelId) await emitChannelEventToAuthorizedHumans(io, event.channelId, "event:changed", { guildId: current.guildId, eventId });
+    else io.to(`guild:${current.guildId}`).emit("event:changed", { guildId: current.guildId, eventId });
+  } }
   res.json({ event });
 }));
 
@@ -284,12 +361,16 @@ communityRouter.post("/events/:eventId/rsvp", requireAuth, asyncHandler(async (r
   const event = await prisma.guildEvent.findUnique({ where: { id: eventId } });
   if (!event) throw new HttpError(404, "Evento nao encontrado");
   await requireGuildMember(req.auth!.sub, event.guildId);
+  if (event.channelId) await requireChannelCapability(req.auth!.sub, event.channelId, "view");
   if (status === "GOING" && event.capacity) {
     const going = await prisma.guildEventRsvp.count({ where: { eventId, status: "GOING", userId: { not: req.auth!.sub } } });
     if (going >= event.capacity) throw new HttpError(409, "O evento atingiu a capacidade maxima");
   }
   const rsvp = await prisma.guildEventRsvp.upsert({ where: { eventId_userId: { eventId, userId: req.auth!.sub } }, update: { status }, create: { eventId, userId: req.auth!.sub, status } });
-  req.app.get("io")?.to?.(`guild:${event.guildId}`)?.emit?.("event:rsvp", { eventId, userId: req.auth!.sub, status });
+  { const io = req.app.get("io"); if (io) {
+    if (event.channelId) await emitChannelEventToAuthorizedHumans(io, event.channelId, "event:rsvp", { eventId, userId: req.auth!.sub, status });
+    else io.to(`guild:${event.guildId}`).emit("event:rsvp", { eventId, userId: req.auth!.sub, status });
+  } }
   res.json({ rsvp });
 }));
 
@@ -300,7 +381,10 @@ communityRouter.delete("/events/:eventId", requireAuth, asyncHandler(async (req,
   await requireGuildCapability(req.auth!.sub, event.guildId, "manageEvents");
   await prisma.guildEvent.delete({ where: { id: eventId } });
   await writeAudit({ guildId: event.guildId, actorId: req.auth!.sub, action: "EVENT_DELETE", targetType: "EVENT", targetId: eventId, request: req });
-  req.app.get("io")?.to?.(`guild:${event.guildId}`)?.emit?.("event:changed", { guildId: event.guildId, eventId, deleted: true });
+  { const io = req.app.get("io"); if (io) {
+    if (event.channelId) await emitChannelEventToAuthorizedHumans(io, event.channelId, "event:changed", { guildId: event.guildId, eventId, deleted: true });
+    else io.to(`guild:${event.guildId}`).emit("event:changed", { guildId: event.guildId, eventId, deleted: true });
+  } }
   res.status(204).end();
 }));
 
@@ -309,6 +393,7 @@ communityRouter.get("/events/:eventId/calendar.ics", requireAuth, asyncHandler(a
   const event = await prisma.guildEvent.findUnique({ where: { id: eventId }, include: { guild: { select: { name: true } } } });
   if (!event) throw new HttpError(404, "Evento nao encontrado");
   await requireGuildMember(req.auth!.sub, event.guildId);
+  if (event.channelId) await requireChannelCapability(req.auth!.sub, event.channelId, "view");
   const stamp = (date: Date) => date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
   const escape = (value: string) => value.replace(/\\/g, "\\\\").replace(/\r\n|\r|\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
   const body = [

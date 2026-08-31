@@ -18,9 +18,11 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { fileURLToPath } = require('node:url');
 const { execFile } = require('node:child_process');
+const BRAND = require('./brand.cjs');
 
-const APP_ID = 'br.com.ginga.desktop';
+const APP_ID = BRAND.appId;
 const FALLBACK_SERVER_URL = 'http://127.0.0.1';
 const UPDATE_TIMEOUT_MS = 15000;
 const UPDATE_STALL_TIMEOUT_MS = 120000;
@@ -30,8 +32,8 @@ const RUNTIME_UPDATE_INTERVAL_MS = 120000;
 const UPDATE_PUBLIC_KEY = path.join(__dirname, '..', 'update-public.pem');
 
 function configBaseDir() {
-  if (process.platform === 'win32' && process.env.APPDATA) return path.join(process.env.APPDATA, 'Ginga');
-  return path.join(os.homedir(), '.config', 'Ginga');
+  if (process.platform === 'win32' && process.env.APPDATA) return path.join(process.env.APPDATA, BRAND.configDirectoryName);
+  return path.join(os.homedir(), '.config', BRAND.configDirectoryName);
 }
 
 
@@ -40,7 +42,12 @@ const USER_SESSION_FILE = path.join(configBaseDir(), 'session.bin');
 const UPDATE_LOG_FILE = path.join(configBaseDir(), 'logs', 'updater.log');
 const USER_UPDATE_CONFIG = path.join(configBaseDir(), 'update.json');
 const USER_GAME_OVERLAY_CONFIG = path.join(configBaseDir(), 'game-overlay.json');
+const USER_DESKTOP_CONFIG = path.join(configBaseDir(), 'desktop.json');
+const USER_WINDOW_STATE_CONFIG = path.join(configBaseDir(), 'window-state.json');
 const RUNTIME_LOG_FILE = path.join(configBaseDir(), 'logs', 'runtime.log');
+const DEEP_LINK_SCHEME = 'ginga';
+let pendingDeepLink = '';
+let lastCrashReportAt = 0;
 
 const KNOWN_GAME_PROCESSES = new Map([
   ['cs2', 'Counter-Strike 2'],
@@ -215,8 +222,8 @@ function createGameOverlayWindow() {
   if (gameOverlayWindow && !gameOverlayWindow.isDestroyed()) return gameOverlayWindow;
   if (!app.isReady()) return null;
   gameOverlayWindow = new BrowserWindow({
-    width: 360,
-    height: 300,
+    width: 380,
+    height: 380,
     transparent: true,
     frame: false,
     resizable: false,
@@ -266,9 +273,9 @@ function gameOverlayPayload(preview = false) {
     inputMode: 'ptt',
     pushToTalkLabel: 'Mouse 4',
     participants: [
-      { identity: 'you', name: 'Você', speaking: false, microphoneEnabled: true, local: true },
-      { identity: 'friend', name: 'Amigo', speaking: true, microphoneEnabled: true, local: false },
-      { identity: 'friend2', name: 'Squad', speaking: false, microphoneEnabled: true, local: false }
+      { identity: 'you', name: 'Você', speaking: false, microphoneEnabled: true, deafened: false, cameraEnabled: true, screenShareEnabled: false, avatarUrl: null, local: true },
+      { identity: 'friend', name: 'Amigo', speaking: true, microphoneEnabled: true, deafened: false, cameraEnabled: false, screenShareEnabled: true, avatarUrl: null, local: false },
+      { identity: 'friend2', name: 'Squad', speaking: false, microphoneEnabled: false, deafened: true, cameraEnabled: false, screenShareEnabled: false, avatarUrl: null, local: false }
     ]
   } : gameOverlayVoiceState;
   return {
@@ -401,6 +408,67 @@ function readUpdateChannel() { const forced=String(process.env.GINGA_UPDATE_CHAN
 function saveUpdateChannel(channel) { const normalized=String(channel||'').trim().toLowerCase();if(!['stable','beta'].includes(normalized))throw new Error('Canal de atualizacao invalido');fs.mkdirSync(path.dirname(USER_UPDATE_CONFIG),{recursive:true,mode:0o700});fs.writeFileSync(USER_UPDATE_CONFIG,JSON.stringify({channel:normalized},null,2),{mode:0o600});return normalized; }
 function manifestAllowedForChannel(manifest,channel=readUpdateChannel()){return channel==='beta'||!String(manifest?.version||'').includes('-');}
 
+const DEFAULT_DESKTOP_PREFERENCES = Object.freeze({ startMinimized: false });
+function readDesktopPreferences() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(USER_DESKTOP_CONFIG, 'utf8'));
+    return { startMinimized: Boolean(parsed?.startMinimized) };
+  } catch {
+    return { ...DEFAULT_DESKTOP_PREFERENCES };
+  }
+}
+function saveDesktopPreferences(next = {}) {
+  const current = readDesktopPreferences();
+  const saved = { ...current, ...next, startMinimized: Boolean(next.startMinimized ?? current.startMinimized) };
+  fs.mkdirSync(path.dirname(USER_DESKTOP_CONFIG), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(USER_DESKTOP_CONFIG, JSON.stringify(saved, null, 2), { mode: 0o600 });
+  return saved;
+}
+function readWindowState() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(USER_WINDOW_STATE_CONFIG, 'utf8'));
+    const bounds = parsed?.bounds;
+    if (!bounds || ![bounds.x,bounds.y,bounds.width,bounds.height].every(Number.isFinite)) return null;
+    return { bounds: { x:Math.round(bounds.x), y:Math.round(bounds.y), width:Math.round(bounds.width), height:Math.round(bounds.height) }, maximized:Boolean(parsed.maximized) };
+  } catch { return null; }
+}
+function boundsVisibleOnAnyDisplay(bounds) {
+  try {
+    return screen.getAllDisplays().some((display) => {
+      const a = display.workArea;
+      const overlapW = Math.max(0, Math.min(bounds.x + bounds.width, a.x + a.width) - Math.max(bounds.x, a.x));
+      const overlapH = Math.max(0, Math.min(bounds.y + bounds.height, a.y + a.height) - Math.max(bounds.y, a.y));
+      return overlapW >= 120 && overlapH >= 80;
+    });
+  } catch { return false; }
+}
+function clampWindowBounds(bounds, minWidth, minHeight) {
+  if (!bounds || !boundsVisibleOnAnyDisplay(bounds)) return null;
+  try {
+    const display = screen.getDisplayMatching(bounds);
+    const area = display.workArea;
+    const width = Math.min(area.width, Math.max(Math.min(minWidth, area.width), Math.round(bounds.width)));
+    const height = Math.min(area.height, Math.max(Math.min(minHeight, area.height), Math.round(bounds.height)));
+    const x = Math.min(area.x + area.width - width, Math.max(area.x, Math.round(bounds.x)));
+    const y = Math.min(area.y + area.height - height, Math.max(area.y, Math.round(bounds.y)));
+    return { x, y, width, height };
+  } catch {
+    return null;
+  }
+}
+
+function persistWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    const maximized = mainWindow.isMaximized();
+    const bounds = maximized ? mainWindow.getNormalBounds() : mainWindow.getBounds();
+    fs.mkdirSync(path.dirname(USER_WINDOW_STATE_CONFIG), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(USER_WINDOW_STATE_CONFIG, JSON.stringify({ bounds, maximized }, null, 2), { mode: 0o600 });
+  } catch (error) {
+    logRuntime(`window-state-save error=${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 const SERVER_URL = normalizeServerUrl(
   process.env.GINGA_SERVER_URL || readEmbeddedServerUrl()
 );
@@ -429,6 +497,22 @@ if (SERVER_ORIGIN.startsWith('http://') && !isLocalServer()) {
 }
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
+// Hardware acceleration remains enabled by default. Chromium/Electron already
+// enables GPU compositing and WebRTC hardware encode/decode when the installed
+// driver is supported. Do not force GPU flags here: forcing a blocked adapter is
+// a common source of black frames and renderer crashes. This env var is only a
+// troubleshooting fallback for machines with broken video drivers.
+const DISABLE_HARDWARE_ACCELERATION = /^(1|true|yes)$/i.test(String(process.env.GINGA_DISABLE_HARDWARE_ACCELERATION || ''));
+if (DISABLE_HARDWARE_ACCELERATION) app.disableHardwareAcceleration();
+
+// Electron 43 ships Chromium 150. New Chromium builds always enable the Windows
+// Graphics Capture window capturer and removed the old AllowWgcWindowCapturer
+// feature flag, so trying to disable that flag has no effect. Cursor inclusion
+// is therefore handled at the MediaStreamTrack layer by the Web client
+// (cursor: "always"). Chromium itself also requests prefer_cursor_embedded for
+// desktop capture. Keeping this explicit avoids a fake compatibility switch that
+// would make troubleshooting misleading.
+
 let mainWindow = null;
 let updateWindow = null;
 let tray = null;
@@ -444,6 +528,8 @@ let runtimeUpdateTimer = null;
 let runtimeUpdateChecking = false;
 const activeNotifications = new Set();
 let taskbarUnreadCount = 0;
+let serverLoadGeneration = 0;
+let serverLoadInProgress = false;
 let updaterState = {
   title: 'Iniciando Ginga',
   message: 'Preparando o aplicativo...',
@@ -464,9 +550,81 @@ function isAllowedUrl(value) {
   }
 }
 
+function extractDeepLink(argv = []) { return (Array.isArray(argv) ? argv : []).find((v) => typeof v === 'string' && v.toLowerCase().startsWith(`${DEEP_LINK_SCHEME}://`)) || ''; }
+function deepLinkToServerUrl(value) { try { const parsed = new URL(String(value || '')); if (parsed.protocol !== `${DEEP_LINK_SCHEME}:`) return ''; const route = `${parsed.hostname}${parsed.pathname}`.replace(/^\/+/, ''); const match = route.match(/^invite\/([A-Za-z0-9_-]{3,128})$/i); return match ? new URL(`/invite/${encodeURIComponent(match[1])}`, `${SERVER_URL}/`).toString() : ''; } catch { return ''; } }
+async function openDeepLink(value) { const target = deepLinkToServerUrl(value); if (!target) return false; if (!startupFinished || !mainWindow || mainWindow.isDestroyed()) { pendingDeepLink = value; return true; } try { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); await mainWindow.loadURL(target); mainWindow.focus(); pendingDeepLink = ''; return true; } catch (error) { logRuntime(`deep-link-failed error=${error instanceof Error ? error.message : String(error)}`); return false; } }
+function getAutoStartEnabled() {
+  if (process.platform !== 'win32') return false;
+  try { return Boolean(app.getLoginItemSettings({ path: process.execPath, args: ['--autostart'] }).openAtLogin); }
+  catch { return false; }
+}
+function setAutoStartEnabled(enabled) {
+  if (process.platform !== 'win32') return false;
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: Boolean(enabled),
+      path: process.execPath,
+      args: ['--autostart']
+    });
+  } catch (error) {
+    logRuntime(`auto-start-set error=${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+  return getAutoStartEnabled();
+}
+function readDesktopDiagnostics() {
+  let displayScaleFactor = 1;
+  let displaySize = null;
+  try {
+    const display = mainWindow && !mainWindow.isDestroyed() ? screen.getDisplayMatching(mainWindow.getBounds()) : screen.getPrimaryDisplay();
+    displayScaleFactor = Number(display.scaleFactor || 1);
+    displaySize = { width: display.workArea.width, height: display.workArea.height };
+  } catch {}
+  let windowState = null;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const bounds = mainWindow.getBounds();
+    windowState = {
+      width: bounds.width,
+      height: bounds.height,
+      maximized: mainWindow.isMaximized(),
+      minimized: mainWindow.isMinimized(),
+      visible: mainWindow.isVisible(),
+      zoomFactor: mainWindow.webContents.getZoomFactor()
+    };
+  }
+  return {
+    appVersion: app.getVersion(),
+    product: BRAND.name,
+    platform: process.platform,
+    arch: process.arch,
+    osType: os.type(),
+    osRelease: os.release(),
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    node: process.versions.node,
+    packaged: app.isPackaged,
+    serverUrl: SERVER_URL,
+    updateChannel: readUpdateChannel(),
+    autoStart: { enabled: getAutoStartEnabled(), supported: process.platform === 'win32' },
+    desktopPreferences: readDesktopPreferences(),
+    window: windowState,
+    display: { scaleFactor: displayScaleFactor, workArea: displaySize }
+  };
+}
+async function submitClientCrashReport(kind, message, metadata = {}) { const now=Date.now(); if(now-lastCrashReportAt<15000)return false; lastCrashReportAt=now; const token=readSecureSessionToken(); if(!token)return false; const controller=new AbortController(); const timeout=setTimeout(()=>controller.abort(),3500); try { const target=new URL('/api/client/crash-reports',`${SERVER_URL}/`); const options={method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({version:app.getVersion(),platform:`${process.platform}-${process.arch}`,kind:String(kind||'desktop').slice(0,32),message:String(message||'Falha no cliente').slice(0,900),stack:'',metadata:{electron:process.versions.electron,chrome:process.versions.chrome,...metadata}}),signal:controller.signal}; const response=app.isReady()&&session.defaultSession?.fetch?await session.defaultSession.fetch(target.toString(),options):await fetch(target,options); return response.ok; } catch { return false; } finally { clearTimeout(timeout); } }
+
 function isLocalFileSender(event) {
   try {
     return event.senderFrame?.url?.startsWith('file://') === true;
+  } catch {
+    return false;
+  }
+}
+
+function isScreenPickerSender(event) {
+  try {
+    if (!pickerWindow || pickerWindow.isDestroyed()) return false;
+    return event.sender?.id === pickerWindow.webContents.id && isLocalFileSender(event);
   } catch {
     return false;
   }
@@ -496,7 +654,10 @@ function trayIcon() {
 
 function isAllowedRendererSender(event) {
   try {
-    return isAllowedUrl(event.senderFrame?.url || '');
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    if (event.sender?.id !== mainWindow.webContents.id) return false;
+    const senderUrl = event.senderFrame?.url || '';
+    return isAllowedUrl(senderUrl) || isOfflinePageUrl(senderUrl);
   } catch {
     return false;
   }
@@ -545,44 +706,151 @@ function clearTaskbarUnread() {
   return setTaskbarUnreadCount(0);
 }
 
-function showNativeNotification(payload = {}) {
-  if (payload?.taskbarBadge !== false) incrementTaskbarUnread(payload);
-  if (!Notification.isSupported()) return false;
-  const title = String(payload.title || 'Ginga').replace(/\s+/g, ' ').trim().slice(0, 90) || 'Ginga';
-  const body = String(payload.body || '').replace(/\s+/g, ' ').trim().slice(0, 220);
-  const durationMs = Math.max(2500, Math.min(15000, Number(payload.durationMs) || 5000));
-  const notification = new Notification({
-    title,
-    body,
-    icon: appIconPath(false) || undefined,
-    silent: Boolean(payload.silent),
-    timeoutType: 'default'
-  });
-  activeNotifications.add(notification);
-  const cleanup = () => activeNotifications.delete(notification);
-  notification.once('close', cleanup);
-  notification.once('failed', cleanup);
-  notification.on('click', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
-  notification.show();
-  setTimeout(() => {
-    try { notification.close(); } catch {}
-    cleanup();
-  }, durationMs);
-  return true;
+function showTrayBalloon(title, body, silent = false) {
+  if (process.platform !== 'win32') return false;
+  try {
+    if (!tray) createTray();
+    if (!tray || tray.isDestroyed?.()) return false;
+    tray.displayBalloon({
+      title: String(title || BRAND.notificationTitle).slice(0, 90),
+      content: String(body || '').slice(0, 220),
+      icon: appIconPath(false) || undefined,
+      noSound: Boolean(silent),
+      respectQuietTime: false
+    });
+    return true;
+  } catch (error) {
+    logRuntime(`notification tray-balloon failed=${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
 }
 
-function offlineHtml(errorMessage = '') {
-  const detail = escapeHtml(errorMessage);
-  const server = escapeHtml(SERVER_URL);
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Ginga</title>
-<style>:root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;background:#0f191f;color:#eff7f5}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f191f}.card{width:min(620px,calc(100vw - 40px));padding:42px;border:1px solid #294048;border-radius:24px;background:#132229;box-shadow:0 24px 80px #0008}.brand{font-size:15px;letter-spacing:.16em;text-transform:uppercase;color:#64d5c2;font-weight:800}.logo{font-size:34px;margin:10px 0 6px;font-weight:850}p{color:#a9bdc3;line-height:1.55}.detail{font-family:Consolas,monospace;font-size:12px;color:#82969c;word-break:break-word;background:#0c151a;padding:12px;border-radius:10px}.row{display:flex;gap:10px;margin-top:18px}button{border:0;border-radius:12px;padding:12px 18px;background:#64d5c2;color:#071114;font-weight:800;cursor:pointer}.secondary{background:#22343b;color:#dce9e7}</style></head>
-<body><main class="card"><div class="brand">Ginga Desktop</div><div class="logo">Servidor indisponivel</div><p>O aplicativo tentou acessar <strong>${server}</strong>, mas o Ginga Server nao respondeu.</p>${detail ? `<div class="detail">${detail}</div>` : ''}<div class="row"><button id="retry">Tentar novamente</button></div><script>document.getElementById('retry').onclick=()=>window.gingaDesktop.retryServer();</script></main></body></html>`;
+function showNativeNotification(payload = {}) {
+  if (payload?.taskbarBadge !== false) incrementTaskbarUnread(payload);
+  const title = String(payload.title || BRAND.notificationTitle).replace(/\s+/g, ' ').trim().slice(0, 90) || BRAND.notificationTitle;
+  const body = String(payload.body || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+  const durationMs = Math.max(2500, Math.min(15000, Number(payload.durationMs) || 5000));
+
+  if (!Notification.isSupported()) {
+    logRuntime('notification native-toast unsupported; tray fallback=1');
+    return Promise.resolve(showTrayBalloon(title, body, Boolean(payload.silent)));
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let shown = false;
+    let fallbackUsed = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(Boolean(value));
+    };
+    const fallback = (reason) => {
+      if (fallbackUsed) return false;
+      fallbackUsed = true;
+      const ok = showTrayBalloon(title, body, Boolean(payload.silent));
+      logRuntime(`notification fallback=${ok ? 'shown' : 'failed'} reason=${reason}`);
+      finish(ok);
+      return ok;
+    };
+
+    try {
+      const notification = new Notification({
+        title,
+        body,
+        icon: appIconPath(false) || undefined,
+        silent: Boolean(payload.silent),
+        timeoutType: 'default'
+      });
+      activeNotifications.add(notification);
+      const cleanup = () => activeNotifications.delete(notification);
+      notification.once('show', () => {
+        shown = true;
+        logRuntime('notification native-toast shown=1');
+        finish(true);
+      });
+      notification.once('close', cleanup);
+      notification.once('failed', (_event, error) => {
+        cleanup();
+        logRuntime(`notification native-toast failed=${error instanceof Error ? error.message : String(error || 'unknown')}`);
+        fallback('native-failed');
+      });
+      notification.on('click', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      });
+      notification.show();
+
+      // Alguns builds do Windows aceitam Notification.show() mas nao entregam o
+      // toast (registro/AUMID/Focus Assist). Se o Electron nao confirmar o evento
+      // "show", usamos o balloon da bandeja em vez de fingir sucesso para a UI.
+      setTimeout(() => {
+        if (!shown && !settled) fallback('native-show-timeout');
+      }, 1400);
+      setTimeout(() => {
+        try { notification.close(); } catch {}
+        cleanup();
+      }, durationMs);
+    } catch (error) {
+      logRuntime(`notification native-toast exception=${error instanceof Error ? error.message : String(error)}`);
+      fallback('native-exception');
+    }
+  });
+}
+
+function isExpectedNavigationAbort(error) {
+  const code = Number(error?.errno ?? error?.errorCode ?? error?.code);
+  const message = error instanceof Error ? error.message : String(error || '');
+  return code === -3 || /ERR_ABORTED|\(-3\)/i.test(message);
+}
+
+function friendlyServerError(error) {
+  const raw = error instanceof Error ? error.message : String(error || '');
+  if (/ERR_NAME_NOT_RESOLVED/i.test(raw)) return 'Nao foi possivel localizar o endereco do Ginga Server.';
+  if (/ERR_CONNECTION_REFUSED/i.test(raw)) return 'O servidor recusou a conexao. Ele pode estar reiniciando.';
+  if (/ERR_CONNECTION_TIMED_OUT|ERR_TIMED_OUT/i.test(raw)) return 'A conexao com o servidor demorou demais.';
+  if (/ERR_INTERNET_DISCONNECTED/i.test(raw)) return 'Este computador esta sem acesso a rede.';
+  if (/ERR_NETWORK_CHANGED/i.test(raw)) return 'A rede mudou durante a conexao. O Ginga vai tentar novamente.';
+  if (/ERR_CERT_|certificate|certificado/i.test(raw)) return 'Nao foi possivel validar o certificado HTTPS do servidor.';
+  if (/fetch failed/i.test(raw)) return 'A conexao de rede do aplicativo falhou temporariamente.';
+  if (isExpectedNavigationAbort(error)) return 'A abertura foi interrompida por outra navegacao. Tentando novamente.';
+  return 'Nao foi possivel conectar ao Ginga Server.';
+}
+
+function isOfflinePageUrl(value) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'file:') return false;
+    return path.normalize(fileURLToPath(parsed)) === path.normalize(path.join(__dirname, 'offline.html'));
+  } catch {
+    return false;
+  }
+}
+
+async function showOfflinePage(error, generation) {
+  if (!mainWindow || mainWindow.isDestroyed() || generation !== serverLoadGeneration) return;
+  const raw = error instanceof Error ? error.message : String(error || '');
+  const detail = friendlyServerError(error);
+  logRuntime(`server-offline-page origin=${SERVER_URL} detail=${raw}`);
+  try {
+    await mainWindow.loadFile(path.join(__dirname, 'offline.html'), {
+      query: {
+        server: SERVER_URL,
+        detail
+      }
+    });
+  } catch (fallbackError) {
+    // ERR_ABORTED aqui normalmente significa que outra tentativa de conexao ja
+    // substituiu a tela offline. Nao deve virar erro visivel nem rejection solta.
+    if (generation !== serverLoadGeneration || isExpectedNavigationAbort(fallbackError)) {
+      logRuntime(`offline-load-aborted generation=${generation}`);
+      return;
+    }
+    logRuntime(`offline-load-failed error=${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`);
+  }
 }
 
 function hardenedWindowOptions(extra = {}) {
@@ -597,17 +865,21 @@ function hardenedWindowOptions(extra = {}) {
   };
 }
 
-function lockNavigation(win, allowData = false) {
+function lockNavigation(win, allowOfflineFile = false) {
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isAllowedUrl(url)) {
-      void win.loadURL(url);
-    } else if (/^https?:/i.test(url)) {
-      void shell.openExternal(url);
+    // window.open() e usado para "Abrir original" em imagens/anexos.
+    // Nunca carregue esse URL na janela principal: isso substituia o React
+    // pelo arquivo bruto e deixava o Desktop com escala/layout corrompidos.
+    // HTTP(S), inclusive do proprio servidor Ginga, abre no navegador padrao.
+    if (/^https?:/i.test(url)) {
+      void shell.openExternal(url).catch((error) => {
+        logRuntime(`window-open-external-failed url=${url} error=${error instanceof Error ? error.message : String(error)}`);
+      });
     }
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
-    if ((allowData && url.startsWith('data:')) || isAllowedUrl(url)) return;
+    if ((allowOfflineFile && isOfflinePageUrl(url)) || isAllowedUrl(url)) return;
     event.preventDefault();
     if (/^https?:/i.test(url)) void shell.openExternal(url);
   });
@@ -683,6 +955,23 @@ function updaterError(code, message, detail = '') {
   return error;
 }
 
+function isTransientNetworkError(error) {
+  const code = String(error?.code || '').toUpperCase();
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (error?.name === 'AbortError') return true;
+  if (['UPD_FEED_HTTP', 'UPD_LATEST_HTTP', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT'].includes(code)) return true;
+  return /fetch failed|network|ERR_(?:NAME_NOT_RESOLVED|CONNECTION|INTERNET_DISCONNECTED|NETWORK_CHANGED|TIMED_OUT)/i.test(message);
+}
+
+function friendlyUpdaterNetworkError(error) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (/ERR_NAME_NOT_RESOLVED|ENOTFOUND|EAI_AGAIN/i.test(message)) return 'Nao foi possivel localizar o servidor de atualizacoes.';
+  if (/ERR_INTERNET_DISCONNECTED/i.test(message)) return 'Este computador esta sem acesso a rede.';
+  if (/ERR_CONNECTION_REFUSED|ECONNREFUSED/i.test(message)) return 'O servidor de atualizacoes recusou a conexao.';
+  if (/ERR_TIMED_OUT|ETIMEDOUT|AbortError/i.test(message) || error?.name === 'AbortError') return 'A verificacao de atualizacao demorou demais.';
+  return 'Nao foi possivel consultar atualizacoes agora.';
+}
+
 function appendUpdaterLog(message) {
   try {
     fs.mkdirSync(path.dirname(UPDATE_LOG_FILE), { recursive: true, mode: 0o700 });
@@ -729,30 +1018,79 @@ async function testServerUrl(value) {
   }
 }
 
-async function loadServer() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+async function loadServer(options = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+
+  const reason = String(options.reason || 'runtime');
+  const generation = ++serverLoadGeneration;
+  serverLoadInProgress = true;
+  logRuntime(`server-load-start generation=${generation} reason=${reason} origin=${SERVER_URL}`);
+
   try {
-    // O BrowserWindow e a fonte de verdade. Builds antigos bloqueavam a abertura
-    // em um preflight Node fetch; em algumas redes/proxies o site funcionava no
-    // navegador, mas o Desktop mostrava "fetch failed" antes mesmo de tentar
-    // carregar a pagina. Agora a mesma pilha Chromium que renderiza o Ginga faz
-    // a conexao principal. O health check fica apenas como diagnostico.
     await mainWindow.loadURL(SERVER_URL);
+    if (generation !== serverLoadGeneration) return false;
+    serverLoadInProgress = false;
+    logRuntime(`server-load-ok generation=${generation} url=${mainWindow.webContents.getURL()}`);
     void testServerUrl(SERVER_URL).catch(() => undefined);
+    return true;
   } catch (error) {
-    logRuntime(`server-load-failed origin=${SERVER_URL} error=${error instanceof Error ? error.message : String(error)}`);
-    await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(offlineHtml(error instanceof Error ? error.message : String(error)))}`);
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+
+    const raw = error instanceof Error ? error.message : String(error);
+    const currentUrl = mainWindow.webContents.getURL();
+
+    // Electron usa ERR_ABORTED (-3) quando uma navegacao e substituida por
+    // outra (redirect do app, retry, reload ou troca de pagina). Isso nao e
+    // prova de servidor indisponivel. Se a janela ja chegou na origem do Ginga,
+    // tratamos como sucesso; se uma tentativa mais nova existe, apenas ignoramos.
+    if (isExpectedNavigationAbort(error)) {
+      if (generation !== serverLoadGeneration) {
+        logRuntime(`server-load-aborted-stale generation=${generation} current=${serverLoadGeneration}`);
+        return false;
+      }
+      if (isAllowedUrl(currentUrl)) {
+        serverLoadInProgress = false;
+        logRuntime(`server-load-aborted-but-online generation=${generation} url=${currentUrl}`);
+        void testServerUrl(SERVER_URL).catch(() => undefined);
+        return true;
+      }
+      await sleep(180);
+      if (!mainWindow || mainWindow.isDestroyed() || generation !== serverLoadGeneration) return false;
+      const afterAbortUrl = mainWindow.webContents.getURL();
+      if (isAllowedUrl(afterAbortUrl)) {
+        serverLoadInProgress = false;
+        logRuntime(`server-load-aborted-recovered generation=${generation} url=${afterAbortUrl}`);
+        return true;
+      }
+    }
+
+    if (generation !== serverLoadGeneration) return false;
+    serverLoadInProgress = false;
+    logRuntime(`server-load-failed generation=${generation} origin=${SERVER_URL} error=${raw}`);
+    await showOfflinePage(error, generation);
+    return false;
   }
 }
 
 function createMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
   let unresponsiveReloadTimer = null;
-  mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 980,
-    minHeight: 640,
+  // Nao use uma altura fixa maior que a area util do monitor. Em telas 1440x900,
+  // por exemplo, a taskbar reduz a workArea e uma janela frameless de 900px pode
+  // ficar parcialmente atras dela, escondendo os controles inferiores de voz.
+  let workArea = { width: 1440, height: 900 };
+  try { workArea = screen.getPrimaryDisplay().workAreaSize; } catch {}
+  const minWidth = Math.min(980, Math.max(640, workArea.width));
+  const minHeight = Math.min(640, Math.max(480, workArea.height));
+  const initialWidth = Math.max(minWidth, Math.min(1440, workArea.width));
+  const initialHeight = Math.max(minHeight, Math.min(900, workArea.height));
+  const savedWindowState = readWindowState();
+  const savedBounds = clampWindowBounds(savedWindowState?.bounds, minWidth, minHeight);
+  const windowOptions = {
+    width: savedBounds ? Math.max(minWidth, savedBounds.width) : initialWidth,
+    height: savedBounds ? Math.max(minHeight, savedBounds.height) : initialHeight,
+    minWidth,
+    minHeight,
     backgroundColor: '#0b0e12',
     show: false,
     autoHideMenuBar: true,
@@ -761,22 +1099,67 @@ function createMainWindow() {
     thickFrame: true,
     roundedCorners: true,
     icon: appIconPath(false) || undefined,
-    webPreferences: hardenedWindowOptions({ preload: path.join(__dirname, 'preload.cjs'), backgroundThrottling: false })
+    webPreferences: hardenedWindowOptions({
+      preload: path.join(__dirname, 'preload.cjs'),
+      backgroundThrottling: false,
+      additionalArguments: [`--ginga-brand-name=${encodeURIComponent(BRAND.name)}`]
+    })
+  };
+  if (savedBounds) Object.assign(windowOptions, { x: savedBounds.x, y: savedBounds.y });
+  mainWindow = new BrowserWindow(windowOptions);
+  if (!savedBounds) mainWindow.center();
+  if (savedWindowState?.maximized) mainWindow.maximize();
+  const shouldStartHidden = process.argv.includes('--autostart') && readDesktopPreferences().startMinimized;
+  // O cliente Desktop deve sempre renderizar em escala 100%. Como ele carrega
+  // a mesma origem HTTPS usada pela Web, um zoom persistido pelo Chromium pode
+  // acionar breakpoints de navegador e fazer o app parecer a versao Web/mobile.
+  // Travamos o zoom somente na janela principal; o conteudo continua responsivo
+  // quando o usuario redimensiona a janela.
+  const enforceDesktopZoom = () => {
+    try { mainWindow?.webContents.setZoomFactor(1); } catch {}
+  };
+  enforceDesktopZoom();
+  mainWindow.webContents.on('did-finish-load', enforceDesktopZoom);
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const modifier = Boolean(input.control || input.meta);
+    if (!modifier) return;
+    const key = String(input.key || '').toLowerCase();
+    if (['+', '=', '-', '_', '0'].includes(key)) {
+      event.preventDefault();
+      enforceDesktopZoom();
+    }
   });
+
   lockNavigation(mainWindow, true);
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  mainWindow.once('ready-to-show', () => {
+    if (shouldStartHidden) { logRuntime('autostart ready startMinimized=1'); return; }
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
+  mainWindow.webContents.on('did-finish-load', () => { if (pendingDeepLink) { const next=pendingDeepLink; pendingDeepLink=''; setTimeout(()=>void openDeepLink(next),120); } });
   // O renderer e a fonte da verdade para o contador de nao lidas.
   // Focar/mostrar a janela nao significa que todos os canais foram lidos.
   // Ao focar, apenas interrompemos o pisca da taskbar; o badge numerico continua
   // ate o usuario realmente ler as conversas/canais pendentes.
   mainWindow.on('focus', () => { try { mainWindow?.flashFrame(false); } catch {} });
+  let windowStateSaveTimer = null;
+  const scheduleWindowStateSave = () => {
+    if (windowStateSaveTimer) clearTimeout(windowStateSaveTimer);
+    windowStateSaveTimer = setTimeout(() => { windowStateSaveTimer = null; persistWindowState(); }, 250);
+    windowStateSaveTimer.unref?.();
+  };
+  mainWindow.on('move', scheduleWindowStateSave);
+  mainWindow.on('resize', scheduleWindowStateSave);
+  mainWindow.on('maximize', scheduleWindowStateSave);
+  mainWindow.on('unmaximize', scheduleWindowStateSave);
   mainWindow.webContents.on('did-finish-load', () => sendRuntimeUpdateAvailable());
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     logRuntime(`renderer-gone reason=${details.reason} exitCode=${details.exitCode}`);
+    void submitClientCrashReport('renderer-gone', `Renderer encerrado: ${details.reason}`, { exitCode: details.exitCode });
     if (isQuitting || !mainWindow || mainWindow.isDestroyed()) return;
     setTimeout(() => {
       if (!mainWindow || mainWindow.isDestroyed() || isQuitting) return;
-      void loadServer();
+      void loadServer({ reason: 'renderer-gone' });
     }, 700);
   });
   mainWindow.webContents.on('unresponsive', () => {
@@ -798,27 +1181,90 @@ function createMainWindow() {
   });
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame) return;
+    // -3/ERR_ABORTED e esperado quando uma navegacao e substituida. Registrar
+    // como diagnostico e suficiente; nunca mostrar o data/file URL ao usuario.
+    if (Number(errorCode) === -3) {
+      logRuntime(`did-fail-load-aborted url=${validatedURL}`);
+      return;
+    }
     logRuntime(`did-fail-load code=${errorCode} url=${validatedURL} error=${errorDescription}`);
   });
   mainWindow.on('close', (event) => {
+    persistWindowState();
     if (isQuitting) return;
     event.preventDefault();
     mainWindow.hide();
   });
-  void loadServer();
+  void loadServer({ reason: 'startup' });
   return mainWindow;
+}
+
+function stopBackgroundActivities() {
+  if (runtimeUpdateTimer) { clearInterval(runtimeUpdateTimer); runtimeUpdateTimer = null; }
+  if (gameOverlayPollTimer) { clearInterval(gameOverlayPollTimer); gameOverlayPollTimer = null; }
+  if (gameOverlayPreviewTimer) { clearTimeout(gameOverlayPreviewTimer); gameOverlayPreviewTimer = null; }
+  if (updaterTimer) { clearTimeout(updaterTimer); updaterTimer = null; }
+  try { globalShortcut.unregisterAll(); } catch {}
+  for (const notification of activeNotifications) {
+    try { notification.close?.(); } catch {}
+  }
+  activeNotifications.clear();
+}
+
+function quitApplication() {
+  if (isQuitting) {
+    try { app.exit(0); } catch {}
+    return;
+  }
+  isQuitting = true;
+  logRuntime('explicit-quit requested');
+  stopBackgroundActivities();
+  try { tray?.destroy(); } catch {}
+  tray = null;
+  for (const win of BrowserWindow.getAllWindows()) {
+    try { if (!win.isDestroyed()) win.destroy(); } catch {}
+  }
+  try { app.quit(); } catch {}
+  const hardExitTimer = setTimeout(() => {
+    try { app.exit(0); } catch {}
+  }, 600);
+  hardExitTimer.unref?.();
+}
+
+function refreshTrayMenu() {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Abrir Ginga', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+    { label: 'Recarregar servidor', click: () => void loadServer({ reason: 'tray' }) },
+    ...(process.platform === 'win32' ? [{
+      label: 'Abrir com o Windows',
+      type: 'checkbox',
+      checked: getAutoStartEnabled(),
+      click: (menuItem) => {
+        const enabled = setAutoStartEnabled(Boolean(menuItem.checked));
+        logRuntime(`auto-start tray enabled=${enabled}`);
+        refreshTrayMenu();
+      }
+    }, {
+      label: 'Iniciar minimizado com o Windows',
+      type: 'checkbox',
+      enabled: getAutoStartEnabled(),
+      checked: readDesktopPreferences().startMinimized,
+      click: (menuItem) => {
+        saveDesktopPreferences({ startMinimized:Boolean(menuItem.checked) });
+        refreshTrayMenu();
+      }
+    }] : []),
+    { type: 'separator' },
+    { label: 'Sair', click: () => quitApplication() }
+  ]));
 }
 
 function createTray() {
   if (tray) return;
   tray = new Tray(trayIcon());
   tray.setToolTip('Ginga');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Abrir Ginga', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
-    { label: 'Recarregar servidor', click: () => void loadServer() },
-    { type: 'separator' },
-    { label: 'Sair', click: () => { isQuitting = true; app.quit(); } }
-  ]));
+  refreshTrayMenu();
   tray.on('click', () => { if (!mainWindow || mainWindow.isDestroyed()) return; mainWindow.show(); mainWindow.focus(); });
   tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus(); });
 }
@@ -1057,9 +1503,9 @@ async function readSignedUpdateManifest() {
         throw updaterError('UPD_MANIFEST_JSON', 'manifest.json nao e JSON valido');
       }
       if (
-        manifest?.schema !== 1 || manifest?.product !== 'Ginga' || manifest?.platform !== 'win32-x64' ||
+        manifest?.schema !== 1 || manifest?.product !== BRAND.updateProduct || manifest?.platform !== 'win32-x64' ||
         !/^(?:\d+)\.(?:\d+)\.(?:\d+)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(manifest?.version || '') ||
-        manifest?.file !== `Ginga-Setup-${manifest.version}-x64.exe` ||
+        manifest?.file !== `${BRAND.windowsInstallerPrefix}-${manifest.version}-x64.exe` ||
         !Number.isSafeInteger(manifest?.size) || manifest.size <= 0 ||
         typeof manifest?.sha512 !== 'string' || Buffer.from(manifest.sha512, 'base64').length !== 64
       ) throw updaterError('UPD_MANIFEST_SCHEMA', 'Manifesto de atualizacao invalido');
@@ -1131,7 +1577,15 @@ function sha512File(filePath) {
 async function configureUpdater() {
   createUpdateWindow();
 
-  if (!app.isPackaged || process.platform !== 'win32' || process.env.GINGA_SKIP_UPDATE === '1' || process.env.NEXORA_SKIP_UPDATE === '1') {
+  if (process.platform !== 'win32') {
+    // A primeira distribuicao Linux usa AppImage/DEB/RPM publicados no site.
+    // Nao tente consumir o feed NSIS do Windows nem rotule um pacote Linux como modo dev.
+    pushUpdaterState({ title: 'Abrindo Ginga', message: 'Cliente Linux pronto.', percent: 100, detail: `Versao ${app.getVersion()} | atualizacoes em ${SERVER_ORIGIN}` });
+    finishStartup(180);
+    return;
+  }
+
+  if (!app.isPackaged || process.env.GINGA_SKIP_UPDATE === '1' || process.env.NEXORA_SKIP_UPDATE === '1') {
     pushUpdaterState({ title: 'Abrindo Ginga', message: 'Modo de desenvolvimento.', percent: 100, detail: `Versao ${app.getVersion()}` });
     finishStartup(350);
     return;
@@ -1159,9 +1613,9 @@ async function configureUpdater() {
   } catch (error) {
     appendUpdaterLog(`startup bloqueou update: ${error instanceof Error ? error.message : String(error)}`);
     const code = String(error?.code || '');
-    const feedUnavailable = code === 'UPD_FEED_HTTP' || code === 'UPD_LATEST_HTTP' || error?.name === 'AbortError';
+    const feedUnavailable = code === 'UPD_FEED_HTTP' || code === 'UPD_LATEST_HTTP' || isTransientNetworkError(error);
     if (feedUnavailable) {
-      pushUpdaterState({ title: 'Servidor de atualizacao indisponivel', message: 'Nao foi possivel consultar atualizacoes agora. Abrindo o Ginga normalmente.', percent: 100, detail: error instanceof Error ? error.message : String(error) });
+      pushUpdaterState({ title: 'Servidor de atualizacao indisponivel', message: 'Nao foi possivel consultar atualizacoes agora. Abrindo o Ginga normalmente.', percent: 100, detail: friendlyUpdaterNetworkError(error) });
     } else {
       pushUpdaterState({ title: 'Atualizacao nao validada', message: 'O feed nao passou na verificacao criptografica. Nenhum pacote foi instalado.', percent: 100, detail: error instanceof Error ? error.message : String(error) });
     }
@@ -1283,7 +1737,8 @@ async function configureUpdater() {
   });
 
   updater.on('error', (error) => {
-    pushUpdaterState({ title: 'Servidor de atualizacao indisponivel', message: 'Nao foi possivel atualizar agora. Abrindo o Ginga normalmente.', percent: 100, detail: error?.message || 'Falha ao consultar atualizacoes.' });
+    appendUpdaterLog(`electron-updater error: ${error instanceof Error ? error.message : String(error)}`);
+    pushUpdaterState({ title: 'Servidor de atualizacao indisponivel', message: 'Nao foi possivel atualizar agora. Abrindo o Ginga normalmente.', percent: 100, detail: isTransientNetworkError(error) ? friendlyUpdaterNetworkError(error) : 'A verificacao de atualizacao falhou. O Ginga sera aberto normalmente.' });
     finishStartup(900);
   });
 
@@ -1293,16 +1748,23 @@ async function configureUpdater() {
   }, UPDATE_TIMEOUT_MS);
 
   void updater.checkForUpdates().catch((error) => {
-    pushUpdaterState({ title: 'Servidor de atualizacao indisponivel', message: 'Nao foi possivel verificar agora. Abrindo o Ginga normalmente.', percent: 100, detail: error instanceof Error ? error.message : String(error) });
+    appendUpdaterLog(`checkForUpdates falhou: ${error instanceof Error ? error.message : String(error)}`);
+    pushUpdaterState({ title: 'Servidor de atualizacao indisponivel', message: 'Nao foi possivel verificar agora. Abrindo o Ginga normalmente.', percent: 100, detail: isTransientNetworkError(error) ? friendlyUpdaterNetworkError(error) : 'Falha ao consultar o feed de atualizacoes.' });
     finishStartup(900);
   });
 }
+
+try { if (process.defaultApp && process.argv.length >= 2) app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [path.resolve(process.argv[1])]); else app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME); } catch (error) { logRuntime(`protocol-register error=${error instanceof Error ? error.message : String(error)}`); }
+pendingDeepLink = extractDeepLink(process.argv);
+app.on('open-url', (event, url) => { event.preventDefault(); void openDeepLink(url); });
 
 const lock = app.requestSingleInstanceLock();
 if (!lock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
+    const deepLink = extractDeepLink(argv);
+    if (deepLink) void openDeepLink(deepLink);
     if (!startupFinished) {
       updateWindow?.show();
       updateWindow?.focus();
@@ -1315,9 +1777,22 @@ if (!lock) {
   });
 
   app.whenReady().then(() => {
-    app.setName('Ginga');
+    app.setName(BRAND.name);
     app.setAppUserModelId(APP_ID);
     configurePermissions();
+
+    try {
+      const gpuStatus = app.getGPUFeatureStatus();
+      logRuntime(`gpu hardwareAcceleration=${DISABLE_HARDWARE_ACCELERATION ? 'disabled-by-env' : 'enabled'} featureStatus=${JSON.stringify(gpuStatus)}`);
+      void app.getGPUInfo('basic').then((info) => {
+        const devices = Array.isArray(info?.gpuDevice) ? info.gpuDevice.map((device) => ({
+          vendorId: device.vendorId,
+          deviceId: device.deviceId,
+          active: device.active
+        })) : [];
+        logRuntime(`gpu devices=${JSON.stringify(devices)}`);
+      }).catch(() => {});
+    } catch {}
 
     ipcMain.on('ginga:session-read-sync', (event) => {
       if (!isAllowedRendererSender(event)) { event.returnValue = ''; return; }
@@ -1342,8 +1817,16 @@ if (!lock) {
       logRuntime(`renderer ${String(message).slice(0, 8000)}`);
       return true;
     });
-    ipcMain.handle('ginga:retry-server', async () => { await loadServer(); return true; });
-    ipcMain.handle('ginga:show-window', async () => { mainWindow?.show(); mainWindow?.focus(); return true; });
+    ipcMain.handle('ginga:retry-server', async (event) => {
+      if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');
+      return await loadServer({ reason: 'offline-retry' });
+    });
+    ipcMain.handle('ginga:show-window', async (event) => {
+      if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');
+      mainWindow?.show();
+      mainWindow?.focus();
+      return true;
+    });
     ipcMain.handle('ginga:window-minimize', async (event) => {
       if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize();
@@ -1403,7 +1886,15 @@ if (!lock) {
       }, 180);
       return { restarting: true, version: runtimeUpdateManifest?.version || result.version };
     });
-    ipcMain.handle('ginga:server-url', async () => SERVER_URL);
+    ipcMain.handle('ginga:server-url', async (event) => {
+      if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');
+      return SERVER_URL;
+    });
+    ipcMain.handle('ginga:auto-start-get', async (event) => { if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida'); return { enabled:getAutoStartEnabled(), supported:process.platform==='win32' }; });
+    ipcMain.handle('ginga:auto-start-set', async (event, enabled) => { if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida'); const saved=setAutoStartEnabled(Boolean(enabled));refreshTrayMenu();return { enabled:saved, supported:process.platform==='win32' }; });
+    ipcMain.handle('ginga:start-minimized-get', async (event) => { if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida'); return { enabled:readDesktopPreferences().startMinimized, supported:process.platform==='win32' }; });
+    ipcMain.handle('ginga:start-minimized-set', async (event, enabled) => { if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida'); const saved=saveDesktopPreferences({ startMinimized:Boolean(enabled) }); return { enabled:saved.startMinimized, supported:process.platform==='win32' }; });
+    ipcMain.handle('ginga:desktop-diagnostics', async (event) => { if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida'); return readDesktopDiagnostics(); });
     ipcMain.handle('ginga:notify', async (event, payload) => {
       if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');
       return showNativeNotification(payload);
@@ -1417,7 +1908,7 @@ if (!lock) {
       return clearTaskbarUnread();
     });
     ipcMain.handle('ginga:screen-source-selected', async (event, selection) => {
-      if (!isLocalFileSender(event) || !pickerResolve) return false;
+      if (!isScreenPickerSender(event) || !pickerResolve) return false;
       const resolve = pickerResolve;
       pickerResolve = null;
       resolve(selection && typeof selection.id === 'string' ? selection : null);
@@ -1425,7 +1916,7 @@ if (!lock) {
       return true;
     });
     ipcMain.handle('ginga:screen-source-cancelled', async (event) => {
-      if (!isLocalFileSender(event)) return false;
+      if (!isScreenPickerSender(event)) return false;
       if (pickerResolve) {
         const resolve = pickerResolve;
         pickerResolve = null;
@@ -1439,6 +1930,31 @@ if (!lock) {
   });
 }
 
+app.on('child-process-gone', (_event, details) => {
+  const kind = String(details?.type || 'unknown');
+  const reason = String(details?.reason || 'unknown');
+  const exitCode = Number(details?.exitCode ?? 0);
+  logRuntime(`child-process-gone type=${kind} reason=${reason} exitCode=${exitCode}`);
+
+  // Falhas do processo GPU/utility podem aparecer no WebRTC como mensagens de
+  // pool/encoder (inclusive variacoes do erro "xhp pool"). O Chromium costuma
+  // reiniciar o processo sozinho; limpamos/recarregamos apenas o renderer se a
+  // interface ficar dependente daquele pipeline, sem encerrar o Ginga inteiro.
+  if (!/GPU|utility/i.test(kind) || isQuitting) return;
+  showNativeNotification({
+    title: 'Ginga recuperou o video',
+    body: 'O processo de aceleracao/captura de video reiniciou. Se a transmissao parou, inicie-a novamente.',
+    silent: true,
+    taskbarBadge: false,
+    flashTaskbar: false,
+    durationMs: 6500
+  });
+  setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed() || isQuitting) return;
+    if (mainWindow.webContents.isCrashed?.()) void loadServer({ reason: 'gpu-process-gone' });
+  }, 900);
+});
+
 app.on('activate', () => {
   if (!startupFinished) {
     updateWindow?.show();
@@ -1448,7 +1964,7 @@ app.on('activate', () => {
   else mainWindow.show();
 });
 
-app.on('before-quit', () => { isQuitting = true; if (runtimeUpdateTimer) clearInterval(runtimeUpdateTimer); if (gameOverlayPollTimer) clearInterval(gameOverlayPollTimer); if (gameOverlayPreviewTimer) clearTimeout(gameOverlayPreviewTimer); try { globalShortcut.unregisterAll(); } catch {} });
+app.on('before-quit', () => { isQuitting = true; stopBackgroundActivities(); });
 app.on('window-all-closed', () => {
   // Mantem o processo vivo na bandeja. O encerramento real ocorre em "Sair".
 });

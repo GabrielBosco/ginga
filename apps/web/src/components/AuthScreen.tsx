@@ -47,6 +47,21 @@ type UpdateManifest = {
   file: string;
 };
 
+type LinuxManifest = {
+  schema: number;
+  product: string;
+  platform: "linux-x64" | "linux-arm64";
+  version: string;
+  primary: string;
+  files: Array<{ file: string; type: "appimage" | "deb" | "rpm"; size: number; sha256: string; href?: string }>;
+};
+
+type LinuxDownload = {
+  version: string;
+  primaryHref: string;
+  files: Array<{ file: string; type: string; href: string }>;
+};
+
 function desktopBridge() {
   return (window as unknown as { gingaDesktop?: DesktopBridge }).gingaDesktop;
 }
@@ -65,6 +80,20 @@ function validUpdateManifest(value: unknown): value is UpdateManifest {
     && typeof item.version === "string"
     && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(item.version)
     && item.file === `Ginga-Setup-${item.version}-x64.exe`;
+}
+
+function validLinuxManifest(value: unknown, arch: "x64" | "arm64"): value is LinuxManifest {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<LinuxManifest>;
+  if (item.schema !== 1 || item.product !== "Ginga" || item.platform !== `linux-${arch}` || typeof item.version !== "string") return false;
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(item.version)) return false;
+  if (!Array.isArray(item.files) || typeof item.primary !== "string") return false;
+  const allowedTypes = arch === "x64" ? new Set(["appimage", "deb", "rpm"]) : new Set(["appimage", "deb"]);
+  return item.files.length > 0 && item.files.every((file) => Boolean(file)
+    && typeof file.file === "string" && /^Ginga-[0-9A-Za-z.-]+-linux-[0-9A-Za-z_]+\.(?:AppImage|deb|rpm)$/.test(file.file)
+    && allowedTypes.has(file.type) && Number.isFinite(file.size) && file.size > 0
+    && /^[0-9a-f]{64}$/i.test(file.sha256))
+    && item.files.some((file) => file.file === item.primary);
 }
 
 export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
@@ -87,6 +116,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [download, setDownload] = useState<{ href: string; version: string } | null>(null);
   const [downloadState, setDownloadState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [downloadRetry, setDownloadRetry] = useState(0);
+  const [linuxDownloads, setLinuxDownloads] = useState<{ x64: LinuxDownload | null; arm64: LinuxDownload | null }>({ x64: null, arm64: null });
   const authCardRef = useRef<HTMLFormElement>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
   const githubRepositoryUrl = String(import.meta.env.VITE_GITHUB_REPOSITORY_URL ?? "").trim();
@@ -143,6 +173,29 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       window.clearInterval(intervalId);
       window.removeEventListener("focus", onFocus);
     };
+  }, [isDesktop, downloadRetry]);
+
+  useEffect(() => {
+    if (isDesktop) return;
+    const controller = new AbortController();
+    const loadLinux = async (arch: "x64" | "arm64") => {
+      try {
+        const response = await fetch(`/updates/linux/${arch}/manifest.json?_ginga_site=${Date.now()}`, { cache: "no-store", signal: controller.signal });
+        if (!response.ok) return null;
+        const manifest = await response.json() as unknown;
+        if (!validLinuxManifest(manifest, arch)) return null;
+        const files = manifest.files.map((file) => ({ file: file.file, type: file.type, href: `/updates/linux/${arch}/${encodeURIComponent(file.file)}` }));
+        const primary = files.find((file) => file.file === manifest.primary);
+        if (!primary) return null;
+        const head = await fetch(`${primary.href}?_ginga_site=${Date.now()}`, { method: "HEAD", cache: "no-store", signal: controller.signal });
+        if (!head.ok) return null;
+        return { version: manifest.version, primaryHref: primary.href, files } satisfies LinuxDownload;
+      } catch { return null; }
+    };
+    void Promise.all([loadLinux("x64"), loadLinux("arm64")]).then(([x64, arm64]) => {
+      if (!controller.signal.aborted) setLinuxDownloads({ x64, arm64 });
+    });
+    return () => controller.abort();
   }, [isDesktop, downloadRetry]);
 
   function retryDownload() {
@@ -313,7 +366,11 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
   function focusLogin() {
     changeMode("login");
-    requestAnimationFrame(() => authCardRef.current?.querySelector<HTMLInputElement>('input[name="login"]')?.focus());
+    requestAnimationFrame(() => {
+      const card = authCardRef.current;
+      card?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      window.setTimeout(() => card?.querySelector<HTMLInputElement>('input[name="login"]')?.focus({ preventScroll: true }), 180);
+    });
   }
 
   const form = (
@@ -412,6 +469,8 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           <p>Texto, voz, comunidades e compartilhamento de tela em um so lugar. Rapido, moderno e feito para manter todo mundo conectado.</p>
           <div className="site-hero-actions">
             {download ? <a className="primary-button hero-download-button" href={download.href} title={`Baixar Ginga ${download.version}`}><Download size={18} /> Baixar para Windows</a> : downloadState === "loading" ? <button className="primary-button hero-download-button" type="button" disabled><Download size={18} /> Procurando ultima versao...</button> : <button className="primary-button hero-download-button" type="button" onClick={retryDownload}><Download size={18} /> Tentar download novamente</button>}
+            {linuxDownloads.x64 && <div className="linux-download-options"><a className="secondary-button hero-linux-download-button" href={linuxDownloads.x64.primaryHref} title={`Ginga ${linuxDownloads.x64.version} Linux x64`}><Download size={18}/> Linux x64</a><span className="linux-download-formats">{linuxDownloads.x64.files.map((file)=><a key={file.file} href={file.href}>{file.type === "appimage" ? "AppImage" : `.${file.type}`}</a>)}</span></div>}
+            {linuxDownloads.arm64 && <div className="linux-download-options"><a className="secondary-button hero-linux-download-button" href={linuxDownloads.arm64.primaryHref} title={`Ginga ${linuxDownloads.arm64.version} Linux ARM64`}><Download size={18}/> Linux ARM64</a><span className="linux-download-formats">{linuxDownloads.arm64.files.map((file)=><a key={file.file} href={file.href}>{file.type === "appimage" ? "AppImage" : `.${file.type}`}</a>)}</span></div>}
             <button type="button" className="secondary-button hero-login-button" onClick={focusLogin}>Abrir no navegador</button>
             {githubRepositoryUrl && <a className="secondary-button hero-github-button" href={githubRepositoryUrl} target="_blank" rel="noreferrer"><Github size={17}/> Abrir repositorio <ExternalLink size={13}/></a>}
           </div>
@@ -434,7 +493,8 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
       <section className="auth-panel auth-site-panel">
         {form}
-        {download && <a className="auth-site-mobile-download" href={download.href}><Download size={16} /> Baixar Ginga {download.version}</a>}
+        {download && <a className="auth-site-mobile-download" href={download.href}><Download size={16} /> Baixar Ginga {download.version} para Windows</a>}
+        {linuxDownloads.x64 && <a className="auth-site-mobile-download" href={linuxDownloads.x64.primaryHref}><Download size={16}/> Baixar Ginga {linuxDownloads.x64.version} para Linux x64</a>}
         <small className="auth-site-footer">Ginga · Open Source</small>
       </section>
     </main>

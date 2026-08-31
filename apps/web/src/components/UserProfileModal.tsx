@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Ban, CalendarDays, MessageCircle, Server, ShieldCheck, UserPlus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Ban, CalendarDays, Crown, ExternalLink, Gamepad2, MessageCircle, Server, ShieldCheck, UserPlus } from "lucide-react";
 import { api } from "../lib/api";
-import type { GuildRole, User, UserProfilePayload } from "../types";
+import type { CustomRole, GuildRole, User, UserProfilePayload } from "../types";
 import { Avatar } from "./Avatar";
 import { UserBadges } from "./UserBadges";
 import { Modal } from "./Modal";
@@ -11,6 +11,8 @@ interface UserProfileModalProps {
   user: User;
   currentUser: User;
   guildId?: string;
+  topRole?: CustomRole;
+  guildOwner?: boolean;
   online: boolean;
   onClose: () => void;
   onMessage: (userId: string) => Promise<void>;
@@ -32,7 +34,7 @@ function safeDate(value?: string | null) {
   catch { return "Data indisponivel"; }
 }
 
-export function UserProfileModal({ user, currentUser, guildId, online, onClose, onMessage, onSocialRefresh }: UserProfileModalProps) {
+export function UserProfileModal({ user, currentUser, guildId, topRole, guildOwner = false, online, onClose, onMessage, onSocialRefresh }: UserProfileModalProps) {
   const [data, setData] = useState<UserProfilePayload | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -57,6 +59,11 @@ export function UserProfileModal({ user, currentUser, guildId, online, onClose, 
   }, [load]);
 
   const profile = data?.profile ?? user;
+  const gamingProfile = data?.gamingProfile ?? null;
+  const profileAppearance = gamingProfile?.appearance;
+  const profileAccent = profileAppearance?.accentColor || profile.avatarColor || "#7867e8";
+  const profileAccent2 = profileAppearance?.secondaryColor || "#2c74ff";
+  const profileTheme = profileAppearance?.profileTheme || "AURORA";
   const sharedGuilds = useMemo(() => Array.isArray(data?.sharedGuilds) ? data.sharedGuilds : [], [data?.sharedGuilds]);
   const membership = data?.guildMembership ?? null;
   const block = data?.block ?? null;
@@ -106,10 +113,10 @@ export function UserProfileModal({ user, currentUser, guildId, online, onClose, 
 
   return (
     <Modal title="Perfil" onClose={onClose} width="md">
-      <div className="full-profile full-profile-v2">
-        <div className="full-profile-banner" style={{ background: profile.avatarColor || "#7867e8" }} />
+      <div className={`full-profile full-profile-v2 personalized-profile theme-${profileTheme.toLowerCase()}`} style={{ "--profile-accent": profileAccent, "--profile-accent-2": profileAccent2 } as CSSProperties}>
+        <div className="full-profile-banner" style={{ background: `linear-gradient(135deg, ${profileAccent}, ${profileAccent2})` }}>{gamingProfile?.bannerUrl && <img src={gamingProfile.bannerUrl} alt="" style={{ objectPosition: `50% ${profileAppearance?.bannerPosition ?? 50}%` }}/>}</div>
         <div className="full-profile-top">
-          <Avatar user={profile} size="xl" status={online ? "online" : "offline"} />
+          <Avatar user={profile} size="xl" status={online ? "online" : "offline"} imageUrl={gamingProfile?.avatarUrl ?? undefined} />
           <div className="full-profile-actions">
             {isHumanIdentity && !isSelf && data && !interactionsBlocked && (friendship?.status === "ACCEPTED" || sharedGuilds.length > 0) && <button className="primary-button" disabled={busy} onClick={() => void openMessage()}><MessageCircle size={16} /> Mensagem</button>}
             {isHumanIdentity && !isSelf && data && !interactionsBlocked && friendship?.status !== "ACCEPTED" && <button className="secondary-button" disabled={busy || friendship?.direction === "OUTGOING"} onClick={() => void addFriend()}><UserPlus size={16} /> {friendship?.direction === "OUTGOING" ? "Solicitacao enviada" : friendship?.direction === "INCOMING" ? "Aceitar amizade" : "Adicionar amigo"}</button>}
@@ -118,13 +125,14 @@ export function UserProfileModal({ user, currentUser, guildId, online, onClose, 
         </div>
 
         <div className="full-profile-identity">
-          <h2>{profile.displayName || profile.username || "Usuario"} <UserBadges user={profile} /></h2>
-          <span>@{profile.username || "usuario"}</span>
+          <h2 className="role-colored-name" style={topRole?.color ? { color: topRole.color } : undefined}>{profile.displayName || profile.username || "Usuario"}{guildOwner && <Crown size={18} className="guild-owner-crown" aria-label="Criador do servidor" />} <UserBadges user={profile} /></h2>
+          <span>@{profile.username || "usuario"}{profileAppearance?.pronouns ? ` · ${profileAppearance.pronouns}` : ""}</span>
           {isSystemIdentity ? <div className="contact-status system"><ShieldCheck size={14}/> Identidade interna do Ginga</div> : <div className="contact-status"><i className={online ? "online" : ""} /> {online ? "Online agora" : "Offline"}</div>}
         </div>
 
         {loading && <div className="profile-loading-v2"><span/><div><b/><i/></div></div>}
-        {profile.statusMessage && <div className="full-profile-status">{profile.statusMessage}</div>}
+        {(gamingProfile?.customStatus || profile.statusMessage) && <div className="full-profile-status">{gamingProfile?.customStatus || profile.statusMessage}</div>}
+        {gamingProfile?.activity?.name && <div className="full-profile-activity"><Gamepad2 size={15}/><span>Jogando <strong>{gamingProfile.activity.name}</strong>{gamingProfile.activity.details ? ` · ${gamingProfile.activity.details}` : ""}</span></div>}
         {blockedViewer && !blockedByViewer && <div className="inline-alert muted-alert">Este usuario bloqueou voce. Novas interacoes estao indisponiveis.</div>}
         {error && <div className="profile-load-warning-v2"><ShieldCheck size={17}/><div><strong>Perfil parcialmente carregado</strong><span>{error}. O restante do Ginga continua funcionando.</span></div><button type="button" onClick={() => { setLoading(true); setError(""); void load().catch((caught) => setError(caught instanceof Error ? caught.message : "Falha ao carregar perfil")).finally(() => setLoading(false)); }}>Tentar novamente</button></div>}
 
@@ -133,8 +141,9 @@ export function UserProfileModal({ user, currentUser, guildId, online, onClose, 
             <section className="system-profile-explainer"><strong>SISTEMA</strong><p>Esta e uma identidade interna do Ginga. Ela publica avisos automaticos do servidor, como entrada e saida de membros, e nao possui login, amizade, mensagens privadas ou acoes de moderacao.</p><div className="profile-detail-line"><ShieldCheck size={16}/><span>Protegida contra timeout, expulsao e banimento</span></div></section>
           ) : (
             <>
-              <section><strong>SOBRE MIM</strong><p>{profile.bio || "Este usuario ainda nao escreveu uma apresentacao."}</p></section>
-              <section><strong>CONTA</strong><div className="profile-detail-line"><CalendarDays size={16} /><span>Entrou no Ginga em {safeDate(data?.profile?.createdAt)}</span></div>{membership && <div className="profile-detail-line"><Server size={16} /><span>{roleLabel[membership.role] ?? "Membro"} neste espaco · entrou em {safeDate(membership.joinedAt)}</span></div>}</section>
+              <section><strong>SOBRE MIM</strong><p>{profile.bio || gamingProfile?.bio || "Este usuario ainda nao escreveu uma apresentacao."}</p></section>
+              {profileAppearance?.links?.length ? <section className="full-profile-links"><strong>LINKS</strong><div>{profileAppearance.links.map((link) => <a key={`${link.label}-${link.url}`} href={link.url} target="_blank" rel="noreferrer noopener"><ExternalLink size={14}/><span>{link.label}</span></a>)}</div></section> : null}
+              <section><strong>CONTA</strong><div className="profile-detail-line"><CalendarDays size={16} /><span>Entrou no Ginga em {safeDate(data?.profile?.createdAt)}</span></div>{membership && <div className="profile-detail-line"><Server size={16} /><span>{topRole ? <b className="profile-role-inline" style={{ color: topRole.color }}>{topRole.icon ? `${topRole.icon} ` : ""}{topRole.name}</b> : membership.role !== "OWNER" ? (roleLabel[membership.role] ?? "Membro") : "Membro"} neste espaco · entrou em {safeDate(membership.joinedAt)}</span></div>}</section>
               {sharedGuilds.length > 0 && <section className="full-profile-shared"><strong>ESPACOS EM COMUM</strong><div>{sharedGuilds.map((shared) => <span key={shared.id}><i style={{ background: shared.iconColor || "#7867e8" }}>{shared.name?.slice(0, 1).toUpperCase() || "G"}</i>{shared.name || "Espaco"}</span>)}</div></section>}
             </>
           )}

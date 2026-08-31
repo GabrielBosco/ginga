@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Archive, Ban, Bookmark, Bot, CalendarClock, Check, ChevronUp, Clock3, Copy, Download, File as FileIcon, FileArchive, FileAudio, FileText, Forward, Image as ImageIcon, ListTodo, Link, LoaderCircle, Megaphone, MessageSquare, Paperclip, Pencil, Pin, Plus, Reply, Search, Send, Smile, Trash2, UserMinus, Video, X } from "lucide-react";
+import { Archive, Ban, Bookmark, Bot, Crown, CalendarClock, Check, ChevronUp, Clock3, Copy, Download, File as FileIcon, FileArchive, FileAudio, FileText, Forward, Image as ImageIcon, ListTodo, Link, LoaderCircle, Megaphone, MessageSquare, Paperclip, Pencil, Pin, Plus, Reply, Search, Send, Smile, Trash2, UserMinus, Video, X } from "lucide-react";
 import type { Socket } from "socket.io-client";
 import { api, uploadFile } from "../lib/api";
 import { useDeveloperMode } from "../lib/developerMode";
@@ -13,6 +13,8 @@ import { UserBadges } from "./UserBadges";
 import { ContextMenu } from "./ContextMenu";
 import { MediaViewer } from "./MediaViewer";
 import { VoiceMessageRecorder } from "./VoiceMessageRecorder";
+import { MessageContent } from "./MessageContent";
+import { MessageFormattingToolbar, handleMessageFormatShortcut } from "./MessageFormattingToolbar";
 
 import { gingaConfirm, gingaPrompt } from "../lib/dialogs";
 interface ChatViewProps {
@@ -20,6 +22,7 @@ interface ChatViewProps {
   currentUser: User;
   socket: Socket;
   permissions: GuildPermissions;
+  guildOwnerId?: string;
   members?: GuildMember[];
   forwardChannels?: Channel[];
   onUserClick?: (user: User, rect: DOMRect) => void;
@@ -102,7 +105,8 @@ function removeEmojiTokenByUrl(content: string, url: string) {
 
 async function resizeEmojiImage(file: File): Promise<string> {
   if (!file.type.startsWith("image/")) throw new Error("Escolha uma imagem para criar o emoji.");
-  if (file.size > 8 * 1024 * 1024) throw new Error("O emoji pode ter no maximo 8 MB antes da conversao.");
+  if (file.type === "image/gif" && file.size > 512 * 1024) throw new Error("GIF de emoji pode ter no maximo 512 KB.");
+  if (file.type !== "image/gif" && file.size > 8 * 1024 * 1024) throw new Error("O emoji pode ter no maximo 8 MB antes da conversao.");
   const objectUrl = URL.createObjectURL(file);
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -111,6 +115,14 @@ async function resizeEmojiImage(file: File): Promise<string> {
       element.onerror = () => reject(new Error("Nao foi possivel ler essa imagem."));
       element.src = objectUrl;
     });
+    if (file.type === "image/gif") {
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Nao foi possivel ler o GIF."));
+        reader.onerror = () => reject(new Error("Nao foi possivel ler o GIF."));
+        reader.readAsDataURL(file);
+      });
+    }
     const size = 128;
     const canvas = document.createElement("canvas");
     canvas.width = size;
@@ -131,7 +143,9 @@ async function resizeEmojiImage(file: File): Promise<string> {
 async function customEmojiFile(emoji: CustomEmoji): Promise<File> {
   const response = await fetch(emoji.dataUrl);
   const blob = await response.blob();
-  return new File([blob], `ginga-emoji-${sanitizeEmojiName(emoji.name)}.webp`, { type: blob.type || "image/webp" });
+  const mime = blob.type === "image/gif" ? "image/gif" : "image/webp";
+  const extension = mime === "image/gif" ? "gif" : "webp";
+  return new File([blob], `ginga-emoji-${sanitizeEmojiName(emoji.name)}.${extension}`, { type: mime });
 }
 
 function messageMentionsUser(content: string, username: string) {
@@ -243,17 +257,29 @@ function MessageAttachment({ attachment, onPreview }: { attachment: Attachment; 
   );
 }
 
-export function ChatView({ channel, currentUser, socket, permissions, members = [], forwardChannels = [], onUserClick, onModerateMember }: ChatViewProps) {
+export function ChatView({ channel, currentUser, socket, permissions, guildOwnerId, members = [], forwardChannels = [], onUserClick, onModerateMember }: ChatViewProps) {
+  const memberVisuals = useMemo(() => {
+    const map = new Map<string, { color?: string; roleName?: string; roleIcon?: string; owner: boolean }>();
+    for (const member of members) {
+      const topRole = [...(member.customRoles ?? [])].sort((a, b) => b.position - a.position)[0];
+      map.set(member.user.id, { color: topRole?.color, roleName: topRole?.name, roleIcon: topRole?.icon, owner: member.user.id === guildOwnerId });
+    }
+    return map;
+  }, [guildOwnerId, members]);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [content, setContent] = useState("");
+  const [composerFocused, setComposerFocused] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [slowModeRemaining, setSlowModeRemaining] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [messageMenu, setMessageMenu] = useState<{ message: ChatMessage; x: number; y: number } | null>(null);
   const [reactionPicker, setReactionPicker] = useState<{ message: ChatMessage; x: number; y: number } | null>(null);
+  const [reactionHover, setReactionHover] = useState<{ emoji: string; names: string[]; x: number; y: number } | null>(null);
   const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null);
   const [forwardBusy, setForwardBusy] = useState(false);
   const [threadRoot, setThreadRoot] = useState<ChatMessage | null>(null);
@@ -445,6 +471,14 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
       setThreadRoot((current) => current?.id === id ? null : current);
       setPinnedMessages((current) => current.filter((item) => item.id !== id));
     };
+    const onBulkCleared = ({ channelId, messageIds = [] }: { channelId: string; messageIds?: string[] }) => {
+      if (channelId !== channel.id) return;
+      const ids = new Set(messageIds);
+      setMessages((current) => ids.size ? current.filter((item) => !ids.has(item.id)) : []);
+      setThreadReplies((current) => ids.size ? current.filter((item) => !ids.has(item.id)) : []);
+      setThreadRoot((current) => current && ids.has(current.id) ? null : current);
+      setPinnedMessages((current) => ids.size ? current.filter((item) => !ids.has(item.id)) : []);
+    };
     const onReactions = ({ messageId, reactions }: { messageId: string; reactions: MessageReaction[] }) => {
       setMessages((current) => current.map((item) => item.id === messageId ? { ...item, reactions } : item));
       setThreadReplies((current) => current.map((item) => item.id === messageId ? { ...item, reactions } : item));
@@ -454,6 +488,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
     socket.on("message:new", onMessage);
     socket.on("message:updated", onUpdated);
     socket.on("message:deleted", onDeleted);
+    socket.on("channel:messages:cleared", onBulkCleared);
     socket.on("message:reactions", onReactions);
 
     return () => {
@@ -462,6 +497,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
       socket.off("message:new", onMessage);
       socket.off("message:updated", onUpdated);
       socket.off("message:deleted", onDeleted);
+      socket.off("channel:messages:cleared", onBulkCleared);
       socket.off("message:reactions", onReactions);
       if (arrivalHighlightTimerRef.current !== null) {
         window.clearTimeout(arrivalHighlightTimerRef.current);
@@ -476,6 +512,20 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
   }, [content]);
+
+  useEffect(() => {
+    if (slowModeRemaining <= 0) return;
+    const timer = window.setInterval(() => setSlowModeRemaining((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [slowModeRemaining > 0]);
+
+  useEffect(() => {
+    if (!channel.slowModeSeconds || permissions.canManageMessages) { setSlowModeRemaining(0); return; }
+    const lastOwn = [...messages].reverse().find((message) => message.authorId === currentUser.id);
+    if (!lastOwn) { setSlowModeRemaining(0); return; }
+    const elapsed = Math.floor((Date.now() - new Date(lastOwn.createdAt).getTime()) / 1000);
+    setSlowModeRemaining(Math.max(0, channel.slowModeSeconds - elapsed));
+  }, [channel.id, channel.slowModeSeconds, currentUser.id, loading, permissions.canManageMessages]);
 
   const dayMarkers = useMemo(() => {
     const markers = new Map<string, boolean>();
@@ -542,11 +592,14 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
   const commandSuggestions = useMemo(() => {
     if (!content.startsWith("/") || content.includes(" ")) return [];
     const query = content.slice(1).toLowerCase();
-    return applicationCommands
+    const builtin: ChannelCommand[] = permissions.canManageMessages ? [
+      { id: "ginga-clear", name: "clear", description: "Limpar mensagens do canal: /clear 50 ou /clear all", applicationId: "__ginga__", bot: null }
+    ] : [];
+    return [...builtin, ...applicationCommands]
       .filter((command) => !query || command.name.toLowerCase().startsWith(query))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
       .slice(0, 8);
-  }, [applicationCommands, content]);
+  }, [applicationCommands, content, permissions.canManageMessages]);
 
   const mentionSuggestions = useMemo(() => {
     const match = content.match(/(?:^|[^a-zA-Z0-9_.-])@([a-zA-Z0-9_.-]*)$/);
@@ -754,6 +807,27 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
     }
   }
 
+  async function clearChannelMessages(input: string | number = 50) {
+    if (!permissions.canManageMessages) { setError("Voce nao tem permissao para limpar mensagens deste canal."); return; }
+    const normalized = typeof input === "number" ? input : input.trim().toLowerCase();
+    const count: number | "all" = normalized === "all" || normalized === "tudo" || normalized === "todos"
+      ? "all"
+      : Math.min(500, Math.max(1, Number(normalized || 50) || 50));
+    const label = count === "all" ? "TODAS as mensagens" : `as ultimas ${count} mensagens`;
+    const accepted = await gingaConfirm(`Deseja remover ${label} de #${channel.name}? Esta acao nao pode ser desfeita.`, { title: "Limpar mensagens", confirmLabel: "Limpar", cancelLabel: "Cancelar", tone: "danger" });
+    if (!accepted) return;
+    try {
+      const result = await api<{ deleted: number; messageIds: string[] }>(`/api/channels/${channel.id}/messages/clear`, { method: "POST", body: JSON.stringify({ count }) });
+      const removed = new Set(result.messageIds);
+      setMessages((current) => current.filter((item) => !removed.has(item.id)));
+      setPinnedMessages((current) => current.filter((item) => !removed.has(item.id)));
+      if (threadRoot && removed.has(threadRoot.id)) { setThreadRoot(null); setThreadReplies([]); }
+      setFeedback(`${result.deleted} mensagem${result.deleted === 1 ? "" : "s"} removida${result.deleted === 1 ? "" : "s"}.`);
+      setContent("");
+      void playUiSound("success");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Nao foi possivel limpar as mensagens"); }
+  }
+
   async function sendVoiceMessage(file: File) {
     if (!socket.connected) throw new Error("Chat desconectado. Aguarde a reconexao.");
     const attachment = await uploadFile(file);
@@ -766,6 +840,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
       }, (response: AckResponse) => {
         if (!response?.ok) { reject(new Error(response?.error ?? "Nao foi possivel enviar a mensagem de voz")); return; }
         if (response.message) setMessages((current) => current.some((item) => item.id === response.message!.id) ? current : [...current, response.message!]);
+        if (channel.slowModeSeconds && !permissions.canManageMessages) setSlowModeRemaining(channel.slowModeSeconds);
         setReplyTo(null);
         resolve();
       });
@@ -781,6 +856,15 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
     if ((!trimmed && pendingAttachments.length === 0) || sending) return;
     if (!socket.connected) {
       setError("Chat desconectado. Aguarde a reconexao.");
+      return;
+    }
+    if (slowModeRemaining > 0 && !permissions.canManageMessages) {
+      setError(`Modo lento ativo. Aguarde ${slowModeRemaining}s.`);
+      return;
+    }
+    const clearMatch = trimmed.match(/^\/clear(?:\s+(all|tudo|todos|\d+))?\s*$/i);
+    if (clearMatch && permissions.canManageMessages) {
+      void clearChannelMessages(clearMatch[1] || 50);
       return;
     }
     const invalidMentions = invalidGuildMentions(trimmed, members);
@@ -806,6 +890,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
         setMessages((current) => current.some((item) => item.id === response.message!.id) ? current : [...current, response.message!]);
       }
       setContent("");
+      if (channel.slowModeSeconds && !permissions.canManageMessages) setSlowModeRemaining(channel.slowModeSeconds);
       try { localStorage.removeItem(draftStorageKey()); } catch {}
       setPendingAttachments([]);
       setReplyTo(null);
@@ -814,6 +899,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
   }
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (handleMessageFormatShortcut(event, { textareaRef, value: content, onChange: setContent })) return;
     if (commandSuggestions.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -1068,7 +1154,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
     finally{setThreadLoading(false);}
   }
   function closeThread(){setThreadRoot(null);setThreadReplies([]);setThreadDraft("");setThreadError("");}
-  function sendThreadReply(event:FormEvent<HTMLFormElement>){event.preventDefault();if(!threadRoot||threadSending||!threadDraft.trim())return;if(!socket.connected){setThreadError("Chat desconectado. Aguarde a reconexao.");return;}const content=threadDraft.trim();const invalid=invalidGuildMentions(content,members);if(invalid.length){setThreadError(`${invalid.map((name)=>`@${name}`).join(", ")} nao existe${invalid.length===1?"":"m"} neste servidor.`);return;}setThreadSending(true);socket.emit("message:send",{channelId:channel.id,content,attachmentIds:[],replyToId:threadRoot.id},(response:AckResponse)=>{setThreadSending(false);if(!response?.ok){setThreadError(response?.error??"Nao foi possivel responder na thread");return;}if(response.message){setThreadReplies(cur=>cur.some(i=>i.id===response.message!.id)?cur:[...cur,response.message!]);setMessages(cur=>cur.some(i=>i.id===response.message!.id)?cur:[...cur,response.message!]);}setThreadDraft("");});}
+  function sendThreadReply(event:FormEvent<HTMLFormElement>){event.preventDefault();if(!threadRoot||threadSending||!threadDraft.trim())return;if(!socket.connected){setThreadError("Chat desconectado. Aguarde a reconexao.");return;}if(slowModeRemaining>0&&!permissions.canManageMessages){setThreadError(`Modo lento ativo. Aguarde ${slowModeRemaining}s.`);return;}const content=threadDraft.trim();const invalid=invalidGuildMentions(content,members);if(invalid.length){setThreadError(`${invalid.map((name)=>`@${name}`).join(", ")} nao existe${invalid.length===1?"":"m"} neste servidor.`);return;}setThreadSending(true);socket.emit("message:send",{channelId:channel.id,content,attachmentIds:[],replyToId:threadRoot.id},(response:AckResponse)=>{setThreadSending(false);if(!response?.ok){setThreadError(response?.error??"Nao foi possivel responder na thread");return;}if(response.message){setThreadReplies(cur=>cur.some(i=>i.id===response.message!.id)?cur:[...cur,response.message!]);setMessages(cur=>cur.some(i=>i.id===response.message!.id)?cur:[...cur,response.message!]);}if(channel.slowModeSeconds&&!permissions.canManageMessages)setSlowModeRemaining(channel.slowModeSeconds);setThreadDraft("");});}
 
   async function copyMessage(message: ChatMessage) { if (message.content) await navigator.clipboard.writeText(message.content); setMessageMenu(null); setFeedback("Mensagem copiada."); }
   async function copyMessageId(message: ChatMessage) { await navigator.clipboard.writeText(message.id); setMessageMenu(null); setFeedback("ID da mensagem copiado."); }
@@ -1102,7 +1188,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
           {searchLoading && <div className="chat-search-empty"><LoaderCircle className="spin" size={15}/> Buscando no historico...</div>}
           {!searchLoading && searchError && <div className="chat-search-empty">{searchError}</div>}
           {!searchLoading && searchQuery.trim().length >= 2 && !searchError && searchResults.length === 0 && <div className="chat-search-empty">Nenhuma mensagem encontrada.</div>}
-          {searchResults.map((message) => <button type="button" key={message.id} onClick={() => { void jumpToMessage(message.id); setSearchOpen(false); }}><Avatar user={message.author} size="sm"/><span><strong>{message.author.displayName}</strong><small>{new Date(message.createdAt).toLocaleString("pt-BR")}</small><em>{message.content?.slice(0, 140) || message.attachments[0]?.originalName || "Mensagem com anexo"}</em></span></button>)}
+          {searchResults.map((message) => <button type="button" key={message.id} onClick={() => { void jumpToMessage(message.id); setSearchOpen(false); }}><Avatar user={message.author} size="sm"/><span><strong className="role-colored-name" style={memberVisuals.get(message.authorId)?.color ? { color: memberVisuals.get(message.authorId)!.color } : undefined}>{message.author.displayName}{memberVisuals.get(message.authorId)?.owner && <Crown size={12} className="guild-owner-crown" />}</strong><small>{new Date(message.createdAt).toLocaleString("pt-BR")}</small><em>{message.content?.slice(0, 140) || message.attachments[0]?.originalName || "Mensagem com anexo"}</em></span></button>)}
         </div>
       </aside>}
       {pinsOpen && <aside className="pinned-panel">
@@ -1111,7 +1197,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
           {pinsLoading && <div className="center-state"><LoaderCircle className="spin"/> Carregando...</div>}
           {!pinsLoading && pinsNotice && <div className="pinned-panel-notice">{pinsNotice}</div>}
           {!pinsLoading && pinnedMessages.length===0 && <div className="saved-empty">Nenhuma mensagem fixada neste canal.</div>}
-          {!pinsLoading && pinnedMessages.map((message)=><article key={message.id} className="pinned-message-card" onClick={()=>void jumpToMessage(message.id)}><Avatar user={message.author} size="sm"/><div><div className="pinned-message-meta"><strong>{message.author.displayName}</strong><small>{new Date(message.createdAt).toLocaleString("pt-BR")}</small></div><p>{message.content ? renderMessageText(message.content, currentUser.username, members, onUserClick) : "Mensagem com anexo"}</p>{message.attachments.length > 0 && <span className="pinned-attachment-count"><Paperclip size={12}/>{message.attachments.length} anexo{message.attachments.length === 1 ? "" : "s"}</span>}</div>{permissions.canPinMessages&&<button type="button" aria-label="Desafixar mensagem" onClick={(event)=>{event.stopPropagation();void pinMessage(message);}}><X size={15}/></button>}</article>)}
+          {!pinsLoading && pinnedMessages.map((message)=><article key={message.id} className="pinned-message-card" onClick={()=>void jumpToMessage(message.id)}><Avatar user={message.author} size="sm"/><div><div className="pinned-message-meta"><strong className="role-colored-name" style={memberVisuals.get(message.authorId)?.color ? { color: memberVisuals.get(message.authorId)!.color } : undefined}>{message.author.displayName}{memberVisuals.get(message.authorId)?.owner && <Crown size={12} className="guild-owner-crown" />}</strong><small>{new Date(message.createdAt).toLocaleString("pt-BR")}</small></div><div className="pinned-message-content">{message.content ? <MessageContent content={message.content} username={currentUser.username} members={members} onUserClick={onUserClick} /> : "Mensagem com anexo"}</div>{message.attachments.length > 0 && <span className="pinned-attachment-count"><Paperclip size={12}/>{message.attachments.length} anexo{message.attachments.length === 1 ? "" : "s"}</span>}</div>{permissions.canPinMessages&&<button type="button" aria-label="Desafixar mensagem" onClick={(event)=>{event.stopPropagation();void pinMessage(message);}}><X size={15}/></button>}</article>)}
         </div>
       </aside>}
       {feedback && <div className="ginga-toast"><Check size={15}/>{feedback}</div>}
@@ -1152,11 +1238,11 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
                 <div className="message-body">
                   {!compact && (
                     <div className="message-meta">
-                      <button className="message-author-button" type="button" onClick={(event) => onUserClick?.(message.author, event.currentTarget.getBoundingClientRect())}><strong>{message.author.displayName} <UserBadges user={message.author} compact /></strong><span>@{message.author.username}</span></button>
+                      <button className="message-author-button" type="button" onClick={(event) => onUserClick?.(message.author, event.currentTarget.getBoundingClientRect())}><strong className="role-colored-name" style={memberVisuals.get(message.authorId)?.color ? { color: memberVisuals.get(message.authorId)!.color } : undefined}>{message.author.displayName}{memberVisuals.get(message.authorId)?.owner && <Crown size={13} className="guild-owner-crown" aria-label="Criador do servidor" />} <UserBadges user={message.author} compact /></strong><span>@{message.author.username}</span></button>
                       <time>{timeFormatter.format(new Date(message.createdAt))}</time>
                     </div>
                   )}
-                  {message.replyTo && <button className="message-reply-ref" type="button" onClick={() => void jumpToMessage(message.replyTo!.id)} aria-label="Ir para mensagem respondida"><Reply size={13}/><strong>{message.replyTo.author.displayName}</strong><span>{message.replyTo.content?.slice(0,90) || "Mensagem"}</span></button>}
+                  {message.replyTo && <button className="message-reply-ref" type="button" onClick={() => void jumpToMessage(message.replyTo!.id)} aria-label="Ir para mensagem respondida"><Reply size={13}/><strong className="role-colored-name" style={memberVisuals.get(message.replyTo.authorId)?.color ? { color: memberVisuals.get(message.replyTo.authorId)!.color } : undefined}>{message.replyTo.author.displayName}{memberVisuals.get(message.replyTo.authorId)?.owner && <Crown size={11} className="guild-owner-crown" />}</strong><span>{message.replyTo.content?.slice(0,90) || "Mensagem"}</span></button>}
                   <div className="message-state-badges">
                     {channel.type === "ANNOUNCEMENT" && <span className="message-announcement-badge"><Megaphone size={12}/> ANÚNCIO</span>}
                     {message.isPinned && <span className="message-pinned"><Pin size={12}/> Fixada</span>}
@@ -1167,13 +1253,29 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
                       <textarea value={editDraft} onChange={(event)=>setEditDraft(event.target.value)} maxLength={4000} autoFocus onKeyDown={(event)=>{if(event.key === "Escape") cancelEditMessage(); if(event.key === "Enter" && (event.ctrlKey || event.metaKey)){event.preventDefault();void saveEditMessage(message);}}} />
                       <div><span>Esc cancela • Ctrl+Enter salva</span><button type="button" className="secondary-button" onClick={cancelEditMessage}>Cancelar</button><button type="button" className="primary-compact-button" onClick={()=>void saveEditMessage(message)} disabled={editSaving || !editDraft.trim()}>{editSaving ? <LoaderCircle className="spin" size={14}/> : <Check size={14}/>} Salvar</button></div>
                     </div>
-                  ) : message.content ? <p className="message-text">{renderMessageText(message.content, currentUser.username, members, onUserClick)}</p> : null}
+                  ) : message.content ? <div className="message-text"><MessageContent content={message.content} username={currentUser.username} members={members} onUserClick={onUserClick} /></div> : null}
                   {visibleAttachments.length > 0 && (
                     <div className="message-attachments">
                       {visibleAttachments.map((attachment) => <MessageAttachment key={attachment.id} attachment={attachment} onPreview={setMediaViewer} />)}
                     </div>
                   )}
-                  {message.reactions && message.reactions.length > 0 && <div className="reaction-row">{Array.from(new Set(message.reactions.map((item)=>item.emoji))).map((emoji)=>{const list=message.reactions!.filter((item)=>item.emoji===emoji);return <button className={list.some((item)=>item.userId===currentUser.id)?"mine":""} key={emoji} onClick={()=>void react(message,emoji)}>{emoji} <span>{list.length}</span></button>;})}</div>}
+                  {message.reactions && message.reactions.length > 0 && <div className="reaction-row">{Array.from(new Set(message.reactions.map((item)=>item.emoji))).map((emoji)=>{
+                    const list=message.reactions!.filter((item)=>item.emoji===emoji);
+                    const names=list.map((item)=>item.user?.displayName || members.find((member)=>member.user.id===item.userId)?.user.displayName || (item.userId===currentUser.id?currentUser.displayName:"Usuario"));
+                    const mine=list.some((item)=>item.userId===currentUser.id);
+                    const ariaNames=names.length<=4?names.join(", "):`${names.slice(0,4).join(", ")} e mais ${names.length-4}`;
+                    return <button
+                      type="button"
+                      className={`reaction-chip ${mine?"mine":""}`}
+                      key={emoji}
+                      aria-label={`${emoji}: ${ariaNames}`}
+                      onMouseEnter={(event)=>{const rect=event.currentTarget.getBoundingClientRect();setReactionHover({emoji,names,x:Math.min(window.innerWidth-18,Math.max(18,rect.left+rect.width/2)),y:Math.max(18,rect.top-8)});}}
+                      onMouseLeave={()=>setReactionHover(null)}
+                      onFocus={(event)=>{const rect=event.currentTarget.getBoundingClientRect();setReactionHover({emoji,names,x:Math.min(window.innerWidth-18,Math.max(18,rect.left+rect.width/2)),y:Math.max(18,rect.top-8)});}}
+                      onBlur={()=>setReactionHover(null)}
+                      onClick={()=>void react(message,emoji)}
+                    ><span className="reaction-chip-emoji">{emoji}</span><span className="reaction-chip-count">{list.length}</span></button>;
+                  })}</div>}
                   <div className="message-actions message-quick-actions">
                     <button className="message-action-button" aria-label="Adicionar reacao" title="Adicionar reacao" onClick={(event)=>{const rect=event.currentTarget.getBoundingClientRect();openReactionPicker(message, rect.right - 310, rect.bottom + 6);}}><Smile size={16}/></button>
                     <button className="message-action-button" aria-label="Responder" title="Responder" onClick={()=>{setReplyTo(message);requestAnimationFrame(()=>textareaRef.current?.focus());}}><Reply size={16}/></button><button className="message-action-button" aria-label="Abrir thread" title="Abrir thread" onClick={()=>void openThread(message)}><MessageSquare size={16}/></button>
@@ -1211,6 +1313,14 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
         {(messageMenu.message.authorId === currentUser.id || permissions.canManageMessages) && <><div className="context-menu-separator"/><button className="danger" onClick={()=>{void deleteMessage(messageMenu.message);setMessageMenu(null);}}><Trash2 size={15}/> Excluir</button></>}
       </ContextMenu>}
 
+      {reactionHover && <div className="reaction-hover-card" style={{ left: reactionHover.x, top: reactionHover.y }} role="tooltip">
+        <div className="reaction-hover-emoji">{reactionHover.emoji}</div>
+        <div className="reaction-hover-copy">
+          <strong>{reactionHover.names.length===1?reactionHover.names[0]:reactionHover.names.slice(0,4).join(", ")}</strong>
+          <small>{reactionHover.names.length===1?"reagiu a esta mensagem":reactionHover.names.length<=4?"reagiram a esta mensagem":`e mais ${reactionHover.names.length-4} reagiram`}</small>
+        </div>
+      </div>}
+
       {reactionPicker && <div className="message-reaction-popover" style={{ left: reactionPicker.x, top: reactionPicker.y }} role="dialog" aria-label="Escolher reacao">
         <header><div><Smile size={16}/><strong>Reagir à mensagem</strong></div><button type="button" onClick={()=>setReactionPicker(null)} aria-label="Fechar"><X size={15}/></button></header>
         <div className="message-reaction-grid">{nativeEmojis.map((emoji)=><button type="button" key={emoji} onClick={()=>{void react(reactionPicker.message,emoji);setReactionPicker(null);}} aria-label={`Reagir com ${emoji}`}>{emoji}</button>)}</div>
@@ -1227,7 +1337,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
         </section>
       </div>}
 
-      {(threadRoot || threadLoading || threadError) && <aside className="message-thread-drawer"><header><div><MessageSquare size={18}/><span><strong>Thread</strong><small>{threadReplies.length} respostas</small></span></div><button type="button" onClick={closeThread}><X size={17}/></button></header>{threadLoading?<div className="message-thread-empty"><LoaderCircle className="spin" size={18}/> Carregando...</div>:threadRoot?<><div className="message-thread-root"><Avatar user={threadRoot.author} size="sm"/><div><strong>{threadRoot.author.displayName}</strong><p>{threadRoot.content}</p></div></div><div className="message-thread-list">{threadReplies.length?threadReplies.map(reply=><article key={reply.id}><Avatar user={reply.author} size="sm"/><div><strong>{reply.author.displayName}</strong><p>{reply.content}</p></div></article>):<div className="message-thread-empty">Ainda nao tem respostas.</div>}</div><form className="message-thread-composer" onSubmit={sendThreadReply}><textarea value={threadDraft} onChange={e=>setThreadDraft(e.target.value)} maxLength={4000} rows={2} placeholder="Responder na thread"/><button type="submit" disabled={threadSending||!threadDraft.trim()}><Send size={16}/></button></form></>:<div className="message-thread-empty">{threadError}</div>}</aside>}
+      {(threadRoot || threadLoading || threadError) && <aside className="message-thread-drawer"><header><div><MessageSquare size={18}/><span><strong>Thread</strong><small>{threadReplies.length} respostas</small></span></div><button type="button" onClick={closeThread}><X size={17}/></button></header>{threadLoading?<div className="message-thread-empty"><LoaderCircle className="spin" size={18}/> Carregando...</div>:threadRoot?<><div className="message-thread-root"><Avatar user={threadRoot.author} size="sm"/><div><strong>{threadRoot.author.displayName}</strong><div className="message-text compact-markdown"><MessageContent content={threadRoot.content} username={currentUser.username} members={members} onUserClick={onUserClick}/></div></div></div><div className="message-thread-list">{threadReplies.length?threadReplies.map(reply=><article key={reply.id}><Avatar user={reply.author} size="sm"/><div><strong>{reply.author.displayName}</strong><div className="message-text compact-markdown"><MessageContent content={reply.content} username={currentUser.username} members={members} onUserClick={onUserClick}/></div></div></article>):<div className="message-thread-empty">Ainda nao tem respostas.</div>}</div><form className="message-thread-composer" onSubmit={sendThreadReply}><textarea value={threadDraft} onChange={e=>setThreadDraft(e.target.value)} maxLength={4000} rows={2} placeholder="Responder na thread"/><button type="submit" disabled={threadSending||!threadDraft.trim()}><Send size={16}/></button></form></>:<div className="message-thread-empty">{threadError}</div>}</aside>}
       <form className="composer-wrap" onSubmit={submit}>
         {error && <div className="composer-error">{error}</div>}
         {activeUploads.length > 0 && <div className="active-uploads">
@@ -1248,7 +1358,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
         {commandSuggestions.length > 0 && <div className="slash-command-menu">
           <div className="slash-command-caption">Comandos disponiveis neste canal</div>
           {commandSuggestions.map((command, index) => <button type="button" className={index === commandIndex ? "active" : ""} key={`${command.applicationId}:${command.name}`} onMouseDown={(event) => event.preventDefault()} onClick={() => selectCommand(command)}>
-            <span className="slash-command-icon"><Bot size={17}/></span><div><strong>/{command.name}</strong><span>{command.description}</span></div><small>{command.bot?.displayName ?? "Bot"}</small>
+            <span className="slash-command-icon">{command.applicationId === "__ginga__" ? <Trash2 size={17}/> : <Bot size={17}/>}</span><div><strong>/{command.name}</strong><span>{command.description}</span></div><small>{command.applicationId === "__ginga__" ? "Ginga" : command.bot?.displayName ?? "Bot"}</small>
           </button>)}
         </div>}
         {templateOpen && <div className="message-template-menu">
@@ -1270,6 +1380,8 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
             {customEmojis.length < 10 && <div className="custom-emoji-add"><input value={customEmojiName} onChange={(event)=>setCustomEmojiName(event.target.value)} maxLength={24} placeholder="nome-do-emoji"/><label className={customEmojiBusy ? "disabled" : ""}>{customEmojiBusy ? <LoaderCircle className="spin" size={14}/> : <Plus size={14}/>} Adicionar<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={customEmojiBusy} onChange={chooseCustomEmoji}/></label></div>}
           </div>
         </div>}
+        {channel.slowModeSeconds && channel.slowModeSeconds > 0 ? <div className={`slow-mode-composer-hint ${slowModeRemaining > 0 ? "waiting" : ""}`}><Clock3 size={13}/> {slowModeRemaining > 0 && !permissions.canManageMessages ? `Modo lento: aguarde ${slowModeRemaining}s para enviar novamente.` : `Modo lento: ${channel.slowModeSeconds}s entre mensagens para membros.`}</div> : null}
+        <MessageFormattingToolbar textareaRef={textareaRef} value={content} onChange={setContent} active={composerFocused} />
         <div className="composer">
           <label className={`composer-attach ${uploading ? "disabled" : ""}`} aria-label="Adicionar arquivo">
             {uploading ? <LoaderCircle className="spin" size={20} /> : <Paperclip size={20} />}
@@ -1279,6 +1391,8 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
             ref={textareaRef}
             value={content}
             onChange={(event) => setContent(event.target.value)}
+            onFocus={() => setComposerFocused(true)}
+            onBlur={() => setComposerFocused(false)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             placeholder={channel.type === "ANNOUNCEMENT" ? `Publicar anúncio em #${channel.name}` : `Mensagem em ${channel.name}`}
@@ -1289,7 +1403,7 @@ export function ChatView({ channel, currentUser, socket, permissions, members = 
           <button className={`composer-template ${templateOpen ? "active" : ""}`} type="button" onClick={() => { setTemplateOpen((value) => !value); setEmojiOpen(false); }} aria-label="Modelos de mensagem"><FileText size={18}/></button>
           {permissions.canScheduleMessages && <button className="composer-schedule" type="button" onClick={()=>void scheduleCurrent()} disabled={!content.trim()} aria-label="Agendar mensagem"><CalendarClock size={18}/></button>}
           <VoiceMessageRecorder disabled={sending || uploading} onSendFile={sendVoiceMessage} />
-          <button className="send-button" type="submit" disabled={sending || (!content.trim() && pendingAttachments.length === 0)} aria-label="Enviar mensagem">
+          <button className="send-button" type="submit" disabled={sending || (slowModeRemaining > 0 && !permissions.canManageMessages) || (!content.trim() && pendingAttachments.length === 0)} aria-label="Enviar mensagem">
             {sending ? <LoaderCircle className="spin" size={19} /> : <Send size={19} />}
           </button>
         </div>

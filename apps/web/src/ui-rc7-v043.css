@@ -1,0 +1,10 @@
+/* Ginga 0.4.3 RC7 - toolbar de formatacao contextual */
+.message-format-toolbar:not(.is-visible) {
+  visibility: hidden;
+}
+.message-format-toolbar.is-visible {
+  visibility: visible;
+}
+@media (prefers-reduced-motion: reduce) {
+  .message-format-toolbar { transition: none !important; }
+}

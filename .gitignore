@@ -4,41 +4,48 @@
 !.env.example
 !.env.production.example
 secrets/
+**/secrets/
+*private.pem
 *.key
 *.p12
 *.pfx
+*.jks
+*.keystore
 
-# Dependencies and builds
+# Dependencies / generated builds
 node_modules/
 **/node_modules/
 dist/
 **/dist/
+out/
+**/out/
 .vite/
 *.tsbuildinfo
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
 
-# Runtime data
+# Runtime / production data
 backups/
 data/
-updates/windows/
+uploads/
+updates/*
+!updates/.gitkeep
 .release-backups/
-*.log
+.patch-backups/
+.security-backup/
+.ginga-hotfix-backup/
 
 # Generated LiveKit config
 infra/livekit/livekit.yaml
-
-# OS / editor
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
 
 # Android
 apps/android/.gradle/
 apps/android/local.properties
 apps/android/app/build/
 dist/android/
-*.jks
-*.keystore
 
 # Python
 __pycache__/
@@ -48,3 +55,9 @@ __pycache__/
 **/*.egg-info/
 .venv/
 venv/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

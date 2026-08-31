@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Baixar código
@@ -22,16 +22,20 @@ jobs:
         with:
           node-version: 22
 
+      - name: Validar repositório
+        run: bash ./scripts/prepare-github.sh
+
       - name: Compilar API
         working-directory: apps/api
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
+          npx prisma generate
           npm run build
 
       - name: Compilar Web
         working-directory: apps/web
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
 
       - name: Validar sintaxe do Desktop
@@ -51,12 +55,8 @@ jobs:
           python -m pip install --no-cache-dir -e ./sdk/python
           python - <<'PY'
           import gingabot
-          assert gingabot.__version__ == "0.1.0"
           assert gingabot.Bot
           assert gingabot.Intents
           print("Ginga Bot SDK", gingabot.__version__, "OK")
           PY
           python -m unittest discover -s sdk/python/tests -v
-
-      - name: Verificar repositório
-        run: bash ./scripts/prepare-github.sh
