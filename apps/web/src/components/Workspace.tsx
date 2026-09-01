@@ -2286,6 +2286,8 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
               data-channel-id={channel.id}
               data-guild-id={channel.guildId}
               data-speaking={speaking ? "true" : "false"}
+              data-mic-muted={voiceUser.micMuted ? "true" : "false"}
+              data-deafened={voiceUser.deafened ? "true" : "false"}
               data-voice-draggable={selectedGuild?.permissions.canMoveMembers && voiceUser.id !== user.id ? "true" : "false"}
               onDragStart={(event) => {
                 if (!selectedGuild?.permissions.canMoveMembers || voiceUser.id === user.id) { event.preventDefault(); return; }
@@ -2317,7 +2319,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
                 event.stopPropagation();
                 openVoiceMenu(event.clientX + 6, event.clientY + 6);
               }}
-            ><Avatar user={voiceUser} size="xs" status="online" /><span>{voiceUser.displayName}{voiceUser.id === user.id ? " (voce)" : ""}</span>{voiceUser.streaming && <em className="voice-live-badge" role="button" tabIndex={0} title={`Assistir transmissao de ${voiceUser.displayName}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setVoiceStreamTarget({ channelId: channel.id, userId: voiceUser.id }); setSelectedGuildId(channel.guildId); setSelectedChannelId(channel.id); setSection("space"); setMobileContextOpen(false); }} onKeyDown={(event) => { if (event.key !== "Enter" && event.key !== " ") return; event.preventDefault(); event.stopPropagation(); setVoiceStreamTarget({ channelId: channel.id, userId: voiceUser.id }); setSelectedGuildId(channel.guildId); setSelectedChannelId(channel.id); setSection("space"); setMobileContextOpen(false); }}><Radio size={10}/> AO VIVO</em>}<span className="voice-user-states">{voiceUser.deafened ? <VolumeX size={13}/> : voiceUser.micMuted ? <MicOff size={13}/> : null}</span></button>;
+            ><Avatar user={voiceUser} size="xs" status="online" /><span>{voiceUser.displayName}{voiceUser.id === user.id ? " (voce)" : ""}</span>{voiceUser.streaming && <em className="voice-live-badge" role="button" tabIndex={0} title={`Assistir transmissao de ${voiceUser.displayName}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setVoiceStreamTarget({ channelId: channel.id, userId: voiceUser.id }); setSelectedGuildId(channel.guildId); setSelectedChannelId(channel.id); setSection("space"); setMobileContextOpen(false); }} onKeyDown={(event) => { if (event.key !== "Enter" && event.key !== " ") return; event.preventDefault(); event.stopPropagation(); setVoiceStreamTarget({ channelId: channel.id, userId: voiceUser.id }); setSelectedGuildId(channel.guildId); setSelectedChannelId(channel.id); setSection("space"); setMobileContextOpen(false); }}><Radio size={10}/> AO VIVO</em>}<span className="voice-user-states" title={voiceUser.micMuted && voiceUser.deafened ? "Microfone mutado · Som da chamada silenciado" : voiceUser.micMuted ? "Microfone mutado" : voiceUser.deafened ? "Som da chamada silenciado" : undefined}>{voiceUser.micMuted && <MicOff size={13}/>} {voiceUser.deafened && <VolumeX size={13}/>}</span></button>;
           })}
         </div>}
       </div>

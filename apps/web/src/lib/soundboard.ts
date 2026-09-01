@@ -1,3 +1,5 @@
+import { ConnectionState, Track, type Room } from "livekit-client";
+
 export interface SoundboardSound {
   id: string;
   name: string;
@@ -122,4 +124,117 @@ export function formatSoundDuration(durationMs: number) {
   if (!durationMs || durationMs < 0) return "";
   const seconds = Math.max(1, Math.ceil(durationMs / 1000));
   return `${seconds}s`;
+}
+
+// Trilha efemera publicada no LiveKit para que os sons do Soundboard usem o
+// mesmo caminho de audio da chamada. Isso evita depender de autoplay disparado
+// por eventos Socket.IO nos clientes remotos.
+export const SOUNDBOARD_TRACK_PREFIX = "ginga-soundboard:";
+
+export function soundboardTrackName(soundId: string) {
+  return `${SOUNDBOARD_TRACK_PREFIX}${soundId}:${Date.now().toString(36)}`;
+}
+
+export function isSoundboardTrackName(trackName: unknown, soundId?: string) {
+  if (typeof trackName !== "string" || !trackName.startsWith(SOUNDBOARD_TRACK_PREFIX)) return false;
+  return soundId ? trackName.startsWith(`${SOUNDBOARD_TRACK_PREFIX}${soundId}:`) : true;
+}
+
+const recentLocalSoundboardPublishes = new Map<string, number>();
+
+export function soundboardIdFromTrackName(trackName: unknown) {
+  if (typeof trackName !== "string" || !trackName.startsWith(SOUNDBOARD_TRACK_PREFIX)) return "";
+  return trackName.slice(SOUNDBOARD_TRACK_PREFIX.length).split(":", 1)[0] || "";
+}
+
+export function hasRecentLocalSoundboardPublish(soundId: string) {
+  const until = recentLocalSoundboardPublishes.get(soundId) ?? 0;
+  if (until <= Date.now()) {
+    recentLocalSoundboardPublishes.delete(soundId);
+    return false;
+  }
+  return true;
+}
+
+
+let soundboardVoiceContext: AudioContext | null = null;
+
+function getSoundboardVoiceContext() {
+  if (typeof window === "undefined") return null;
+  const Ctor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) return null;
+  if (!soundboardVoiceContext || soundboardVoiceContext.state === "closed") soundboardVoiceContext = new Ctor();
+  return soundboardVoiceContext;
+}
+
+export interface PublishSoundboardClipOptions {
+  localVolume: number;
+  outputVolume: number;
+  outputDevice?: string;
+}
+
+export async function publishSoundboardClip(room: Room, sound: SoundboardSound, options: PublishSoundboardClipOptions) {
+  if (room.state !== ConnectionState.Connected) throw new Error("A sala de voz ainda nao esta conectada");
+  const context = getSoundboardVoiceContext();
+  if (!context) throw new Error("Este navegador nao oferece Web Audio para o Soundboard");
+
+  await context.resume();
+  const sinkContext = context as AudioContext & { setSinkId?: (sinkId: string) => Promise<void> };
+  if (options.outputDevice) await sinkContext.setSinkId?.(options.outputDevice).catch(() => undefined);
+
+  const url = new URL(sound.url, window.location.href).href;
+  const response = await fetch(url, { credentials: "same-origin", cache: "force-cache" });
+  if (!response.ok) throw new Error(`Nao foi possivel carregar o som (${response.status})`);
+  const bytes = await response.arrayBuffer();
+  const buffer = await context.decodeAudioData(bytes.slice(0));
+  const offsetSeconds = Math.max(0, Math.min(buffer.duration, Number(sound.trimStartMs || 0) / 1000));
+  const requestedSeconds = Math.max(0.25, Math.min(12, Number(sound.durationMs || 12_000) / 1000));
+  const durationSeconds = Math.min(requestedSeconds, Math.max(0.01, buffer.duration - offsetSeconds));
+
+  const source = context.createBufferSource();
+  const destination = context.createMediaStreamDestination();
+  const publishGain = context.createGain();
+  const localGain = context.createGain();
+  source.buffer = buffer;
+  publishGain.gain.value = 1;
+  localGain.gain.value = Math.max(0, Math.min(2, (options.localVolume / 100) * (options.outputVolume / 100)));
+  source.connect(publishGain);
+  publishGain.connect(destination);
+  source.connect(localGain);
+  localGain.connect(context.destination);
+
+  const mediaTrack = destination.stream.getAudioTracks()[0];
+  if (!mediaTrack) throw new Error("Nao foi possivel criar a trilha do Soundboard");
+  try { mediaTrack.contentHint = "music"; } catch {}
+
+  const publication = await room.localParticipant.publishTrack(mediaTrack, {
+    name: soundboardTrackName(sound.id),
+    source: Track.Source.Unknown,
+    dtx: false,
+    red: true,
+    forceStereo: true
+  });
+  recentLocalSoundboardPublishes.set(sound.id, Date.now() + Math.round(durationSeconds * 1000) + 2500);
+
+  let cleaned = false;
+  const cleanup = async () => {
+    if (cleaned) return;
+    cleaned = true;
+    try { source.stop(); } catch {}
+    try { source.disconnect(); } catch {}
+    try { publishGain.disconnect(); } catch {}
+    try { localGain.disconnect(); } catch {}
+    try {
+      if (publication.track) await room.localParticipant.unpublishTrack(publication.track, true);
+      else await room.localParticipant.unpublishTrack(mediaTrack);
+    } catch {}
+    try { mediaTrack.stop(); } catch {}
+  };
+
+  source.addEventListener("ended", () => { void cleanup(); }, { once: true });
+  // Pequena folga depois da publicacao da trilha para os assinantes remotos
+  // receberem o track antes de o clip comecar.
+  source.start(context.currentTime + 0.08, offsetSeconds, durationSeconds);
+  window.setTimeout(() => { void cleanup(); }, Math.round((durationSeconds + 0.45) * 1000));
+  return { durationMs: Math.round(durationSeconds * 1000), trackName: publication.trackName };
 }

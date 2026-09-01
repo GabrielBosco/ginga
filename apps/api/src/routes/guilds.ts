@@ -5,7 +5,7 @@ import { writeAudit } from "../audit.js";
 import { prisma } from "../db.js";
 import { asyncHandler, HttpError } from "../errors.js";
 import { requireAuth } from "../middleware.js";
-import { removeUserFromGuildMedia } from "../mediaAdmin.js";
+import { removeUserFromGuildMedia, setUserGuildMediaPermissions } from "../mediaAdmin.js";
 import {
   defaultGuildRolePermissionData,
   effectiveGuildPermissions,
@@ -726,11 +726,23 @@ guildsRouter.patch("/guilds/:guildId/members/:userId/voice-moderation", requireA
   if (typeof data.deafened === "boolean") update.serverDeafened = data.deafened;
   const membership = await prisma.guildMember.update({ where: { guildId_userId: { guildId, userId: targetUserId } }, data: update });
   const io = req.app.get("io") as { gingaSetUserVoiceModeration?: (guildId: string, userId: string, state: { muted?: boolean; deafened?: boolean }) => boolean; to?: (room: string) => { emit?: (event: string, payload: unknown) => void } } | undefined;
-  try { io?.gingaSetUserVoiceModeration?.(guildId, targetUserId, data); } catch { /* estado sera reconciliado no proximo join */ }
-  await removeUserFromGuildMedia(guildId, targetUserId).catch(() => undefined);
+  let liveSessionUpdated = false;
+  try { liveSessionUpdated = Boolean(io?.gingaSetUserVoiceModeration?.(guildId, targetUserId, data)); } catch { /* estado sera reconciliado no proximo join */ }
+  // Mute/ensurdecimento sao estados da sessao de voz, nao uma expulsao.
+  // Antes esta rota chamava removeUserFromGuildMedia(), que removeParticipant()
+  // do LiveKit e fazia o usuario desaparecer da sala ao mutar mic/som.
+  // A remocao do SFU fica restrita aos fluxos explicitos de desconectar/kick/ban.
+  // Atualiza permissoes LiveKit sem remover o participante: mute bloqueia publicar;
+  // ensurdecimento bloqueia publicar e assinar audio/video, mantendo a sessao viva.
+  await setUserGuildMediaPermissions(guildId, targetUserId, {
+    canPublish: !membership.serverMuted && !membership.serverDeafened,
+    canSubscribe: !membership.serverDeafened
+  }).catch(() => undefined);
   if (typeof data.muted === "boolean") await writeAudit({ guildId, actorId: req.auth!.sub, action: data.muted ? "MEMBER_VOICE_MUTE" : "MEMBER_VOICE_UNMUTE", targetType: "USER", targetId: targetUserId, targetUserId, request: req });
   if (typeof data.deafened === "boolean") await writeAudit({ guildId, actorId: req.auth!.sub, action: data.deafened ? "MEMBER_VOICE_DEAFEN" : "MEMBER_VOICE_UNDEAFEN", targetType: "USER", targetId: targetUserId, targetUserId, request: req });
-  io?.to?.(`user:${targetUserId}`)?.emit?.("voice:moderation-state", { guildId, muted: membership.serverMuted, deafened: membership.serverDeafened });
+  // gingaSetUserVoiceModeration ja publica o estado quando existe uma sessao
+  // ativa. Evita evento duplicado (e duas tentativas seguidas de desligar o mic).
+  if (!liveSessionUpdated) io?.to?.(`user:${targetUserId}`)?.emit?.("voice:moderation-state", { guildId, muted: membership.serverMuted, deafened: membership.serverDeafened });
   emitGuildStructure(req, guildId);
   res.json({ membership });
 }));

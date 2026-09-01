@@ -3,10 +3,12 @@ import { LoaderCircle, Music2, Play, Plus, Scissors, Search, Star, Trash2, Uploa
 import type { Socket } from "socket.io-client";
 import { api } from "../lib/api";
 import { gingaConfirm } from "../lib/dialogs";
+import { loadVoicePreferences } from "../lib/voicePreferences";
 import {
   formatSoundDuration,
   loadSoundboardFavorites,
   loadSoundboardVolume,
+  publishSoundboardClip,
   readSoundDurationMs,
   saveSoundboardFavorites,
   saveSoundboardVolume,
@@ -152,21 +154,42 @@ export function SoundboardPanel({ guildId, channelId, socket, canManage = false,
       setError("A conexao em tempo real nao esta pronta. Aguarde a sala reconectar.");
       return;
     }
-    // Executado diretamente no clique do usuario para liberar a saida de audio
-    // antes do evento sincronizado chegar pelo Socket.IO.
+    // Libera o pipeline Web Audio no proprio gesto do usuario. O evento
+    // sincronizado chega alguns ms depois pelo Socket.IO e, sem isso, Chromium/
+    // Electron pode tratar o play como autoplay e deixar o Soundboard mudo.
+    window.dispatchEvent(new Event("ginga:voice-audio-unlock"));
     try { await window.__gingaVoiceSession?.room.startAudio(); } catch {}
     setPlayingId(sound.id);
     const result = await playAck(socket, channelId, sound.id);
     if (!result.ok) {
       setError(result.error || "Nao foi possivel tocar este som");
       setPlayingId("");
-    } else {
-      setError("");
-      // O evento real de playback, disparado pelo PersistentVoiceAudio, mantem
-      // a animacao durante a duracao do clip. Este timeout cobre apenas o
-      // pequeno intervalo de sincronizacao/preload.
-      window.setTimeout(() => setPlayingId((current) => current === sound.id ? "" : current), 900);
+      return;
     }
+
+    setError("");
+    const session = window.__gingaVoiceSession;
+    if (session?.channelId === channelId) {
+      const voice = loadVoicePreferences();
+      try {
+        // Publica uma trilha de audio efemera no proprio LiveKit. Assim os outros
+        // usuarios recebem o Soundboard pelo mesmo pipeline da voz, sem depender
+        // de autoplay disparado por Socket.IO. O evento do servidor continua
+        // existindo para sincronizacao visual e fallback de clientes.
+        await publishSoundboardClip(session.room, sound, {
+          localVolume: volume,
+          outputVolume: voice.outputVolume,
+          outputDevice: voice.outputDevice
+        });
+      } catch (caught) {
+        // PersistentVoiceAudio possui fallback por fetch/HTMLAudio. Nao tratamos
+        // falha de publicacao como falha total enquanto o servidor aceitou o som.
+        console.warn("Soundboard LiveKit fallback ativado", caught);
+      }
+    }
+
+    // O evento real de playback mantem a animacao durante a duracao do clip.
+    window.setTimeout(() => setPlayingId((current) => current === sound.id ? "" : current), 1100);
   };
 
   function stopPreview() {

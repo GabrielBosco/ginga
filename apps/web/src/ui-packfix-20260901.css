@@ -676,3 +676,96 @@ html.ginga-desktop-windows .legal-page {
   .soundboard-trimmer-head { align-items: flex-start; flex-direction: column; gap: 4px; }
   .soundboard-trimmer-head em { white-space: normal; }
 }
+
+
+/* ========================================================================== */
+/* Voice + Soundboard hotfix 2026-09-01                                      */
+/* ========================================================================== */
+
+.voice-user-states {
+  width: auto !important;
+  min-width: 16px;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.voice-user-states svg { flex: 0 0 auto; }
+.voice-user-states svg:first-child { color: #f08a8a; }
+.voice-user-states svg + svg { color: #aeb5c0; }
+
+.participant-label-voice-states {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.participant-label-voice-states svg:last-child:not(:first-child) { color: #aeb5c0; }
+
+@media (min-width: 761px) {
+  .soundboard-panel {
+    width: min(350px, calc(100vw - 28px)) !important;
+    max-height: min(410px, calc(100dvh - 118px)) !important;
+    border-radius: 11px;
+  }
+
+  .voice-connection-card > .soundboard-panel {
+    width: min(350px, calc(100vw - 92px)) !important;
+    max-height: min(410px, calc(100dvh - 130px)) !important;
+  }
+
+  .soundboard-header {
+    min-height: 45px;
+    padding: 6px 8px 6px 10px;
+    gap: 8px;
+  }
+
+  .soundboard-header strong { font-size: 14px; }
+  .soundboard-kicker { font-size: 8.5px; }
+  .soundboard-add,
+  .soundboard-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+  }
+
+  .soundboard-search {
+    min-height: 31px;
+    margin: 6px 8px 4px;
+  }
+
+  .soundboard-volume {
+    grid-template-columns: minmax(94px, auto) minmax(70px, 1fr) 34px;
+    gap: 7px;
+    padding: 3px 9px 6px;
+  }
+
+  .soundboard-content {
+    min-height: 72px;
+    padding: 2px 6px 6px;
+  }
+
+  .soundboard-grid { gap: 5px; }
+
+  .soundboard-play {
+    min-height: 45px;
+    padding: 5px 40px 5px 6px;
+    gap: 7px;
+  }
+
+  .soundboard-emoji {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+  }
+
+  .soundboard-play strong { font-size: 10.5px; }
+  .soundboard-play small { font-size: 8.5px; }
+  .soundboard-footer {
+    min-height: 26px;
+    padding: 0 8px;
+    font-size: 9px;
+  }
+}

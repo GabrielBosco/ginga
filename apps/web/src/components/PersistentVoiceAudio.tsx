@@ -9,7 +9,7 @@ import { isChannelMuted, isGuildSilent, loadGuildPreferences } from "../lib/serv
 import { playUiSound } from "../lib/sounds";
 import { watchVoiceNetworkStats } from "../lib/voiceDiagnostics";
 import type { LiveKitCredentials } from "../types";
-import { loadSoundboardVolume, type SoundboardPlayedEvent } from "../lib/soundboard";
+import { hasRecentLocalSoundboardPublish, isSoundboardTrackName, loadSoundboardVolume, soundboardIdFromTrackName, type SoundboardPlayedEvent } from "../lib/soundboard";
 
 interface PersistentVoiceAudioProps {
   activeChannelId: string;
@@ -71,7 +71,8 @@ function PersistentAudioTrack({
   preferences,
   deafened,
   participantVolume,
-  participantMuted
+  participantMuted,
+  soundboardVolume
 }: {
   identity: string;
   publication: TrackPublication;
@@ -79,11 +80,13 @@ function PersistentAudioTrack({
   deafened: boolean;
   participantVolume: number;
   participantMuted: boolean;
+  soundboardVolume: number;
 }) {
   const ref = useRef<HTMLAudioElement>(null);
-  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
-  const gain = Math.max(0, Math.min(4, (preferences.outputVolume / 100) * (participantVolume / 100)));
+  const soundboardFactor = isSoundboardTrackName(publication.trackName) ? Math.max(0, Math.min(1, soundboardVolume / 100)) : 1;
+  const gain = Math.max(0, Math.min(4, (preferences.outputVolume / 100) * (participantVolume / 100) * soundboardFactor));
   const effectivelyMuted = participantMuted || deafened || gain <= 0;
 
   useEffect(() => {
@@ -92,33 +95,13 @@ function PersistentAudioTrack({
     if (!track || !element) return;
 
     try { track.attach(element); } catch { return; }
+    element.muted = false;
+    element.volume = 1;
 
-    // HTMLMediaElement.volume aceita somente 0..1. Para manter o controle de
-    // usuario ate 200% (e combinacao geral x participante) usamos GainNode.
-    // O fallback continua limitado a 100% em navegadores sem Web Audio.
-    try {
-      const ctx = getSharedVoiceAudioContext();
-      if (ctx) {
-        const source = ctx.createMediaElementSource(element);
-        const gainNode = ctx.createGain();
-        source.connect(gainNode);
-        gainNode.connect(ctx.destination);
-        sourceRef.current = source;
-        gainNodeRef.current = gainNode;
-        // O elemento nunca passa de 100%; o boost acontece exclusivamente no GainNode.
-        element.volume = 1;
-        element.muted = false;
-        void ctx.resume().catch(() => undefined);
-      }
-    } catch {
-      sourceRef.current = null;
-      gainNodeRef.current = null;
-    }
-
-    void element.play().then(() => {
-      void getSharedVoiceAudioContext()?.resume().catch(() => undefined);
-      notifyPlaybackBlocked(false);
-    }).catch(() => notifyPlaybackBlocked(true));
+    // O caminho nativo do <audio> e o fallback principal: ele continua audivel
+    // mesmo quando um AudioContext criado fora de um gesto do usuario estiver
+    // suspenso pelo Chromium/Electron. O boost >100% e ligado separadamente.
+    void element.play().then(() => notifyPlaybackBlocked(false)).catch(() => notifyPlaybackBlocked(true));
 
     return () => {
       try { track.detach(element); } catch {}
@@ -128,30 +111,92 @@ function PersistentAudioTrack({
       try { gainNodeRef.current?.disconnect(); } catch {}
       sourceRef.current = null;
       gainNodeRef.current = null;
-      // Contexto compartilhado permanece vivo: criar um AudioContext por usuario
-      // estoura o limite do Chromium em salas maiores.
     };
   }, [publication.track, identity]);
 
   useEffect(() => {
     const element = ref.current;
+    const mediaTrack = publication.track?.mediaStreamTrack;
     if (!element) return;
-    const gainNode = gainNodeRef.current;
-    if (gainNode) {
-      gainNode.gain.value = effectivelyMuted ? 0 : gain;
-      // O audio passa pelo Web Audio; nunca escrevemos valor > 1 no elemento.
-      element.volume = 1;
-      element.muted = false;
-      if (!effectivelyMuted) void getSharedVoiceAudioContext()?.resume().catch(() => undefined);
-      return;
+
+    const stopBoost = () => {
+      try { sourceRef.current?.disconnect(); } catch {}
+      try { gainNodeRef.current?.disconnect(); } catch {}
+      sourceRef.current = null;
+      gainNodeRef.current = null;
+    };
+
+    if (effectivelyMuted) {
+      stopBoost();
+      element.muted = true;
+      element.volume = 0;
+      return stopBoost;
     }
-    element.muted = effectivelyMuted;
-    element.volume = effectivelyMuted ? 0 : Math.max(0, Math.min(1, gain));
-  }, [gain, effectivelyMuted]);
+
+    // Ate 100% usamos playback nativo, muito mais tolerante a autoplay e com
+    // setSinkId consistente. Acima disso usamos Web Audio somente para o boost.
+    if (gain <= 1.0001 || !mediaTrack) {
+      stopBoost();
+      element.muted = false;
+      element.volume = Math.max(0, Math.min(1, gain));
+      void element.play().catch(() => notifyPlaybackBlocked(true));
+      return stopBoost;
+    }
+
+    const ctx = getSharedVoiceAudioContext() as (AudioContext & { setSinkId?: (deviceId: string) => Promise<void> }) | null;
+    const canRouteSelectedSink = !preferences.outputDevice || typeof ctx?.setSinkId === "function";
+    if (!ctx || !canRouteSelectedSink) {
+      // Melhor ouvir em 100% no dispositivo escolhido do que perder o audio ao
+      // tentar um boost que o navegador nao consegue rotear para esse sink.
+      stopBoost();
+      element.muted = false;
+      element.volume = 1;
+      void element.play().catch(() => notifyPlaybackBlocked(true));
+      return stopBoost;
+    }
+
+    stopBoost();
+    try {
+      const source = ctx.createMediaStreamSource(new MediaStream([mediaTrack]));
+      const gainNode = ctx.createGain();
+      gainNode.gain.value = gain;
+      source.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      sourceRef.current = source;
+      gainNodeRef.current = gainNode;
+      if (preferences.outputDevice) void ctx.setSinkId?.(preferences.outputDevice).catch(() => undefined);
+
+      // Mantemos o audio nativo ate o contexto confirmar que esta rodando.
+      element.muted = false;
+      element.volume = 1;
+      void ctx.resume().then(() => {
+        if (sourceRef.current !== source || effectivelyMuted) return;
+        element.muted = true;
+        element.volume = 0;
+        notifyPlaybackBlocked(false);
+      }).catch(() => {
+        if (sourceRef.current !== source) return;
+        stopBoost();
+        element.muted = false;
+        element.volume = 1;
+      });
+    } catch {
+      stopBoost();
+      element.muted = false;
+      element.volume = 1;
+    }
+
+    return stopBoost;
+  }, [publication.track, gain, effectivelyMuted, preferences.outputDevice]);
 
   useEffect(() => {
     const element = ref.current as (HTMLAudioElement & { setSinkId?: (deviceId: string) => Promise<void> }) | null;
     if (!element || !preferences.outputDevice) return;
+    const ctx = getSharedVoiceAudioContext() as (AudioContext & { setSinkId?: (deviceId: string) => Promise<void> }) | null;
+    // Quando a trilha passa pelo Web Audio, o sink pertence ao AudioContext.
+    // Mantemos tambem setSinkId no <audio> como fallback para navegadores/Electron
+    // que ainda nao implementam AudioContext.setSinkId().
+    void ctx?.setSinkId?.(preferences.outputDevice).catch(() => undefined);
     void element.setSinkId?.(preferences.outputDevice).catch(() => undefined);
   }, [preferences.outputDevice]);
 
@@ -168,7 +213,8 @@ export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceView
   const [participantVolumes, setParticipantVolumes] = useState<Record<string, number>>(readVolumeMap);
   const [participantMutes, setParticipantMutes] = useState<Record<string, boolean>>(readMuteMap);
   const [soundboardVolume, setSoundboardVolume] = useState(loadSoundboardVolume);
-  const soundboardAudiosRef = useRef(new Set<HTMLAudioElement>());
+  const soundboardStopsRef = useRef(new Set<() => void>());
+  const liveSoundboardSeenRef = useRef(new Map<string, number>());
   const recoverTimerRef = useRef<number | null>(null);
   const recoverAttemptsRef = useRef(0);
   const micRepairingRef = useRef(false);
@@ -216,12 +262,16 @@ export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceView
       const next = Number((event as CustomEvent<{ volume?: number }>).detail?.volume);
       setSoundboardVolume(Number.isFinite(next) ? Math.max(0, Math.min(100, next)) : loadSoundboardVolume());
     };
+    const unlockAudio = () => { void getSharedVoiceAudioContext()?.resume().catch(() => undefined); };
 
     window.addEventListener("ginga:voice-preferences-changed", onPreferences as EventListener);
     window.addEventListener("ginga:voice-deafen-changed", onDeafen as EventListener);
     window.addEventListener("ginga:voice-server-moderation", onServerModeration as EventListener);
     window.addEventListener("ginga:voice-participant-audio-changed", onParticipantAudio as EventListener);
     window.addEventListener("ginga:soundboard-volume-changed", onSoundboardVolume as EventListener);
+    window.addEventListener("ginga:voice-audio-unlock", unlockAudio);
+    document.addEventListener("pointerdown", unlockAudio, true);
+    document.addEventListener("keydown", unlockAudio, true);
     window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener("ginga:voice-preferences-changed", onPreferences as EventListener);
@@ -229,19 +279,35 @@ export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceView
       window.removeEventListener("ginga:voice-server-moderation", onServerModeration as EventListener);
       window.removeEventListener("ginga:voice-participant-audio-changed", onParticipantAudio as EventListener);
       window.removeEventListener("ginga:soundboard-volume-changed", onSoundboardVolume as EventListener);
+      window.removeEventListener("ginga:voice-audio-unlock", unlockAudio);
+      document.removeEventListener("pointerdown", unlockAudio, true);
+      document.removeEventListener("keydown", unlockAudio, true);
       window.removeEventListener("storage", onStorage);
     };
   }, []);
 
   useEffect(() => {
     if (!socket || !activeChannelId) return;
-    const active = soundboardAudiosRef.current;
-    const onSoundboard = (payload: SoundboardPlayedEvent) => {
-      if (!payload?.sound?.url || payload.channelId !== activeChannelId || deafened) return;
+    const active = soundboardStopsRef.current;
+    const seenLive = liveSoundboardSeenRef.current;
+
+    const rememberLiveSoundboardTrack = (publication?: TrackPublication) => {
+      const soundId = soundboardIdFromTrackName(publication?.trackName);
+      if (soundId) seenLive.set(soundId, Date.now() + 20_000);
+    };
+    if (room) {
+      for (const participant of room.remoteParticipants.values()) {
+        for (const publication of participant.audioTrackPublications.values()) rememberLiveSoundboardTrack(publication as TrackPublication);
+      }
+      room.on(RoomEvent.TrackPublished, rememberLiveSoundboardTrack);
+    }
+
+    const playWithHtmlAudio = async (payload: SoundboardPlayedEvent) => {
       const audio = new Audio(payload.sound.url);
-      active.add(audio);
       audio.preload = "auto";
       audio.muted = false;
+      // Fallback de HTMLMediaElement fica limitado a 100%. O caminho principal
+      // abaixo usa GainNode e respeita corretamente volume geral ate 200%.
       const localGain = Math.max(0, Math.min(1, soundboardVolume / 100));
       const outputGain = Math.max(0, Math.min(1, preferences.outputVolume / 100));
       audio.volume = Math.max(0, Math.min(1, localGain * outputGain));
@@ -249,51 +315,132 @@ export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceView
       const cleanup = () => {
         if (finished) return;
         finished = true;
-        active.delete(audio);
+        active.delete(cleanup);
         try { audio.pause(); } catch {}
         audio.removeAttribute("src");
       };
+      active.add(cleanup);
       audio.addEventListener("ended", cleanup, { once: true });
       audio.addEventListener("error", cleanup, { once: true });
       try { audio.load(); } catch {}
+      const media = audio as HTMLAudioElement & { setSinkId?: (deviceId: string) => Promise<void> };
+      if (preferences.outputDevice) await media.setSinkId?.(preferences.outputDevice).catch(() => undefined);
+      if (audio.readyState < 1) {
+        await new Promise<void>((resolve) => {
+          let resolved = false;
+          const done = () => { if (resolved) return; resolved = true; resolve(); };
+          audio.addEventListener("loadedmetadata", done, { once: true });
+          window.setTimeout(done, 1500);
+        });
+      }
+      const trimStartSeconds = Math.max(0, Number(payload.sound.trimStartMs || 0)) / 1000;
+      try {
+        if (trimStartSeconds > 0) audio.currentTime = trimStartSeconds;
+      } catch {}
+      await audio.play();
+      window.dispatchEvent(new CustomEvent("ginga:soundboard-played", { detail: payload }));
+      const clipDurationMs = Math.min(12_000, Math.max(250, Number(payload.sound.durationMs || 12_000)));
+      window.setTimeout(cleanup, clipDurationMs + 120);
+    };
+
+    const onSoundboard = (payload: SoundboardPlayedEvent) => {
+      if (!payload?.sound?.url || payload.channelId !== activeChannelId || deafened) return;
+
       const play = async () => {
-        if (deafened || window.__gingaVoiceSession?.serverDeafened) return cleanup();
-        const media = audio as HTMLAudioElement & { setSinkId?: (deviceId: string) => Promise<void> };
-        if (preferences.outputDevice) await media.setSinkId?.(preferences.outputDevice).catch(() => undefined);
-        try {
-          await room?.startAudio().catch(() => undefined);
-          if (audio.readyState < 1) {
-            await new Promise<void>((resolve) => {
-              const done = () => resolve();
-              audio.addEventListener("loadedmetadata", done, { once: true });
-              window.setTimeout(done, 1200);
-            });
-          }
-          const trimStartSeconds = Math.max(0, Number(payload.sound.trimStartMs || 0)) / 1000;
-          if (trimStartSeconds > 0 && Number.isFinite(audio.duration)) {
-            audio.currentTime = Math.min(trimStartSeconds, Math.max(0, audio.duration - 0.01));
-          }
-          await audio.play();
-          notifyPlaybackBlocked(false);
+        if (deafened || window.__gingaVoiceSession?.serverDeafened) return;
+        try { await room?.startAudio().catch(() => undefined); } catch {}
+
+        const senderIsLocal = room?.localParticipant.identity === payload.playedBy.id;
+        const liveSeenUntil = seenLive.get(payload.sound.id) ?? 0;
+        if (liveSeenUntil <= Date.now()) seenLive.delete(payload.sound.id);
+        const remoteSender = senderIsLocal ? null : room?.remoteParticipants.get(payload.playedBy.id);
+        const liveTrackActive = Boolean(remoteSender && Array.from(remoteSender.audioTrackPublications.values()).some((publication) =>
+          Boolean(publication.track) && !publication.isMuted && isSoundboardTrackName(publication.trackName, payload.sound.id)
+        ));
+        const deliveredByLiveKit = liveTrackActive || liveSeenUntil > Date.now() || (senderIsLocal && hasRecentLocalSoundboardPublish(payload.sound.id));
+
+        // O caminho principal agora e uma trilha de audio LiveKit. Se a trilha ja
+        // passou por este cliente, so atualizamos a UI e nao tocamos o arquivo de
+        // novo (evita eco/duplicacao). O fetch abaixo fica como fallback legado.
+        if (deliveredByLiveKit) {
           window.dispatchEvent(new CustomEvent("ginga:soundboard-played", { detail: payload }));
-        } catch {
-          notifyPlaybackBlocked(true);
-          cleanup();
+          notifyPlaybackBlocked(false);
           return;
         }
-        const clipDurationMs = Math.min(12_000, Math.max(250, Number(payload.sound.durationMs || 12_000)));
-        window.setTimeout(cleanup, clipDurationMs + 80);
+
+        const ctx = getSharedVoiceAudioContext();
+        if (!ctx) {
+          try { await playWithHtmlAudio(payload); notifyPlaybackBlocked(false); }
+          catch { notifyPlaybackBlocked(true); }
+          return;
+        }
+
+        try {
+          await ctx.resume();
+          const sinkContext = ctx as AudioContext & { setSinkId?: (sinkId: string) => Promise<void> };
+          if (preferences.outputDevice) await sinkContext.setSinkId?.(preferences.outputDevice).catch(() => undefined);
+
+          const absoluteUrl = new URL(payload.sound.url, window.location.href).href;
+          const response = await fetch(absoluteUrl, { credentials: "same-origin", cache: "force-cache" });
+          if (!response.ok) throw new Error(`Soundboard HTTP ${response.status}`);
+          const bytes = await response.arrayBuffer();
+          const buffer = await ctx.decodeAudioData(bytes.slice(0));
+          if (deafened || window.__gingaVoiceSession?.serverDeafened) return;
+
+          const source = ctx.createBufferSource();
+          const gain = ctx.createGain();
+          source.buffer = buffer;
+          gain.gain.value = Math.max(0, Math.min(2, (soundboardVolume / 100) * (preferences.outputVolume / 100)));
+          source.connect(gain);
+          gain.connect(ctx.destination);
+
+          const offsetSeconds = Math.max(0, Math.min(buffer.duration, Number(payload.sound.trimStartMs || 0) / 1000));
+          const requestedSeconds = Math.max(0.25, Math.min(12, Number(payload.sound.durationMs || 12_000) / 1000));
+          const availableSeconds = Math.max(0.01, buffer.duration - offsetSeconds);
+          const durationSeconds = Math.min(requestedSeconds, availableSeconds);
+          let finished = false;
+          const cleanup = () => {
+            if (finished) return;
+            finished = true;
+            active.delete(cleanup);
+            try { source.stop(); } catch {}
+            try { source.disconnect(); } catch {}
+            try { gain.disconnect(); } catch {}
+          };
+          active.add(cleanup);
+          source.addEventListener("ended", cleanup, { once: true });
+          source.start(ctx.currentTime, offsetSeconds, durationSeconds);
+          window.dispatchEvent(new CustomEvent("ginga:soundboard-played", { detail: payload }));
+          notifyPlaybackBlocked(false);
+          window.setTimeout(cleanup, Math.round(durationSeconds * 1000) + 180);
+        } catch {
+          try { await playWithHtmlAudio(payload); notifyPlaybackBlocked(false); }
+          catch { notifyPlaybackBlocked(true); }
+        }
       };
-      const delay = Math.max(0, Number(payload.playAt || Date.now()) - Date.now());
-      window.setTimeout(() => { void play(); }, delay);
+
+      // Da um pequeno tempo para a trilha efemera do LiveKit aparecer. Se ela
+      // nao chegar, o cliente cai no playback HTTP legado sem ficar mudo.
+      const waitMs = Math.max(0, Number(payload.playAt || Date.now()) - Date.now()) + 220;
+      let cancelled = false;
+      const timer = window.setTimeout(() => {
+        active.delete(cancel);
+        if (!cancelled) void play();
+      }, waitMs);
+      const cancel = () => {
+        if (cancelled) return;
+        cancelled = true;
+        window.clearTimeout(timer);
+        active.delete(cancel);
+      };
+      active.add(cancel);
     };
+
     socket.on("voice:soundboard-played", onSoundboard);
     return () => {
       socket.off("voice:soundboard-played", onSoundboard);
-      for (const audio of active) {
-        try { audio.pause(); } catch {}
-        audio.removeAttribute("src");
-      }
+      if (room) room.off(RoomEvent.TrackPublished, rememberLiveSoundboardTrack);
+      for (const stop of Array.from(active)) { try { stop(); } catch {} }
       active.clear();
     };
   }, [socket, activeChannelId, deafened, soundboardVolume, preferences.outputDevice, preferences.outputVolume, room]);
@@ -565,7 +712,10 @@ export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceView
     const result: RemoteAudioPublication[] = [];
     for (const participant of room.remoteParticipants.values()) {
       for (const publication of participant.audioTrackPublications.values()) {
-        if (publication.track && !publication.isMuted && publication.source === Track.Source.Microphone) {
+        // audioTrackPublications ja contem somente trilhas de audio. Nao filtramos
+        // apenas por Microphone: clientes antigos, screen-audio e trilhas efemeras
+        // do Soundboard podem chegar como Source.Unknown/ScreenShareAudio.
+        if (publication.track && !publication.isMuted) {
           result.push({ identity: participant.identity, publication: publication as TrackPublication });
         }
       }
@@ -585,6 +735,7 @@ export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceView
           deafened={deafened}
           participantVolume={participantVolumes[identity] ?? 100}
           participantMuted={Boolean(participantMutes[identity])}
+          soundboardVolume={soundboardVolume}
         />
       ))}
     </div>

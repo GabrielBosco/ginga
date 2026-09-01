@@ -392,7 +392,10 @@ function ParticipantTile({
       )}
       <div className="participant-label">
         <span>{displayName}{participant.isLocal ? " (voce)" : ""}</span>
-        {participant.isLocal && deafened ? <VolumeX size={14} /> : participant.isMicrophoneEnabled ? <Mic size={14} /> : <MicOff size={14} />}
+        <span className="participant-label-voice-states" title={participant.isLocal && deafened ? "Som da chamada silenciado" : participant.isMicrophoneEnabled ? "Microfone ativo" : "Microfone mutado"}>
+          {participant.isMicrophoneEnabled ? <Mic size={14} /> : <MicOff size={14} />}
+          {participant.isLocal && deafened && <VolumeX size={14} />}
+        </span>
       </div>
       {screenPublication && <span className="screen-badge live"><Radio size={13} /> AO VIVO {viewerCount > 0 && <><Eye size={12}/>{viewerCount}</>}</span>}
     </article>

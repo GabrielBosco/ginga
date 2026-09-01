@@ -827,3 +827,10 @@ A `0.4.7` inicia a rodada de estabilidade do Ginga e adiciona um Soundboard nati
 - Novo evento de moderacao `voice:disconnect-member`, validado no servidor por hierarquia/permissao e com remocao do participante do backend de midia.
 - Novo endpoint seguro para sair de um servidor; proprietario nao pode sair acidentalmente.
 - Ao sair de um servidor, as conexoes do usuario sao removidas das rooms Socket.IO daquele servidor/canais sem derrubar a sessao inteira do Ginga.
+
+## Hotfix 2026-09-01 - Voz e Soundboard
+
+- Corrigido mute/ensurdecimento do servidor que podia remover o participante da sala de voz.
+- Restaurados indicadores independentes de microfone mutado e som silenciado na lista de voz.
+- Playback remoto de participantes passa a aceitar todas as tracks de audio e usa caminho nativo ate 100%, com Web Audio reservado ao boost.
+- Soundboard passa a usar track efemera LiveKit com fallback Socket.IO/HTTP e painel desktop mais compacto.

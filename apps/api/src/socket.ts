@@ -607,7 +607,7 @@ export function setupSocket(server: HttpServer) {
           },
           playedBy: { id: current.userId, displayName: current.user.displayName || current.user.username },
           // Pequeno buffer para os clientes abrirem/precarregarem o asset antes de tocar.
-          playAt: now + 350
+          playAt: now + 550
         };
         const delivered = new Set<string>();
         for (const [socketId, session] of voiceSessions.entries()) {
