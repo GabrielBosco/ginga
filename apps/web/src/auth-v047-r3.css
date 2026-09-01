@@ -1,0 +1,328 @@
+/* Ginga 0.4.7 AUTH R3
+ * Tema dark nativo da landing + downloads Linux legiveis.
+ * Corrige o fundo transparente do R2 que deixava o branco do body aparecer.
+ */
+
+html.ginga-auth-dark,
+body.ginga-auth-dark,
+body.ginga-auth-dark #root {
+  min-height: 100%;
+  margin: 0;
+  background: #090c11 !important;
+  color-scheme: dark;
+}
+
+body.ginga-auth-dark {
+  overscroll-behavior: none;
+}
+
+.auth-page.auth-v047-r3 {
+  --auth-r3-page: #090c11;
+  --auth-r3-hero: #0d1117;
+  --auth-r3-panel: #0a0e13;
+  --auth-r3-surface: #121820;
+  --auth-r3-surface-2: #171e27;
+  --auth-r3-line: rgba(255,255,255,.085);
+  --auth-r3-line-strong: rgba(255,255,255,.14);
+  --auth-r3-text: #f2f4f7;
+  --auth-r3-muted: #9aa5b3;
+  --auth-r3-dim: #687382;
+  --auth-r3-accent: #7866ed;
+  --auth-r3-accent-hover: #8675f3;
+  background: var(--auth-r3-page) !important;
+}
+
+.auth-page.auth-site-product.auth-v047-r3 {
+  background: var(--auth-r3-page) !important;
+}
+
+.auth-page.auth-v047-r3 .auth-hero {
+  background:
+    radial-gradient(820px 560px at 5% 15%, rgba(91,72,216,.115), transparent 68%),
+    linear-gradient(180deg, rgba(255,255,255,.008), transparent 38%),
+    var(--auth-r3-hero) !important;
+}
+
+.auth-page.auth-v047-r3 .auth-site-panel {
+  background:
+    radial-gradient(520px 390px at 50% 12%, rgba(86,68,210,.055), transparent 72%),
+    var(--auth-r3-panel) !important;
+  backdrop-filter: none !important;
+}
+
+.auth-page.auth-v047-r3 .auth-card.auth-card-v2,
+.auth-page.auth-v047-r3 .password-reset-card {
+  border-color: var(--auth-r3-line) !important;
+  background: linear-gradient(180deg, #151b23 0%, #11171e 100%) !important;
+  box-shadow: 0 24px 60px rgba(0,0,0,.34), inset 0 1px rgba(255,255,255,.025) !important;
+}
+
+.auth-page.auth-v047-r3 .auth-card input:not([type="checkbox"]),
+.auth-page.auth-v047-r3 .auth-card select,
+.auth-page.auth-v047-r3 .auth-card textarea {
+  border-color: #303946 !important;
+  background: #0e141b !important;
+}
+
+.auth-page.auth-v047-r3 .auth-card input:not([type="checkbox"]):focus,
+.auth-page.auth-v047-r3 .auth-card select:focus,
+.auth-page.auth-v047-r3 .auth-card textarea:focus {
+  border-color: rgba(137,121,255,.78) !important;
+  background: #111820 !important;
+}
+
+.auth-page.auth-v047-r3 .auth-submit.primary-button,
+.auth-page.auth-v047-r3 .hero-download-button {
+  border-color: rgba(255,255,255,.06) !important;
+  background: var(--auth-r3-accent) !important;
+  box-shadow: 0 10px 26px rgba(70,52,187,.22) !important;
+}
+
+.auth-page.auth-v047-r3 .auth-submit.primary-button:hover:not(:disabled),
+.auth-page.auth-v047-r3 .hero-download-button:hover:not(:disabled) {
+  background: var(--auth-r3-accent-hover) !important;
+  filter: none !important;
+}
+
+/* Linux deixa de ser um botao com links minusculos soltos embaixo. */
+.auth-page.auth-v047-r3 .linux-download-card {
+  width: clamp(202px, 14vw, 238px);
+  min-width: 202px;
+  padding: 9px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--auth-r3-line);
+  border-radius: 11px;
+  background: rgba(255,255,255,.018);
+}
+
+.auth-page.auth-v047-r3 .linux-download-card:hover {
+  border-color: rgba(151,139,255,.23);
+  background: rgba(255,255,255,.028);
+}
+
+.auth-page.auth-v047-r3 .linux-download-card-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.auth-page.auth-v047-r3 .linux-download-card-head > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #cbd2dc;
+}
+
+.auth-page.auth-v047-r3 .linux-download-card-head > span > svg {
+  flex: 0 0 auto;
+  color: #a99fff;
+}
+
+.auth-page.auth-v047-r3 .linux-download-card-head > span > span {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.auth-page.auth-v047-r3 .linux-download-card-head strong {
+  color: #eef1f5;
+  font-size: 11.5px;
+  font-weight: 830;
+  line-height: 1.2;
+}
+
+.auth-page.auth-v047-r3 .linux-download-card-head small {
+  color: #747f8d;
+  font-size: 8.5px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.auth-page.auth-v047-r3 .linux-download-formats {
+  padding: 0 !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 5px !important;
+  font-size: inherit !important;
+}
+
+.auth-page.auth-v047-r3 .linux-download-card:has(.linux-format-button:nth-child(2):last-child) .linux-download-formats {
+  grid-template-columns: repeat(2, minmax(0,1fr));
+}
+
+.auth-page.auth-v047-r3 .linux-format-button {
+  min-width: 0;
+  min-height: 31px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 7px;
+  background: #11171e;
+  color: #aeb7c3 !important;
+  font-size: 8.8px !important;
+  font-weight: 780;
+  line-height: 1;
+  text-decoration: none !important;
+  white-space: nowrap;
+}
+
+.auth-page.auth-v047-r3 .linux-format-button:hover {
+  border-color: rgba(151,139,255,.32);
+  background: #171d26;
+  color: #f0f2f6 !important;
+}
+
+.auth-page.auth-v047-r3 .linux-format-button.recommended {
+  border-color: rgba(125,108,239,.34);
+  background: rgba(119,102,237,.10);
+  color: #d8d2ff !important;
+}
+
+.auth-page.auth-v047-r3 .hero-login-button,
+.auth-page.auth-v047-r3 .hero-github-button,
+.auth-page.auth-v047-r3 .site-hero-actions .secondary-button {
+  border-color: var(--auth-r3-line) !important;
+  background: rgba(255,255,255,.018) !important;
+  color: #c3cbd5 !important;
+}
+
+.auth-page.auth-v047-r3 .hero-login-button:hover,
+.auth-page.auth-v047-r3 .hero-github-button:hover,
+.auth-page.auth-v047-r3 .site-hero-actions .secondary-button:hover {
+  border-color: var(--auth-r3-line-strong) !important;
+  background: rgba(255,255,255,.04) !important;
+  color: #f2f4f7 !important;
+}
+
+.auth-page.auth-v047-r3 .auth-mobile-download-stack {
+  display: none;
+}
+
+@media (min-width: 1181px) {
+  .auth-page.auth-site-product.auth-v047-r3 {
+    grid-template-columns: minmax(0, 1.9fr) minmax(430px, .86fr) !important;
+  }
+
+  .auth-page.auth-v047-r3 .auth-hero {
+    padding-left: clamp(44px, 4.8vw, 78px) !important;
+    padding-right: clamp(44px, 4.8vw, 78px) !important;
+  }
+
+  .auth-page.auth-v047-r3 .auth-site-panel {
+    border-left: 1px solid rgba(255,255,255,.045) !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  .auth-page.auth-site-product.auth-v047-r3,
+  .auth-page.auth-v047-r3 .auth-site-panel,
+  .auth-page.auth-v047-r3 .auth-hero {
+    background-color: var(--auth-r3-page) !important;
+  }
+
+  .auth-page.auth-v047-r3 .linux-download-card {
+    width: min(230px, 100%);
+  }
+}
+
+@media (max-width: 760px) {
+  html.ginga-auth-dark,
+  body.ginga-auth-dark,
+  body.ginga-auth-dark #root,
+  .auth-page.auth-site-product.auth-v047-r3 {
+    background: #090c11 !important;
+  }
+
+  .auth-page.auth-v047-r3 .auth-site-panel {
+    background:
+      radial-gradient(620px 360px at 50% -8%, rgba(91,72,216,.105), transparent 72%),
+      #090c11 !important;
+  }
+
+  .auth-page.auth-v047-r3 .auth-site-mobile-download {
+    display: none !important;
+  }
+
+  .auth-page.auth-v047-r3 .auth-mobile-download-stack {
+    width: 100%;
+    max-width: 520px;
+    display: grid;
+    gap: 8px;
+  }
+
+  .auth-page.auth-v047-r3 .auth-mobile-download-stack > .auth-site-mobile-download.windows {
+    min-height: 46px !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    padding: 0 13px !important;
+    border-color: rgba(124,106,239,.20) !important;
+    background: rgba(119,102,237,.075) !important;
+    color: #dad5ff !important;
+  }
+
+  .auth-page.auth-v047-r3 .auth-mobile-download-stack > .auth-site-mobile-download.windows > span {
+    color: #8279b8;
+    font-size: 9px;
+  }
+
+  .auth-page.auth-v047-r3 .auth-mobile-linux-group {
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+    border: 1px solid var(--auth-r3-line);
+    border-radius: 10px;
+    background: rgba(255,255,255,.018);
+  }
+
+  .auth-page.auth-v047-r3 .auth-mobile-linux-group > strong {
+    color: #dce1e7;
+    font-size: 10.5px;
+    font-weight: 800;
+  }
+
+  .auth-page.auth-v047-r3 .auth-mobile-linux-group > div {
+    display: grid;
+    grid-template-columns: repeat(3,minmax(0,1fr));
+    gap: 6px;
+  }
+
+  .auth-page.auth-v047-r3 .auth-mobile-linux-group > div:has(a:nth-child(2):last-child) {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+
+  .auth-page.auth-v047-r3 .auth-mobile-linux-group a {
+    min-height: 38px;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border: 1px solid rgba(255,255,255,.07);
+    border-radius: 8px;
+    background: #10161d;
+    color: #b9c1cc;
+    font-size: 9px;
+    font-weight: 780;
+    text-decoration: none;
+  }
+}
+
+@media (max-width: 390px) {
+  .auth-page.auth-v047-r3 .auth-mobile-linux-group > div,
+  .auth-page.auth-v047-r3 .auth-mobile-linux-group > div:has(a:nth-child(2):last-child) {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .auth-page.auth-v047-r3 .linux-download-card,
+  .auth-page.auth-v047-r3 .linux-format-button,
+  .auth-page.auth-v047-r3 .auth-card.auth-card-v2 {
+    border-color: rgba(255,255,255,.20) !important;
+  }
+}

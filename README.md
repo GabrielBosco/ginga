@@ -5,7 +5,7 @@
   <p>Chat em tempo real, voz, vídeo, compartilhamento de tela, moderação, bots e clientes Desktop/Web.</p>
 
   <p>
-    <img alt="Versão" src="https://img.shields.io/badge/versão-0.4.5-5865F2" />
+    <img alt="Versão" src="https://img.shields.io/badge/versão-0.4.8-5865F2" />
     <img alt="Idioma" src="https://img.shields.io/badge/idioma-pt--BR-009C3B" />
     <img alt="Debian" src="https://img.shields.io/badge/Debian-13-A81D33?logo=debian&logoColor=white" />
     <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
@@ -29,7 +29,7 @@
 
 O **Ginga** é uma plataforma de comunicação em tempo real feita para rodar na sua própria infraestrutura. O administrador controla a aplicação, o banco de dados, os uploads e a infraestrutura de voz/vídeo.
 
-> **Versão atual do servidor/Web/Desktop:** `0.4.5`.
+> **Versão atual do servidor/Web/Desktop:** `0.4.8`.
 >
 > O projeto ainda está na série `0.x`; APIs, banco e processos de implantação podem evoluir antes da `1.0.0`.
 
@@ -41,6 +41,7 @@ A documentação oficial deste repositório é mantida em **português do Brasil
 - mensagens em tempo real, respostas, reações, anexos, fixados e busca;
 - amigos, mensagens privadas e chamadas;
 - voz, vídeo e compartilhamento de tela via LiveKit/WebRTC;
+- modo foco para transmissões, com participantes empilhados e avatares dos espectadores em tempo real;
 - cargos, hierarquia, permissões e regras por canal/categoria;
 - moderação, timeout, AutoMod e auditoria;
 - fóruns, eventos, convites e comunidades;
@@ -49,7 +50,9 @@ A documentação oficial deste repositório é mantida em **português do Brasil
 - Portal Developer, bots, webhooks e Ginga Bot SDK para Python;
 - cliente Web responsivo;
 - cliente Desktop Electron para Windows e Linux;
-- suporte a avatar/banner/ícone GIF animado na `0.4.5`;
+- suporte a avatar, banner e ícone em GIF animado;
+- Soundboard por servidor, sincronizado em tempo real na sala de voz, com busca, favoritos, volume e upload moderado;
+- Ginga Music em modo Client Edge: fila/clock no servidor e audio reproduzido diretamente do YouTube/SoundCloud em cada Web/Desktop, sem proxy de midia pela infraestrutura Ginga;
 - base Android experimental, com ciclo de versão separado.
 
 ## Stack
@@ -140,7 +143,7 @@ Configure `APP_DOMAIN`, `LIVEKIT_DOMAIN`, `GINGA_SERVER_URL` e `APP_ORIGINS` ant
 
 Se `80/443` não puderem ser usados diretamente no host, mantenha Web/API protegidos e publique o Ginga por um reverse proxy, NAT ou edge compatível com HTTPS/WSS. Não exponha PostgreSQL ou Redis à Internet.
 
-## Cliente Desktop 0.4.5
+## Cliente Desktop 0.4.8
 
 O Desktop utiliza a URL embutida no momento do release. O source público usa `127.0.0.1` como fallback de desenvolvimento; `release-win.sh` injeta `GINGA_PUBLIC_URL`/`GINGA_SERVER_URL` no build oficial.
 
@@ -153,13 +156,13 @@ Build Linux x64:
 Release Linux x64:
 
 ```bash
-./release-linux.sh 0.4.5 --x64
+./release-linux.sh 0.4.8 --x64
 ```
 
 Release Windows + Linux:
 
 ```bash
-./release-all.sh 0.4.5 --all
+./release-all.sh 0.4.8 --all
 ```
 
 Targets atuais:
@@ -254,3 +257,11 @@ O processo recomendado de atualização do repositório está em [docs/GITHUB.md
 ## Licença
 
 Distribuído sob a licença [MIT](LICENSE).
+
+### Hotfix de viewport (0.4.8 R2)
+
+A interface recebeu um passe extra para notebooks e monitores mais baixos/largos (ex.: 1366x768 e 1600x900). O objetivo e fazer o Ginga caber corretamente em zoom 100% no navegador e no Desktop, sem a necessidade de reduzir o zoom para 90%.
+
+### Responsividade global — FULL FIX R3
+
+A 0.4.8 R3 consolida o layout responsivo em zoom 100% no Web e no Desktop. Alem do shell, a camada final cobre chat, voz, transmissao, Soundboard, configuracoes, modais, amigos, comunidades, forum/eventos, perfis e formularios.

@@ -1,3 +1,211 @@
+## 0.4.8 PACK 2026-09-01 - Knowledge, cadastro 16+, audio e streaming
+
+- Corrige o corte vertical da Knowledge e a integracao com a titlebar do Desktop.
+- Cadastro passa a exigir data de nascimento com validacao 16+ no cliente e na API.
+- Adiciona Termos de Uso, Politica de Privacidade, robots.txt e sitemap.
+- Adiciona Sensibilidade do microfone funcional e persistente.
+- Ajusta publicacao LiveKit para qualidade/FPS/bitrate de screen share, priorizando fluidez em 60 FPS.
+- Soundboard recebe corte inicio/fim, pre-escuta, playback desbloqueado e suporte HTTP Range.
+- Titlebar Windows fica mais compacta e controles de janela recebem acabamento visual.
+- Mantem recursos existentes e atualizacoes de banco sao aditivas/idempotentes.
+
+## 0.4.8 RELEASE FINAL R2 - Login UI/UX redesign
+
+- Tela de logon Web redesenhada com branding unico, fundo preto-ameixa e acento violeta.
+- Removida repeticao do nome do produto: marca aparece apenas uma vez por viewport.
+- Hero passa a mostrar uma conversa simulada realista em vez de slogans/chips decorativos.
+- Recursos principais viraram uma faixa estrutural com divisorias e microcopy util.
+- Formulario foi integrado ao mesmo fundo, com links de 2FA/redefinicao mais discretos e deteccao visual de Caps Lock.
+- Downloads Windows/Linux foram preservados de forma secundaria, sem competir com o login.
+- Layout responsivo para desktop, notebook, tablet e celular.
+
+## 0.4.8 FULL FIX R3 - responsividade global
+
+- Nova camada final de responsividade carregada depois de todas as folhas legadas.
+- Shell principal ajustado para zoom 100% em 1366x768, 1440x810, 1600x900 e janelas menores.
+- Chat, composer, anexos e previews passam a respeitar a largura disponivel sem overflow horizontal.
+- Voz, camera e stream adaptam grid/palco/participantes para tablet e celular; participantes da live viram faixa horizontal no mobile.
+- Soundboard vira painel fixo responsivo no celular e nao fica cortado pelos controles de voz.
+- Configuracoes usam navegacao horizontal no mobile, formularios em uma coluna e modais com altura limitada ao viewport.
+- Amigos, comunidades, forum, eventos, noticias, perfis, 2FA, Developer Portal e grids administrativos recebem breakpoints globais.
+- Service Worker atualizado para `ginga-shell-v048-full-fix-r3-responsive` para evitar CSS antigo preso em cache.
+
+## 0.4.8 FULL FIX R2 - viewport fit hotfix
+
+- Corrigido o shell principal para caber em zoom 100% em telas 1366x768 / 1600x900, sem obrigar o usuario a usar zoom 90%.
+- Compactados rail, painel de canais, cabecalhos, lista de membros, composer e telas de configuracao em viewports menores.
+- Ajustado o calculo de altura do Desktop para respeitar a titlebar customizada e evitar o efeito de UI 'comendo a tela'.
+- Limitada a altura de modais/overlays para reduzir cortes em resolucoes com pouca altura util.
+
+
+## 0.4.8 FULL FIX R1
+
+- Consolida integralmente os fixes 0.4.7 (UI/UX, auth, Soundboard, overlay, voz/stream) com o hardening e Music Client Edge 0.4.8.
+- Corrige CSP da Web para permitir o `fetch` HTTPS de validacao e o WebSocket WSS do LiveKit usando `PUBLIC_LIVEKIT_URL`/`LIVEKIT_DOMAIN` do ambiente, sem hardcode de producao.
+- Corrige o Service Worker que podia executar `Response.clone()` depois do body ser consumido; runtime caching de assets foi removido e `sw.js` passa a ser servido sem cache.
+- Cache shell rotacionado para `ginga-shell-v048-full-fix-r1`.
+
+# Ginga 0.4.8 — Security Hardening + Music Client Edge
+
+- Corrige os cinco achados acionaveis da auditoria de seguranca da 0.4.7.
+- Fecha referencias cross-tenant em onboarding, badges, Spaces, Dynamic Voice e canal de log.
+- Adiciona defesa em profundidade no calculo de cargos/categorias.
+- Corrige `ENDED` do Ginga Music para autorizacao server-side.
+- Confirma e explicita arquitetura Client Edge: audio direto do provedor para cada ouvinte, sem proxy na API/LiveKit.
+- Remove heartbeat de playback da 0.4.8 e mantem endpoint legado apenas para clients 0.4.7.
+- Faixas com duracao conhecida avancam pelo relogio/timer leve do control-plane; players locais ficam como fallback escalonado.
+- Bootstrap v0.9 saneia referencias cross-tenant legadas que possam ter sido gravadas por releases antigas.
+- Redis passa a exigir senha; Compose falha se PostgreSQL/Redis estiverem sem segredo.
+- Adiciona `scripts/security-regression-check.sh`.
+
+# Ginga 0.4.7 — Overlay Build Hotfix R1
+
+- corrige erro de sintaxe em `UserSettingsModal.tsx` que interrompia `tsc -b` no build da Web;
+- texto da opcao `Somente durante uma chamada` passa a usar aspas validas dentro da string do diagnostico da sobreposicao;
+- validacao sintatica de TS/TSX reforcada antes do empacotamento.
+
+---
+
+# Ginga 0.4.7 — Overlay Final Fix
+
+- sobreposicao Desktop passa a detectar a janela real do jogo reconhecido e acompanha o monitor/retangulo correto;
+- camada fica click-through e `alwaysOnTop`, escondendo no Alt+Tab e retornando automaticamente quando o jogo volta ao foco;
+- `Ctrl + Shift + O` alterna a camada durante o jogo e abre uma previa curta quando nenhum jogo esta ativo;
+- status de fala, mute, deaf, camera e compartilhamento de tela passam a chegar de verdade ao renderer da overlay;
+- configuracao local da sobreposicao deixa de falhar junto com `/api/gaming-profile/me`; `service_unavailable` da presenca publica vira aviso nao bloqueante;
+- tela de Jogos mostra diagnostico local do overlay e do atalho global;
+- Service Worker rotacionado para `ginga-shell-v047-overlay-final`;
+- pre-release passa a validar os componentes obrigatorios da sobreposicao.
+
+---
+
+# Ginga 0.4.7 — Dark Landing + Linux Downloads Fix
+
+- corrige o fundo branco da landing causado por `background: transparent` sobre o `body`;
+- landing/login passam a aplicar tema dark nativo em `html`, `body`, `#root`, hero e painel, sem depender de filtro/extensao do navegador;
+- preserva contraste soft, painel de login escuro e responsividade desktop/tablet/mobile;
+- downloads Linux foram redesenhados em cards por arquitetura com botoes reais para AppImage, DEB e RPM;
+- no mobile, Windows, Linux x64 e Linux ARM64 recebem grupos de download proprios e alvos de toque adequados;
+- Service Worker rotacionado para `ginga-shell-v047-auth4-dark-downloads`.
+
+---
+
+# Ginga 0.4.7 — Final UI/Auth + Stability Fix
+
+Esta rodada consolida os fixes pendentes da 0.4.7 antes da publicacao dos clientes.
+
+## Login/Web responsivo
+
+- autenticacao isolada em uma camada final `auth-v047-r2.css`, carregada depois dos estilos legados para eliminar conflitos de breakpoint;
+- desktop permanece em duas colunas com hero + login, enquanto notebook/tablet prioriza o formulario e celular usa um shell compacto sem hero gigante;
+- compatibilidade com `100dvh`, safe areas, teclado virtual e inputs de 16 px no mobile para evitar zoom automatico no Safari/iOS;
+- cards de recuperacao, 2FA, cadastro e redefinicao de senha passam para uma coluna em telas estreitas;
+- autofill do Chrome/Android nao transforma os campos em caixas brancas;
+- correcao do icone interno da redefinicao de senha que podia consumir largura e estourar o formulario;
+- aviso de rede offline no formulario em vez de deixar a falha de conexao parecer erro interno;
+- Service Worker rotacionado para `ginga-shell-v047-auth3-ui`.
+
+## Configuracoes / UI mobile
+
+- remove o conflito historico entre dois layouts mobile da tela de Configuracoes;
+- em ate 820 px, a navegacao vira uma unica faixa horizontal no topo e o conteudo ocupa toda a largura abaixo;
+- grupos recolhidos no desktop nao escondem abas quando a navegacao entra no modo mobile;
+- formularios, perfil, aparencia, membros e acoes administrativas caem para uma coluna quando necessario;
+- inputs usam tamanho compativel com iOS/Android e botoes respeitam alvo minimo de toque;
+- tela de recuperacao de erro tambem passa a caber em celular, inclusive mensagens tecnicas longas.
+
+## Nao lidas / estabilidade
+
+- contadores de canais, DMs e mencoes agora sobrevivem a reload/reabertura no mesmo dispositivo;
+- estado persistente foi extraido para `lib/unreadState.ts`, reduzindo responsabilidade direta do `Workspace.tsx`;
+- continuam incluidos rascunho por canal, scroll robusto, botao Ir para o final, reconexao de voz, troca de dispositivos, diagnostico de ping/jitter/perda e permissoes sincronizadas por categoria/canal.
+
+---
+
+# Ginga 0.4.7 — Auth / Login Hotfix
+
+Esta rodada fecha problemas de autenticacao antes da publicacao da 0.4.7.
+
+## Login e sessao lembrada
+
+- **Continuar conectado** agora cria uma sessao persistente de ate 30 dias;
+- a sessao persistente usa cookie HTTP-only e segredo rotativo, em vez de depender apenas do JWT de 12 horas;
+- Web e Desktop tentam restaurar a sessao lembrada ao abrir e tambem quando o access token expira durante o uso;
+- logout revoga a sessao lembrada e impede que o usuario seja autenticado novamente ao recarregar a pagina;
+- ao trocar entre login lembrado e login comum, o refresh persistente anterior do navegador e revogado para nao deixar sessao abandonada valida;
+- restauracao automatica possui rate limit proprio, separado das acoes sensiveis da conta;
+- dispositivos confiaveis do 2FA continuam separados da sessao lembrada.
+
+## Recuperacao com 2FA
+
+- novo fluxo **Entrar com 2FA** para quem esqueceu a senha e ainda possui o autenticador ou codigo de recuperacao;
+- aceita TOTP de 6 digitos e codigo de recuperacao;
+- respostas sao genericas para nao expor se a conta existe ou se possui 2FA;
+- rate limit dedicado ao acesso sem senha;
+- codigos de recuperacao continuam sendo de uso unico;
+- pagina de redefinicao de senha oferece atalho para o fluxo 2FA.
+
+## UI / Web
+
+- tela de login redesenhada com tipografia maior, campos mais confortaveis, contraste soft e hierarchy visual consistente;
+- landing + login responsivos em desktop, largura intermediaria e mobile;
+- acoes de **Entrar com 2FA** e **Redefinir senha** ficam separadas e explicam o que cada fluxo faz;
+- Service Worker rotacionado para `ginga-shell-v047-auth2` para evitar servir a tela antiga em cache;
+- `pre-release-check.sh` passa a validar os componentes de autenticacao da 0.4.7.
+
+---
+
+# Ginga 0.4.7 — Stability + Soundboard
+
+A `0.4.7` inicia a rodada de estabilidade do Ginga e adiciona um Soundboard nativo para salas de voz, sem regredir o polish visual, chat, GIFs e modo de transmissão da `0.4.6`.
+
+## Soundboard
+
+- painel **Sons** integrado aos controles da sala de voz e ao mini-card persistente quando o usuário navega por chats;
+- biblioteca de sons por servidor, com busca e favoritos locais;
+- volume do Soundboard independente do volume geral da chamada;
+- upload de MP3, WAV, OGG, WebM, M4A/MP4 e AAC por owner/admin;
+- até 48 sons por servidor, 2 MB por arquivo e 12 segundos por clip;
+- playback sincronizado via Socket.IO para todos os participantes da mesma sala;
+- playback permanece ativo mesmo quando o usuário navega para um canal de texto;
+- respeita ensurdecimento e dispositivo de saída configurado;
+- cooldown por usuário e por sala para evitar spam;
+- assets validados por assinatura real, não apenas pela extensão/MIME informado pelo navegador;
+- alterações na biblioteca são propagadas em tempo real para quem está com o painel aberto.
+
+## Estrutura / estabilidade
+
+- Soundboard isolado em `SoundboardPanel.tsx` e `lib/soundboard.ts`, sem inflar ainda mais o `VoiceRoom`;
+- armazenamento inicializado automaticamente pelo bootstrap compatível com instalações existentes;
+- `pre-release-check.sh` agora valida API, playback persistente, painel e CSS do Soundboard;
+- Service Worker rotacionado para `ginga-shell-v047`;
+- Root/API/Web/Desktop alinhados em `0.4.7`.
+
+---
+
+# Ginga 0.4.6 — UI/UX Polish + Chat Navigation
+
+- chat de canais e mensagens diretas abre no final da conversa de forma estavel
+- rolar o historico para cima exibe um botao flutuante **Ir para o final**
+- novas mensagens enquanto o usuario le o historico nao roubam a posicao; o botao passa a mostrar o contador e **Ver agora**
+- anexos/imagens/videos carregados depois do texto preservam a ancora no final quando o usuario ja estava acompanhando a conversa
+- mensagens enviadas pelo proprio usuario retornam ao final automaticamente
+- saltos por busca, fixados e respostas deixam de ser anulados pelo auto-scroll inicial
+- separadores de data passam a usar **Hoje**, **Ontem**, dia da semana e data completa conforme o contexto
+- horarios ganham tooltip com data e hora completas
+- clique direito em avatar/nome de uma mensagem abre o menu completo do usuario; clique direito no corpo continua abrindo somente acoes da mensagem
+- remove a mistura de moderacao de usuario dentro do menu contextual de mensagem
+- paleta escura refeita com tons mais suaves, neutros e consistentes
+- tipografia ampliada em mensagens, canais, membros, cabecalhos e composer
+- espacamentos, hover, menus, cards, sidebar, painel de membros e composer refinados
+- layout intermediario fica mais resiliente e recolhe o painel de membros quando necessario
+- acessibilidade: atributos `dateTime`, tooltips de data/hora e respeito a `prefers-reduced-motion`
+- Service Worker rotacionado para `ginga-shell-v046`
+- sala de voz com transmissao ativa passa para modo foco: stream centralizada e participantes em cards empilhados
+- mais de uma transmissao pode ser alternada pelo card `AO VIVO` sem sair da chamada
+- espectadores reais da transmissao aparecem sobre o video no canto inferior esquerdo: ate 3 avatares e `+N` para os demais
+- lista de espectadores e contador usam o estado real `voice:stream-watch`, atualizando em tempo real ao entrar/sair da live
+
 # Ginga 0.4.5 — GIF de perfil/banner
 
 - avatar do usuario aceita PNG/JPG/WebP/GIF; GIF animado e preservado sem conversao por canvas
@@ -15,7 +223,6 @@
 - landing e login passam a empilhar antes de ficarem apertados, sem overflow horizontal
 - downloads Windows/Linux continuam disponiveis e responsivos
 - botao **Abrir no navegador** agora rola ate o formulario de login antes de focar o usuario
-- cache do Service Worker rotacionado para `ginga-shell-v045` para evitar shell antigo apos a atualizacao
 - adiciona protecoes de `min-width: 0` para grid/flex e evita que botoes Linux alarguem a pagina
 
 # Ginga 0.4.3 RC9 — Linux + Voz Persistente + Forum

@@ -237,6 +237,10 @@ export function GingaMusicPanel({ guildId, userId, channel, voiceChannels, socke
           {current && <a className="ginga-music-open-provider" href={current.url} target="_blank" rel="noreferrer" aria-label="Abrir no provedor"><ExternalLink size={15}/></a>}
         </div>
 
+        <div className="ginga-music-edge-note" title="O servidor Ginga sincroniza somente fila e tempo; o audio vem direto do provedor para cada cliente.">
+          <span>EDGE</span><strong>Audio local</strong><small>sem trafegar pelo servidor Ginga</small>
+        </div>
+
         <div className="ginga-music-controls">
           <button type="button" disabled={busy || !current} onClick={() => void control("PREVIOUS")} aria-label="Anterior"><SkipBack size={18}/></button>
           <button type="button" className="primary" disabled={busy || !current} onClick={() => void control(state?.status === "PLAYING" ? "PAUSE" : "PLAY")} aria-label={state?.status === "PLAYING" ? "Pausar" : "Tocar"}>{state?.status === "PLAYING" ? <Pause size={19}/> : <Play size={19}/>}</button>

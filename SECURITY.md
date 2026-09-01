@@ -34,3 +34,16 @@ Antes de um push:
 - limite uploads e armazenamento;
 - proteja SMTP e integrações externas;
 - preserve e proteja a chave privada do updater.
+
+
+## Auditoria 0.4.7 e hardening 0.4.8
+
+O relatorio verificavel da auditoria esta em `docs/security-audit/relatorio-auditoria-seguranca.pdf`. A remediacao aplicada na 0.4.8 esta documentada em `docs/security-audit/REMEDIATION-v0.4.8.md`.
+
+Antes de uma release, execute:
+
+```bash
+./scripts/security-regression-check.sh
+```
+
+O `pre-release-check.sh` 0.4.8 executa esse gate automaticamente.

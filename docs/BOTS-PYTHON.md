@@ -665,7 +665,7 @@ A versao do SDK e independente da versao do servidor Ginga.
 Exemplo:
 
 ```text
-Servidor Ginga: 0.4.5
+Servidor Ginga: 0.4.7
 Ginga Bot SDK: 0.1.0
 ```
 

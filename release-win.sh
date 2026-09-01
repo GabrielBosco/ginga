@@ -4,11 +4,11 @@ set -Eeuo pipefail
 # Ginga Windows Release Pipeline
 #
 # Uso normal:
-#   ./release-win.sh 0.4.5
+#   ./release-win.sh 0.4.7
 #
 # Primeira release de uma cadeia NOVA de updater, apenas se voce AINDA nao tiver
 # clientes publicados/chave de updater:
-#   ./release-win.sh 0.4.5 --init-key
+#   ./release-win.sh 0.4.7 --init-key
 #
 # Variaveis opcionais:
 #   GINGA_SERVER_ROOT=/opt/ginga
@@ -116,8 +116,8 @@ on_error() {
 trap cleanup EXIT
 trap 'on_error "$LINENO"' ERR
 
-[[ -n "$VERSION" ]] || die "Informe a versao. Exemplo: ./release-win.sh 0.4.5"
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]] || die "Versao invalida: $VERSION. Use SemVer, por exemplo 0.4.5 ou 0.4.4-beta.1"
+[[ -n "$VERSION" ]] || die "Informe a versao. Exemplo: ./release-win.sh 0.4.7"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]] || die "Versao invalida: $VERSION. Use SemVer, por exemplo 0.4.7 ou 0.4.4-beta.1"
 [[ -n "$PUBLIC_URL" ]] || die "GINGA_PUBLIC_URL nao definido e GINGA_SERVER_URL nao encontrado em $SERVER_ROOT/.env"
 
 for cmd in docker curl python3 flock; do
@@ -146,7 +146,7 @@ if [[ -f "$PRIVATE_KEY" && "$INIT_KEY" -eq 1 ]]; then
 fi
 
 # Nunca reutilize uma versao ja publicada. O electron-updater compara SemVer;
-# republicar 0.4.5 por cima de outro 0.4.5 deixa clientes com caches/artefatos
+# republicar 0.4.7 por cima de outro 0.4.7 deixa clientes com caches/artefatos
 # diferentes e dificulta rollback. Override existe apenas para recuperacao manual.
 if [[ -f "$UPDATE_DIR_SERVER/manifest.json" ]]; then
   PUBLISHED_VERSION="$(python3 - "$UPDATE_DIR_SERVER/manifest.json" <<'PYVERSION'

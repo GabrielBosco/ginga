@@ -14,8 +14,17 @@ export interface GameOverlayPreferences {
 
 export interface DesktopDetectedGame {
   supported?: boolean;
-  activity?: { name?: string; detectedAt?: string } | null;
+  activity?: { name?: string; detectedAt?: string; focused?: boolean; windowDetected?: boolean } | null;
   error?: string;
+}
+
+export interface GameOverlayRuntimeStatus {
+  supported: boolean;
+  enabled: boolean;
+  visible: boolean;
+  shortcutRegistered: boolean;
+  reason: "ready" | "unsupported_platform" | "disabled" | "game_not_detected" | "game_not_focused" | "manual_hidden" | "voice_required" | string;
+  detectedGame?: DesktopDetectedGame["activity"];
 }
 
 type OverlayParticipant = {
@@ -23,6 +32,10 @@ type OverlayParticipant = {
   name: string;
   speaking: boolean;
   microphoneEnabled: boolean;
+  deafened: boolean;
+  cameraEnabled: boolean;
+  screenShareEnabled: boolean;
+  avatarUrl: string | null;
   local: boolean;
 };
 
@@ -46,6 +59,7 @@ type DesktopOverlayBridge = {
   setGameOverlaySettings?: (settings: GameOverlayPreferences) => Promise<GameOverlayPreferences>;
   updateGameOverlayState?: (state: OverlayRuntimeState) => Promise<boolean>;
   previewGameOverlay?: () => Promise<boolean>;
+  getGameOverlayStatus?: () => Promise<GameOverlayRuntimeStatus>;
 };
 
 const STORAGE_KEY = "ginga.gameOverlay.preferences.v1";
@@ -104,6 +118,10 @@ export async function previewGameOverlay() {
   return Boolean(await bridge()?.previewGameOverlay?.());
 }
 
+export async function getGameOverlayStatus(): Promise<GameOverlayRuntimeStatus | null> {
+  return await bridge()?.getGameOverlayStatus?.() ?? null;
+}
+
 function voiceSnapshot(): OverlayRuntimeState["voice"] {
   const session = window.__gingaVoiceSession;
   if (!session?.room) return null;
@@ -115,6 +133,10 @@ function voiceSnapshot(): OverlayRuntimeState["voice"] {
     name: String(local.name || "Você"),
     speaking: Boolean(local.isSpeaking),
     microphoneEnabled: Boolean(local.isMicrophoneEnabled),
+    deafened: Boolean(session.deafened || session.serverDeafened),
+    cameraEnabled: Boolean(local.isCameraEnabled),
+    screenShareEnabled: Boolean(local.isScreenShareEnabled),
+    avatarUrl: null,
     local: true
   }];
   room.remoteParticipants.forEach((participant) => {
@@ -123,6 +145,10 @@ function voiceSnapshot(): OverlayRuntimeState["voice"] {
       name: String(participant.name || participant.identity || "Participante"),
       speaking: Boolean(participant.isSpeaking),
       microphoneEnabled: Boolean(participant.isMicrophoneEnabled),
+      deafened: false,
+      cameraEnabled: Boolean(participant.isCameraEnabled),
+      screenShareEnabled: Boolean(participant.isScreenShareEnabled),
+      avatarUrl: null,
       local: false
     });
   });

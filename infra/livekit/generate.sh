@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-for key in LIVEKIT_API_KEY LIVEKIT_API_SECRET; do
+for key in LIVEKIT_API_KEY LIVEKIT_API_SECRET REDIS_PASSWORD; do
   eval "value=\${$key:-}"
   if [ -z "$value" ]; then
     echo "Variavel obrigatoria ausente: $key" >&2

@@ -13,6 +13,7 @@ import { emitNewGuildMessage } from "./guildMessageEvents.js";
 import { EVERYONE_MENTION_PATTERN, validateGuildMentions } from "./mentions.js";
 import { secretMatches, tokenPrefix } from "./secretTokens.js";
 import { observableUserIds, presenceAudienceUserIds, presenceModeHidden } from "./socialPrivacy.js";
+import { ensureV090Storage } from "./v090Storage.js";
 
 const joinSchema = z.object({ channelId: z.string().min(1) });
 const guildWatchSchema = z.object({ guildId: z.string().min(1) });
@@ -23,6 +24,7 @@ const voiceMoveSchema = z.object({ targetUserId: z.string().min(1), targetChanne
 const voiceDisconnectSchema = z.object({ guildId: z.string().min(1), targetUserId: z.string().min(1) });
 const voiceAfkSchema = z.object({ guildId: z.string().min(1) });
 const voiceStreamWatchSchema = z.object({ channelId: z.string().min(1), broadcasterId: z.string().min(1) });
+const voiceSoundboardPlaySchema = z.object({ channelId: z.string().min(1), soundId: z.string().min(1) });
 const presenceQuerySchema = z.object({ userIds: z.array(z.string().min(1)).max(300) });
 const directSchema = z.object({ conversationId: z.string().min(1) });
 const messageSchema = z.object({
@@ -142,12 +144,14 @@ export function setupSocket(server: HttpServer) {
   const voiceSessions = new Map<string, VoiceSession>();
   const voicePresenceRevisions = new Map<string, number>();
   const streamWatchers = new Map<string, { guildId: string; channelId: string; broadcasterId: string; viewers: Map<string, string> }>();
+  const soundboardChannelLastAt = new Map<string, number>();
 
   const streamWatchKey = (channelId: string, broadcasterId: string) => `${channelId}:${broadcasterId}`;
 
   function emitStreamViewerCount(group: { guildId: string; channelId: string; broadcasterId: string; viewers: Map<string, string> }) {
-    const count = new Set(group.viewers.values()).size;
-    const payload = { channelId: group.channelId, broadcasterId: group.broadcasterId, count };
+    const viewerIds = Array.from(new Set(group.viewers.values()));
+    const count = viewerIds.length;
+    const payload = { channelId: group.channelId, broadcasterId: group.broadcasterId, count, viewerIds };
     const audience = new Set<string>([group.broadcasterId, ...group.viewers.values()]);
     for (const session of voiceSessions.values()) if (session.channelId === group.channelId) audience.add(session.userId);
     for (const audienceUserId of audience) io.to(`user:${audienceUserId}`).emit("voice:stream-viewers", payload);
@@ -566,6 +570,60 @@ export function setupSocket(server: HttpServer) {
       }
     });
 
+
+    socket.on("voice:soundboard-play", async (payload: unknown, ack?: Ack) => {
+      try {
+        consumeSocketBudget(socket, "voice-soundboard", 6, 10_000);
+        const now = Date.now();
+        const lastAt = Number(socket.data.lastSoundboardAt || 0);
+        if (lastAt > 0 && now - lastAt < 700) throw new HttpError(429, "Aguarde um instante antes de tocar outro som");
+        const data = voiceSoundboardPlaySchema.parse(payload);
+        const current = voiceSessions.get(socket.id);
+        if (!current || current.userId !== userId || current.channelId !== data.channelId) throw new HttpError(409, "Entre nesta sala de voz antes de usar os sons");
+        const { channel } = await requireChannelCapability(userId, data.channelId, "connect");
+        if (channel.type !== "VOICE") throw new HttpError(400, "O Soundboard so funciona em canais de voz");
+        const roomLastAt = soundboardChannelLastAt.get(data.channelId) ?? 0;
+        if (roomLastAt > 0 && now - roomLastAt < 500) throw new HttpError(429, "A sala acabou de tocar um som. Aguarde um instante.");
+        await ensureV090Storage();
+        const sound = (await prisma.$queryRawUnsafe<Array<{id:string;name:string;emoji:string;etag:string;duration_ms:number;trim_start_ms:number;trim_end_ms:number}>>(
+          `SELECT id,name,emoji,etag,duration_ms,trim_start_ms,trim_end_ms FROM "GingaGuildSoundboardSound" WHERE guild_id=$1 AND id=$2 LIMIT 1`,
+          channel.guildId,
+          data.soundId
+        ))[0];
+        if (!sound) throw new HttpError(404, "Este som nao existe mais");
+        socket.data.lastSoundboardAt = now;
+        soundboardChannelLastAt.set(data.channelId, now);
+        const event = {
+          channelId: data.channelId,
+          guildId: channel.guildId,
+          sound: {
+            id: sound.id,
+            name: sound.name,
+            emoji: sound.emoji || "🔊",
+            durationMs: Math.max(0, Math.min(12_000, Number(sound.duration_ms || 0))),
+            trimStartMs: Math.max(0, Number(sound.trim_start_ms || 0)),
+            trimEndMs: Math.max(0, Number(sound.trim_end_ms || sound.duration_ms || 0)),
+            url: `/api/guilds/${encodeURIComponent(channel.guildId)}/soundboard/${encodeURIComponent(sound.id)}/${encodeURIComponent(sound.etag)}`
+          },
+          playedBy: { id: current.userId, displayName: current.user.displayName || current.user.username },
+          // Pequeno buffer para os clientes abrirem/precarregarem o asset antes de tocar.
+          playAt: now + 350
+        };
+        const delivered = new Set<string>();
+        for (const [socketId, session] of voiceSessions.entries()) {
+          if (session.channelId !== data.channelId || session.guildId !== channel.guildId) continue;
+          if (session.deafened || session.serverDeafened) continue;
+          // Uma conta possui uma unica sessao de voz, mas o Set evita qualquer duplicacao
+          // durante uma janela curta de reconexao do Socket.IO.
+          if (delivered.has(session.userId)) continue;
+          delivered.add(session.userId);
+          io.to(socketId).emit("voice:soundboard-played", event);
+        }
+        ack?.({ ok: true, listeners: delivered.size, playAt: event.playAt });
+      } catch (error) {
+        ack?.({ ok: false, error: errorMessage(error) });
+      }
+    });
 
     socket.on("voice:stream-watch", async (payload: unknown, ack?: Ack) => {
       try {

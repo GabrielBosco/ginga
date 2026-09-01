@@ -1,0 +1,289 @@
+﻿arquivo,linha,metodo,rota,protecoes_detectadas,status,achado
+apps/api/src/index.ts,101,GET,/api/health,-,Público/guard custom - revisado manualmente,-
+apps/api/src/index.ts,105,GET,/api/system/network,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,370,POST,/register,-,Público intencional - cadastro com validação/rate limit,-
+apps/api/src/routes/auth.ts,416,POST,/login,-,Público intencional - autenticação/rate limit,-
+apps/api/src/routes/auth.ts,473,POST,/login/2fa,-,Público intencional - desafio 2FA/rate limit,-
+apps/api/src/routes/auth.ts,489,POST,/login/2fa-only,-,Público intencional - recuperação 2FA/rate limit,-
+apps/api/src/routes/auth.ts,515,POST,/session/restore,-,Público intencional - cookie de sessão lembrada,-
+apps/api/src/routes/auth.ts,533,GET,/me,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,539,PATCH,/me,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,558,POST,/password-reset/request,-,Público intencional - recuperação/rate limit,-
+apps/api/src/routes/auth.ts,596,POST,/password-reset/confirm,-,Público intencional - token one-time,-
+apps/api/src/routes/auth.ts,649,POST,/password,requireAuth,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,653,POST,/password-policy/check,-,Público/guard custom - revisado manualmente,-
+apps/api/src/routes/auth.ts,659,GET,/2fa/status,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,663,GET,/2fa/trusted-devices,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,668,DELETE,/2fa/trusted-devices/:deviceId,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,678,DELETE,/2fa/trusted-devices,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,684,POST,/2fa/setup,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,691,POST,/2fa/enable,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,700,POST,/2fa/recovery-codes,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,707,POST,/2fa/disable,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,722,GET,/sessions,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,726,DELETE,/sessions/:sessionId,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,734,POST,/logout,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/auth.ts,742,POST,/logout-all,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/channels.ts,16,GET,/channels/:channelId/messages,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,33,GET,/communities,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,63,POST,/communities/:guildId/join,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,129,GET,/channels/:channelId/forum,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,157,GET,/channels/:channelId/forum/:kind/:etag,-,Público intencional - asset por ID + etag,-
+apps/api/src/routes/community.ts,175,POST,/channels/:channelId/forum/${kind},requireAuth; requireAnyGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,189,DELETE,/channels/:channelId/forum/${kind},requireAuth; requireAnyGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,201,POST,/channels/:channelId/forum/tags,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,210,DELETE,/forum/tags/:tagId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,219,POST,/channels/:channelId/forum/posts,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,235,GET,/forum/posts/:postId,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,250,POST,/forum/posts/:postId/comments,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,267,PATCH,/forum/posts/:postId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,280,GET,/guilds/:guildId/events,requireAuth; requireGuildMember; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,305,POST,/guilds/:guildId/events,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,322,PATCH,/events/:eventId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,358,POST,/events/:eventId/rsvp,requireAuth; requireGuildMember; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,377,DELETE,/events/:eventId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,391,GET,/events/:eventId/calendar.ics,requireAuth; requireGuildMember; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,409,GET,/guilds/:guildId/automod,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,416,POST,/guilds/:guildId/automod,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,429,PATCH,/automod/:ruleId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,439,DELETE,/automod/:ruleId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,448,GET,/guilds/:guildId/insights,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,467,GET,/guilds/:guildId/security-overview,requireAuth; requireAnyGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,517,GET,/guilds/:guildId/snapshot,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/community.ts,541,POST,/guilds/from-snapshot,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,132,GET,/developers/applications,requireAuth; requireDeveloperAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,147,POST,/developers/applications,requireAuth; requireDeveloperAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,172,PATCH,/developers/applications/:applicationId,requireAuth; requireDeveloperAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,191,POST,/developers/applications/:applicationId/token/reset,requireAuth; requireDeveloperAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,200,DELETE,/developers/applications/:applicationId,requireAuth; requireDeveloperAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,212,PUT,/developers/applications/:applicationId/commands/:name,requireAuth; requireDeveloperAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,225,DELETE,/developers/applications/:applicationId/commands/:name,requireAuth; requireDeveloperAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,234,GET,/oauth/applications/:clientId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,255,POST,/oauth/applications/:clientId/authorize,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,281,GET,/guilds/:guildId/bots,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,295,DELETE,/guilds/:guildId/bots/:applicationId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,310,GET,/developers/guilds/:guildId/webhooks,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,321,POST,/developers/webhooks,requireAuth; requireGuildCapability; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,368,POST,/developers/webhooks/:webhookId/token/reset,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,379,DELETE,/developers/webhooks/:webhookId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,417,POST,/api/webhooks/:webhookId,-,Autenticação própria - Authorization Bearer do webhook,-
+apps/api/src/routes/developer.ts,425,POST,/api/webhooks/:webhookId/:token,-,Legado condicionado por flag - token na URL,-
+apps/api/src/routes/developer.ts,479,GET,/bot/me,requireBotAuth,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,487,GET,/bot/guilds,requireBotAuth; requireChannelCapability,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,514,GET,/bot/channels/:channelId,requireBotAuth; requireChannelCapability,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,524,GET,/bot/guilds/:guildId/roles/:roleId,requireBotAuth,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,535,GET,/bot/users/:userId,requireBotAuth,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,552,GET,/bot/guilds/:guildId/members/:userId,requireBotAuth,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,578,PUT,/bot/commands/:name,requireBotAuth,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/developer.ts,588,POST,/bot/channels/:channelId/messages,requireBotAuth; requireChannelCapability,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/directCalls.ts,259,GET,/direct-calls/active,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/directCalls.ts,273,GET,/direct-calls/history,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/directCalls.ts,275,GET,/direct-calls/with/:peerUserId,requireAuth; usersBlockEachOther; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/directCalls.ts,291,POST,/direct-calls/start,requireAuth; usersBlockEachOther; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/directCalls.ts,340,POST,/direct-calls/:callId/answer,requireAuth; usersBlockEachOther; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/directCalls.ts,357,POST,/direct-calls/:callId/decline,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/directCalls.ts,378,POST,/direct-calls/:callId/join,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/directCalls.ts,398,POST,/direct-calls/:callId/leave,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/directCalls.ts,427,POST,/direct-calls/:callId/invite,requireAuth; usersBlockEachOther; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/directCalls.ts,462,POST,/direct-calls/:callId/end,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,390,GET,/gaming-profile/avatars,requireAuth,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,405,GET,/gaming-profile/avatar/:userId/:etag,-,Público intencional - asset por ID + etag,-
+apps/api/src/routes/gamingProfile.ts,423,POST,/gaming-profile/avatar,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,463,DELETE,/gaming-profile/avatar,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,484,GET,/gaming-profile/banner/:userId/:etag,-,Público intencional - asset por ID + etag,-
+apps/api/src/routes/gamingProfile.ts,502,POST,/gaming-profile/banner,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,537,DELETE,/gaming-profile/banner,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,553,GET,/gaming-profile/me,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,560,PATCH,/gaming-profile/presence,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,585,PATCH,/gaming-profile/me,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,671,POST,/gaming-profile/heartbeat,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,701,GET,/gaming-profile/user/:userId,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,708,GET,/gaming-profile/by-username/:username,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/gamingProfile.ts,720,GET,/gaming-profile/batch,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,257,GET,/guilds,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,339,GET,/guild-templates,requireAuth,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,343,POST,/guilds,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,459,PATCH,/guilds/:guildId/appearance,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,469,GET,/guilds/:guildId/icon/:etag,-,Público intencional - asset por ID + etag,-
+apps/api/src/routes/guilds.ts,482,POST,/guilds/:guildId/icon,requireAuth; requireGuildManager; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,502,DELETE,/guilds/:guildId/icon,requireAuth; requireGuildManager; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,511,GET,/guilds/:guildId/banner/:etag,-,Público intencional - asset por ID + etag,-
+apps/api/src/routes/guilds.ts,512,POST,/guilds/:guildId/banner,requireAuth; requireGuildManager; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,513,DELETE,/guilds/:guildId/banner,requireAuth; requireGuildManager; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,515,PATCH,/guilds/:guildId,requireAuth; requireGuildManager; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,556,PATCH,/guilds/:guildId/lockdown,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,592,DELETE,/guilds/:guildId,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,623,POST,/guilds/:guildId/leave,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,645,GET,/guilds/:guildId/members,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,684,PATCH,/guilds/:guildId/members/:userId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,700,PATCH,/guilds/:guildId/members/:userId/nickname,requireAuth; requireGuildMember; requireModerationTarget; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,718,PATCH,/guilds/:guildId/members/:userId/voice-moderation,requireAuth; requireModerationTarget; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,738,DELETE,/guilds/:guildId/members/:userId,requireAuth; requireModerationTarget; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,758,POST,/guilds/:guildId/members/:userId/kick,requireAuth; requireModerationTarget; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,778,POST,/guilds/:guildId/members/:userId/timeout,requireAuth; requireModerationTarget; requireModerationTargetAny; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,806,DELETE,/guilds/:guildId/members/:userId/timeout,requireAuth; requireModerationTarget; requireModerationTargetAny; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,821,POST,/guilds/:guildId/bans/:userId,requireAuth; requireModerationTarget; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,866,GET,/guilds/:guildId/bans,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,881,DELETE,/guilds/:guildId/bans/:userId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,891,GET,/guilds/:guildId/audit,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,919,POST,/guilds/:guildId/categories,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,947,PATCH,/categories/:categoryId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,964,DELETE,/categories/:categoryId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,978,PUT,/guilds/:guildId/categories/reorder,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,992,POST,/guilds/:guildId/channels,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1025,PATCH,/channels/:channelId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1044,PUT,/guilds/:guildId/channels/reorder,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1073,DELETE,/channels/:channelId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1091,GET,/guilds/:guildId/structure,requireAuth; requireAnyGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1103,GET,/guilds/:guildId/channel-permissions,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1110,PUT,/guilds/:guildId/role-permissions/:role,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1125,PUT,/categories/:categoryId/permissions/:role,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1142,PUT,/channels/:channelId/permissions/:role,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1159,POST,/guilds/:guildId/invites,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1182,GET,/guilds/:guildId/invites,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1193,DELETE,/guilds/:guildId/invites/:code,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/guilds.ts,1204,GET,/invites/:code,-,Público intencional - preview de convite,-
+apps/api/src/routes/guilds.ts,1226,POST,/invites/:code/join,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/livekit.ts,63,POST,/livekit/token,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/livekit.ts,84,POST,/livekit/direct-token,requireAuth; requireDirectMember; canJoinDirectCall; usersBlockEachOther; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,68,GET,/messages/:messageId,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,76,GET,/messages/:messageId/thread,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,106,PATCH,/messages/:messageId,requireAuth; requireGuildCapability; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,125,DELETE,/messages/:messageId,requireAuth; requireGuildCapability; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,137,POST,/channels/:channelId/messages/clear,requireAuth; requireGuildCapability; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,169,POST,/messages/:messageId/forward,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,207,POST,/messages/:messageId/reactions,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,222,DELETE,/messages/:messageId/reactions,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,234,PUT,/messages/:messageId/pin,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,245,DELETE,/messages/:messageId/pin,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,255,GET,/channels/:channelId/pins,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,262,PUT,/messages/:messageId/bookmark,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,274,DELETE,/messages/:messageId/bookmark,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,280,GET,/bookmarks,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,289,PUT,/messages/:messageId/archive,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,302,DELETE,/messages/:messageId/archive,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,308,GET,/archives,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,317,POST,/messages/:messageId/task,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,335,GET,/tasks,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,347,PATCH,/tasks/:taskId,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,359,DELETE,/tasks/:taskId,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,367,POST,/channels/:channelId/scheduled-messages,requireAuth; requireGuildCapability; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,379,GET,/scheduled-messages,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,387,DELETE,/scheduled-messages/:scheduledId,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,395,GET,/guilds/:guildId/search,requireAuth; requireGuildMember; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/messages.ts,429,GET,/channels/:channelId/application-commands,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/music.ts,444,GET,/guilds/:guildId/music,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/music.ts,456,PATCH,/guilds/:guildId/music/settings,requireAuth; musicAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/music.ts,497,POST,/guilds/:guildId/music/playback-lease,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/music.ts,519,POST,/guilds/:guildId/music/join,requireAuth; requireChannelCapability; musicAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/music.ts,536,POST,/guilds/:guildId/music/leave,requireAuth; musicAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/music.ts,552,POST,/guilds/:guildId/music/queue,requireAuth; musicAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/music.ts,582,DELETE,/guilds/:guildId/music/queue/:trackId,requireAuth; musicAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/music.ts,596,POST,/guilds/:guildId/music/control,requireAuth; requireGuildMember; musicAccess; req.auth!.sub,ACHADO F4,F4
+apps/api/src/routes/music.ts,677,GET,/guilds/:guildId/music/search,requireAuth; musicAccess; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,28,GET,/platform/admin/announcements,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,38,GET,/platform/announcements,requireAuth,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,48,GET,/system/diagnostics,requireAuth,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,63,GET,/platform/admin/system-health,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,69,GET,/platform/admin/overview,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,84,GET,/platform/admin/users,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,112,PATCH,/platform/admin/users/:userId/system-role,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,140,POST,/platform/admin/users/:userId/reset-password,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,147,POST,/platform/admin/users/:userId/revoke-sessions,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,164,GET,/platform/admin/users/:userId/sessions,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,165,DELETE,/platform/admin/users/:userId/sessions/:sessionId,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,166,PATCH,/platform/admin/users/:userId/account-state,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,167,GET,/platform/admin/users/:userId/moderation-history,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,169,DELETE,/platform/admin/users/:userId,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,210,GET,/platform/admin/guilds,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,223,GET,/platform/admin/audit,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,234,POST,/platform/admin/announcements,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,248,PATCH,/platform/admin/announcements/:announcementId,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/platform.ts,259,DELETE,/platform/admin/announcements/:announcementId,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/registrationVerification.ts,199,GET,/registration-policy,-,Público intencional - política de cadastro,-
+apps/api/src/routes/registrationVerification.ts,209,POST,/register/code,-,Público intencional - desafio de e-mail,-
+apps/api/src/routes/registrationVerification.ts,271,POST,/register,-,Público intencional - cadastro com validação/rate limit,-
+apps/api/src/routes/roles.ts,112,GET,/guilds/:guildId/custom-roles,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,119,POST,/guilds/:guildId/custom-roles,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,144,PATCH,/guilds/:guildId/custom-roles/:roleId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,160,DELETE,/guilds/:guildId/custom-roles/:roleId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,174,PUT,/guilds/:guildId/custom-roles/reorder,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,187,PUT,/guilds/:guildId/members/:userId/custom-roles,requireAuth; requireGuildCapability; assertCanAssignRolesToTarget; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,207,PUT,/channels/:channelId/custom-role-permissions/:roleId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,223,PUT,/categories/:categoryId/custom-role-permissions/:roleId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,239,GET,/channels/:channelId/user-permissions/:targetUserId,requireAuth; requireGuildMember; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,245,PUT,/channels/:channelId/user-permissions/:targetUserId,requireAuth; assertCanManageUserOverride; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,251,GET,/categories/:categoryId/user-permissions/:targetUserId,requireAuth; requireGuildMember; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,252,PUT,/categories/:categoryId/user-permissions/:targetUserId,requireAuth; assertCanManageUserOverride; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/roles.ts,254,GET,/guilds/:guildId/permission-preview/:userId,requireAuth; requireGuildCapability; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,68,GET,/friends,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,89,GET,/users/blocked,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,100,POST,/users/:userId/block,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,126,DELETE,/users/:userId/block,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,134,GET,/users/search,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,180,GET,/users/:userId/profile,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,254,POST,/friends/requests,requireAuth; usersBlockEachOther; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,291,POST,/friends/:friendshipId/accept,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,301,DELETE,/friends/:friendshipId,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,311,GET,/direct/conversations,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,340,POST,/direct/conversations,requireAuth; usersBlockEachOther; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,414,GET,/direct/conversations/:conversationId/messages,requireAuth; requireDirectMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,435,PATCH,/direct/messages/:messageId,requireAuth; requireDirectMember; usersBlockEachOther; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/social.ts,457,DELETE,/direct/messages/:messageId,requireAuth; requireDirectMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/uploads.ts,73,POST,/api/uploads,requireAuth; uploaderId; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/uploads.ts,108,DELETE,/api/uploads/:attachmentId,requireAuth; uploaderId; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/uploads.ts,126,GET,/uploads/:storedName,-,Recurso tokenizado - accessKey timing-safe,-
+apps/api/src/routes/v090.ts,33,GET,/guilds/:guildId/emojis,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,34,POST,/guilds/:guildId/emojis,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,35,GET,/guilds/:guildId/emojis/:id/:etag,-,Público intencional - asset por ID + etag,-
+apps/api/src/routes/v090.ts,36,DELETE,/guilds/:guildId/emojis/:id,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,38,GET,/guilds/:guildId/stickers,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,39,POST,/guilds/:guildId/stickers,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,40,GET,/guilds/:guildId/stickers/:id/:etag,-,Público intencional - asset por ID + etag,-
+apps/api/src/routes/v090.ts,41,DELETE,/guilds/:guildId/stickers/:id,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,45,GET,/guilds/:guildId/soundboard,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,46,POST,/guilds/:guildId/soundboard,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,47,PATCH,/guilds/:guildId/soundboard/:id,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,48,DELETE,/guilds/:guildId/soundboard/:id,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,49,GET,/guilds/:guildId/soundboard/:id/:etag,-,Público intencional - asset por ID + etag,-
+apps/api/src/routes/v090.ts,52,GET,/guilds/:guildId/spaces,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,53,POST,/guilds/:guildId/spaces,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,54,PUT,/spaces/:spaceId/content,requireAuth; requireGuildCapability; req.auth!.sub,ACHADO F3,F3
+apps/api/src/routes/v090.ts,55,DELETE,/spaces/:spaceId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,56,GET,/guilds/:guildId/channel-preferences,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,57,PUT,/channels/:channelId/preferences,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,62,GET,/guilds/:guildId/member-profiles/:userId,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,63,PATCH,/guilds/:guildId/member-profile/me,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,64,POST,/guilds/:guildId/member-profile/${kind},requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,64,GET,/guilds/:guildId/member-profiles/:userId/${kind}/:etag,-,Público intencional - asset por ID + etag,-
+apps/api/src/routes/v090.ts,66,GET,/social-profile/me,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,67,PATCH,/social-profile/me,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,68,GET,/users/:userId/note,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,69,PUT,/users/:userId/note,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,70,GET,/users/:userId/mutuals,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,74,GET,/guilds/:guildId/onboarding,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,75,POST,/guilds/:guildId/onboarding/questions,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,76,POST,/onboarding/questions/:questionId/options,requireAuth; requireGuildCapability; req.auth!.sub,ACHADO F1,F1
+apps/api/src/routes/v090.ts,78,DELETE,/onboarding/questions/:questionId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,79,DELETE,/onboarding/questions/:questionId/options/:optionId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,80,GET,/guilds/:guildId/onboarding/me,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,81,PUT,/guilds/:guildId/onboarding/me,requireAuth; requireGuildMember; req.auth!.sub,ACHADO F1,F1
+apps/api/src/routes/v090.ts,85,GET,/guilds/:guildId/security-policy,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,86,PUT,/guilds/:guildId/security-policy,requireAuth; requireGuildCapability; req.auth!.sub,ACHADO F3,F3
+apps/api/src/routes/v090.ts,87,POST,/guilds/:guildId/members/:userId/soft-ban,requireAuth; requireModerationTarget; requireModerationTargetAny; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,89,GET,/guilds/:guildId/dynamic-voice/templates,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,90,POST,/guilds/:guildId/dynamic-voice/templates,requireAuth; requireGuildCapability; req.auth!.sub,ACHADO F3,F3
+apps/api/src/routes/v090.ts,91,DELETE,/guilds/:guildId/dynamic-voice/templates/:templateId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,92,POST,/guilds/:guildId/dynamic-voice/:templateId/create,requireAuth; requireGuildMember; req.auth!.sub,ACHADO F3,F3
+apps/api/src/routes/v090.ts,94,GET,/guilds/:guildId/badges,requireAuth; requireGuildMember; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,95,POST,/guilds/:guildId/badges,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,96,PUT,/guilds/:guildId/badges/:badgeId/members/:userId,requireAuth; requireGuildCapability; req.auth!.sub,ACHADO F2,F2
+apps/api/src/routes/v090.ts,97,DELETE,/guilds/:guildId/badges/:badgeId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,98,DELETE,/guilds/:guildId/badges/:badgeId/members/:userId,requireAuth; requireGuildCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,101,GET,/channels/:channelId/draft,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,102,PUT,/channels/:channelId/draft,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,103,GET,/messages/:messageId/edit-history,requireAuth; requireChannelCapability; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,104,GET,/client/compatibility,requireAuth,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,105,POST,/client/crash-reports,requireAuth; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,106,GET,/platform/admin/crash-reports,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-
+apps/api/src/routes/v090.ts,107,GET,/platform/admin/health-v2,requireAuth; requirePlatformAdmin; req.auth!.sub,Revisado - autenticado/autorizado ou autoescopado,-

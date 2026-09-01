@@ -24,6 +24,7 @@ import {
   Mic,
   MicOff,
   MessageCircle,
+  Music2,
   ScreenShare,
   Phone,
   PhoneOff,
@@ -35,6 +36,7 @@ import {
   Sparkles,
   UserMinus,
   UserRound,
+  Users,
   Volume2,
   VolumeX,
   X
@@ -53,14 +55,16 @@ import { useDeveloperMode } from "../lib/developerMode";
 import { playUiSound, unlockUiAudio } from "../lib/sounds";
 import { loadNotificationPreferences } from "../lib/preferences";
 import { isGuildSilent, loadGuildPreferences } from "../lib/serverPreferences";
-import { loadVoicePreferences, type PersistedVoiceSession, type VoicePreferences } from "../lib/voicePreferences";
-import { switchVoiceScreenSource } from "../lib/voiceScreenShare";
+import { applyMicrophoneSensitivity, loadVoicePreferences, microphoneSensitivityGain, type PersistedVoiceSession, type VoicePreferences } from "../lib/voicePreferences";
+import { setVoiceScreenShare, switchVoiceScreenSource } from "../lib/voiceScreenShare";
 import { formatPushToTalkBinding } from "../lib/pushToTalkBinding";
 import type { Channel, LiveKitCredentials } from "../types";
 import { Avatar } from "./Avatar";
 import { ContextMenu } from "./ContextMenu";
 import { GingaMusicPanel } from "./GingaMusicPanel";
 import { Modal } from "./Modal";
+import { SoundboardPanel } from "./SoundboardPanel";
+import type { SoundboardPlayedEvent } from "../lib/soundboard";
 
 interface VoiceRoomProps {
   channel: Channel;
@@ -90,6 +94,7 @@ interface VoiceRoomProps {
   canManageParticipantRoles?: boolean;
   canShareScreen?: boolean;
   canUseVideo?: boolean;
+  canManageSoundboard?: boolean;
   autoWatchUserId?: string;
   onOpenVoiceSettings?: () => void;
 }
@@ -300,7 +305,10 @@ function ParticipantTile({
   onActivate,
   onWatchStream,
   deafened = false,
-  viewerCount = 0
+  viewerCount = 0,
+  compact = false,
+  preferCamera = false,
+  active = false
 }: {
   participant: Participant;
   onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
@@ -308,6 +316,9 @@ function ParticipantTile({
   onWatchStream?: () => void;
   deafened?: boolean;
   viewerCount?: number;
+  compact?: boolean;
+  preferCamera?: boolean;
+  active?: boolean;
 }) {
   // Participant pode ser local ou remoto. Converter para a classe base evita a uniao
   // de iteradores LocalTrackPublication/RemoteTrackPublication que quebrava o TS.
@@ -315,7 +326,7 @@ function ParticipantTile({
   const activeVideo = videoPublications.filter((publication) => Boolean(publication.track) && !publication.isMuted);
   const screenPublication = activeVideo.find((publication) => publication.source === Track.Source.ScreenShare);
   const cameraPublication = activeVideo.find((publication) => publication.source === Track.Source.Camera);
-  const publication = screenPublication ?? cameraPublication;
+  const publication = preferCamera ? cameraPublication : (screenPublication ?? cameraPublication);
   const displayName = participant.name || participant.identity;
   const userId = participantUserId(participant);
   const [profileVisual, setProfileVisual] = useState<{ avatarUrl: string | null; presence: string } | null>(null);
@@ -341,21 +352,17 @@ function ParticipantTile({
 
   return (
     <article
-      className={`participant-tile ${publication ? "with-video" : "without-video"} ${screenPublication ? "screen-tile" : ""} ${participant.isSpeaking ? "speaking" : ""} ${participant.isLocal ? "local-participant" : "remote-participant"}`}
+      className={`participant-tile ${publication ? "with-video" : "without-video"} ${screenPublication && !preferCamera ? "screen-tile" : ""} ${compact ? "participant-stack-card" : ""} ${active ? "active-stream-card" : ""} ${participant.isSpeaking ? "speaking" : ""} ${participant.isLocal ? "local-participant" : "remote-participant"}`}
       onPointerDown={(event) => {
-        if (event.button !== 2) return;
-        if (screenPublication) { event.preventDefault(); event.stopPropagation(); return; }
-        if (!onContextMenu) return;
+        if (event.button !== 2 || !onContextMenu) return;
         event.preventDefault();
         event.stopPropagation();
         onContextMenu(event as unknown as ReactMouseEvent<HTMLElement>);
       }}
       onContextMenu={(event) => {
-        if (screenPublication) { event.preventDefault(); event.stopPropagation(); return; }
-        if (!onContextMenu) return;
         event.preventDefault();
         event.stopPropagation();
-        onContextMenu(event);
+        onContextMenu?.(event);
       }}
       onClick={interactive ? (event) => {
         event.stopPropagation();
@@ -392,7 +399,51 @@ function ParticipantTile({
   );
 }
 
-function StreamViewer({ participant, availableStreams, sinkId = "", viewerCount = 0, onSwitch, onClose }: { participant: Participant; availableStreams: Participant[]; sinkId?: string; viewerCount?: number; onSwitch: (identity: string) => void; onClose: () => void }) {
+function StreamViewerAvatar({ participant }: { participant: Participant }) {
+  const userId = participantUserId(participant);
+  const displayName = participant.name || participant.identity;
+  return <span className="voice-stream-viewer-avatar" title={displayName}>
+    <Avatar user={{ id: userId, displayName, avatarColor: participantColor(participant) }} size="sm" />
+  </span>;
+}
+
+function StreamViewerStack({ viewers, totalCount }: { viewers: Participant[]; totalCount: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = viewers.slice(0, 3);
+  const hiddenCount = Math.max(0, totalCount - visible.length);
+  if (totalCount <= 0) return null;
+
+  const names = viewers.map((viewer) => viewer.name || viewer.identity);
+  const label = totalCount === 1 ? "1 pessoa assistindo" : `${totalCount} pessoas assistindo`;
+
+  return <div className={`voice-stream-viewers ${expanded ? "expanded" : ""}`}>
+    <button
+      type="button"
+      className="voice-stream-viewers-trigger"
+      onClick={(event) => { event.stopPropagation(); setExpanded((value) => !value); }}
+      onBlur={() => setExpanded(false)}
+      aria-expanded={expanded}
+      aria-label={`${label}. ${names.join(", ")}`}
+      title={label}
+    >
+      <span className="voice-stream-viewers-avatars" aria-hidden="true">
+        {visible.map((viewer) => <StreamViewerAvatar key={viewer.sid || viewer.identity} participant={viewer} />)}
+        {hiddenCount > 0 && <span className="voice-stream-viewers-more">+{hiddenCount}</span>}
+      </span>
+      <span className="voice-stream-viewers-count"><Eye size={13}/>{totalCount}</span>
+    </button>
+    {expanded && <div className="voice-stream-viewers-popover" role="status">
+      <strong>{label}</strong>
+      <div className="voice-stream-viewers-list">
+        {viewers.slice(0, 12).map((viewer) => <span key={viewer.sid || viewer.identity}>{viewer.name || viewer.identity}</span>)}
+        {totalCount > viewers.length && <span>+{totalCount - viewers.length} espectador{totalCount - viewers.length === 1 ? "" : "es"}</span>}
+        {viewers.length > 12 && <span>+{viewers.length - 12} pessoa{viewers.length - 12 === 1 ? "" : "s"}</span>}
+      </div>
+    </div>}
+  </div>;
+}
+
+function StreamFocusPanel({ participant, sinkId = "", viewerCount = 0, viewers = [] }: { participant: Participant; sinkId?: string; viewerCount?: number; viewers?: Participant[] }) {
   const containerRef = useRef<HTMLElement>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const volumeKey = `ginga.voice.streamVolume.${participant.identity}`;
@@ -405,25 +456,19 @@ function StreamViewer({ participant, availableStreams, sinkId = "", viewerCount 
 
   useEffect(() => {
     const onFullscreen = () => setFullscreen(document.fullscreenElement === containerRef.current);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || document.fullscreenElement) return;
-      event.preventDefault();
-      onClose();
-    };
     document.addEventListener("fullscreenchange", onFullscreen);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("fullscreenchange", onFullscreen);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [onClose]);
+    return () => document.removeEventListener("fullscreenchange", onFullscreen);
+  }, []);
 
   async function toggleFullscreen() {
     try {
-      if (document.fullscreenElement) await document.exitFullscreen();
-      else await containerRef.current?.requestFullscreen();
+      if (document.fullscreenElement === containerRef.current) await document.exitFullscreen();
+      else {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        await containerRef.current?.requestFullscreen();
+      }
     } catch {
-      // Alguns navegadores/webviews podem bloquear fullscreen sem gesto valido.
+      // O stage continua utilizavel mesmo quando o SO/WebView bloqueia fullscreen.
     }
   }
 
@@ -434,28 +479,30 @@ function StreamViewer({ participant, availableStreams, sinkId = "", viewerCount 
   }
 
   if (!screenPublication) return null;
-  return <div className="stream-viewer-backdrop" onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
-    <section className="stream-viewer" ref={containerRef} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
-      <header className="stream-viewer-header">
-        <div><span className="stream-live-pill"><Radio size={13}/> AO VIVO</span><strong>{displayName}</strong><small>Compartilhamento de tela {viewerCount > 0 ? `· ${viewerCount} assistindo` : ""}</small></div>
-        <div className="stream-viewer-actions">
-          <button type="button" onClick={() => void toggleFullscreen()} aria-label={fullscreen ? "Sair da tela cheia" : "Tela cheia"}><Maximize2 size={18}/></button>
-          <button type="button" onClick={onClose} aria-label="Fechar transmissao"><X size={19}/></button>
-        </div>
-      </header>
-      <div className="stream-viewer-stage">
-        <AttachedTrack publication={screenPublication} muted className="stream-viewer-video" />
-        {screenAudioPublication && <AttachedTrack publication={screenAudioPublication} sinkId={sinkId} volume={volume} className="stream-viewer-audio" />}
+
+  return <section className="voice-stream-focus-panel" ref={containerRef} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
+    <header className="voice-stream-focus-header">
+      <div className="voice-stream-focus-identity">
+        <span className="stream-live-pill"><Radio size={13}/> AO VIVO</span>
+        <span><strong>{displayName}</strong><small>Compartilhamento de tela{viewerCount > 0 ? ` · ${viewerCount} assistindo` : ""}</small></span>
       </div>
-      {availableStreams.length > 1 && <nav className="stream-viewer-switcher-v3" aria-label="Transmissoes disponiveis">{availableStreams.map((stream)=><button type="button" key={stream.identity} className={stream.identity===participant.identity?"active":""} onClick={()=>onSwitch(stream.identity)}><Radio size={12}/><span>{stream.name||stream.identity}</span><em>AO VIVO</em></button>)}</nav>}
-      <footer className="stream-viewer-controls">
-        <Volume2 size={17}/>
-        <label><span>Volume da transmissao</span><input type="range" min="0" max="100" step="5" value={volume} onChange={(event) => changeVolume(Number(event.target.value))}/><strong>{volume}%</strong></label>
-        {!screenAudioPublication && <small>Esta transmissao nao compartilha audio.</small>}
-        <button type="button" className="secondary-button compact-button" onClick={() => void toggleFullscreen()}><Maximize2 size={16}/> {fullscreen ? "Sair da tela cheia" : "Tela cheia"}</button>
-      </footer>
-    </section>
-  </div>;
+      <button type="button" className="voice-stream-fullscreen" onClick={() => void toggleFullscreen()} aria-label={fullscreen ? "Sair da tela cheia" : "Tela cheia"} title={fullscreen ? "Sair da tela cheia" : "Tela cheia"}><Maximize2 size={18}/></button>
+    </header>
+    <div className="voice-stream-focus-video">
+      <AttachedTrack publication={screenPublication} muted className="voice-stream-focus-track" />
+      {screenAudioPublication && <AttachedTrack publication={screenAudioPublication} sinkId={sinkId} volume={volume} className="voice-stream-focus-audio" />}
+      <StreamViewerStack viewers={viewers} totalCount={viewerCount} />
+    </div>
+    <footer className="voice-stream-focus-footer">
+      {screenAudioPublication ? <label className="voice-stream-volume-control">
+        {volume <= 0 ? <VolumeX size={16}/> : <Volume2 size={16}/>}
+        <span>Volume</span>
+        <input type="range" min="0" max="100" step="5" value={volume} onChange={(event) => changeVolume(Number(event.target.value))}/>
+        <strong>{volume}%</strong>
+      </label> : <span className="voice-stream-no-audio"><VolumeX size={15}/> Esta transmissao nao compartilha audio.</span>}
+      <span className="voice-stream-focus-tip">Clique em outro card AO VIVO para trocar a transmissao principal.</span>
+    </footer>
+  </section>;
 }
 
 function PermissionPill({ state, label }: { state: PermissionState; label: string }) {
@@ -489,6 +536,7 @@ export function VoiceRoom({
   canManageParticipantRoles = false,
   canShareScreen = true,
   canUseVideo = true,
+  canManageSoundboard = false,
   autoWatchUserId = "",
   onOpenVoiceSettings
 }: VoiceRoomProps) {
@@ -503,7 +551,10 @@ export function VoiceRoom({
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [screenEnabled, setScreenEnabled] = useState(false);
   const [screenMenuOpen, setScreenMenuOpen] = useState(false);
+  const [soundboardOpen, setSoundboardOpen] = useState(false);
+  const [soundboardNotice, setSoundboardNotice] = useState<SoundboardPlayedEvent | null>(null);
   const [streamViewerCounts, setStreamViewerCounts] = useState<Record<string, number>>({});
+  const [streamViewerIds, setStreamViewerIds] = useState<Record<string, string[]>>({});
   const [mediaPermissions, setMediaPermissions] = useState({ canShareScreen, canUseVideo });
   const [watchingStreamIdentity, setWatchingStreamIdentity] = useState("");
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -520,6 +571,7 @@ export function VoiceRoom({
   const [speakers, setSpeakers] = useState<DeviceOption[]>([]);
   const [outputDevice, setOutputDevice] = useState(() => storedString(OUTPUT_DEVICE_KEY));
   const [outputVolume, setOutputVolume] = useState(() => storedNumber(OUTPUT_VOLUME_KEY, 100, 0, 200));
+  const [microphoneSensitivity, setMicrophoneSensitivity] = useState(() => loadVoicePreferences().microphoneSensitivity);
   const [inputMode, setInputMode] = useState<InputMode>(storedInputMode);
   const [pushToTalkKey, setPushToTalkKey] = useState(() => storedString(PTT_KEY) || "KeyV");
   const [streamFps, setStreamFps] = useState<15 | 30 | 60>(storedStreamFps);
@@ -551,6 +603,26 @@ export function VoiceRoom({
       canUseVideo: current.canUseVideo && canUseVideo
     }));
   }, [canShareScreen, canUseVideo]);
+
+  useEffect(() => {
+    setSoundboardOpen(false);
+  }, [channel.id]);
+
+  useEffect(() => {
+    let timer = 0;
+    const onSoundboardPlayed = (event: Event) => {
+      const detail = (event as CustomEvent<SoundboardPlayedEvent>).detail;
+      if (!detail || detail.channelId !== channel.id) return;
+      setSoundboardNotice(detail);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setSoundboardNotice(null), 2200);
+    };
+    window.addEventListener("ginga:soundboard-played", onSoundboardPlayed as EventListener);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("ginga:soundboard-played", onSoundboardPlayed as EventListener);
+    };
+  }, [channel.id]);
 
   function playVoiceEventSound(kind: "join" | "leave" | "mute" | "unmute" | "deafen" | "undeafen" | "cameraOn" | "cameraOff" | "streamStart" | "streamStop") {
     const notificationPreferences = loadNotificationPreferences();
@@ -737,11 +809,13 @@ function syncLocalVoiceIndicators(targetRoom: Room | null = room, nextDeafened =
     });
     try {
       await fn.call(targetRoom.localParticipant, enabled, enabled ? options(microphoneDevice) : undefined);
+      if (enabled) await applyMicrophoneSensitivity(targetRoom, microphoneSensitivity).catch(() => false);
     } catch (caught) {
       if (!enabled || !microphoneDevice) throw caught;
       // IDs de dispositivos mudam no Windows depois de reconectar USB/Bluetooth.
       // Se o microfone salvo sumiu, entra usando o padrao em vez de derrubar a voz.
       await fn.call(targetRoom.localParticipant, true, options());
+      await applyMicrophoneSensitivity(targetRoom, microphoneSensitivity).catch(() => false);
       setMicrophoneDevice("");
       try { localStorage.removeItem(MIC_DEVICE_KEY); } catch {}
       // Sincroniza o fallback com o audio persistente e com qualquer tela de
@@ -763,12 +837,13 @@ function syncLocalVoiceIndicators(targetRoom: Room | null = room, nextDeafened =
   }
 
   async function enableScreen(targetRoom: Room, enabled: boolean) {
-    const resolution = qualityPresets[quality];
-    const fn = targetRoom.localParticipant.setScreenShareEnabled as unknown as (enabled: boolean, options?: Record<string, unknown>) => Promise<unknown>;
     desiredScreenEnabledRef.current = enabled;
     try {
-      await fn.call(targetRoom.localParticipant, enabled, enabled ? { resolution: { ...resolution, frameRate: streamFps }, audio: true, systemAudio: "include", contentHint: "motion" } : undefined);
-    } catch (caught) { if (enabled) desiredScreenEnabledRef.current = false; throw caught; }
+      await setVoiceScreenShare(targetRoom, enabled);
+    } catch (caught) {
+      if (enabled) desiredScreenEnabledRef.current = false;
+      throw caught;
+    }
   }
 
   useEffect(() => {
@@ -1006,7 +1081,9 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
       setOutputDevice(next.outputDevice);
       setCameraDevice(next.cameraDevice);
       setOutputVolume(next.outputVolume);
+      setMicrophoneSensitivity(next.microphoneSensitivity);
       setNoiseSuppression(next.noiseSuppression);
+      void applyMicrophoneSensitivity(window.__gingaVoiceSession?.room, next.microphoneSensitivity).catch(() => undefined);
       setInputMode(next.inputMode);
       setPushToTalkKey(next.pushToTalkKey);
       setQuality(next.quality);
@@ -1032,9 +1109,11 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
 
   useEffect(() => {
     if (!socket) return;
-    const onViewerCount = (payload: { channelId?: string; broadcasterId?: string; count?: number }) => {
+    const onViewerCount = (payload: { channelId?: string; broadcasterId?: string; count?: number; viewerIds?: string[] }) => {
       if (payload.channelId !== channel.id || !payload.broadcasterId) return;
-      setStreamViewerCounts((current) => ({ ...current, [payload.broadcasterId!]: Math.max(0, Number(payload.count) || 0) }));
+      const broadcasterId = payload.broadcasterId;
+      setStreamViewerCounts((current) => ({ ...current, [broadcasterId]: Math.max(0, Number(payload.count) || 0) }));
+      setStreamViewerIds((current) => ({ ...current, [broadcasterId]: Array.isArray(payload.viewerIds) ? payload.viewerIds.filter((id): id is string => typeof id === "string" && Boolean(id)) : [] }));
     };
     socket.on("voice:stream-viewers", onViewerCount);
     return () => { socket.off("voice:stream-viewers", onViewerCount); };
@@ -1285,10 +1364,25 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
   const watchingStreamParticipant = watchingStreamIdentity
     ? streamingParticipants.find((participant) => participant.identity === watchingStreamIdentity) ?? null
     : null;
+  const preferredStreamingParticipant = (autoWatchUserId
+    ? streamingParticipants.find((participant) => participant.identity === autoWatchUserId)
+    : null) ?? streamingParticipants.find((participant) => !participant.isLocal) ?? streamingParticipants[0] ?? null;
+  const activeStreamParticipant = watchingStreamParticipant ?? preferredStreamingParticipant;
+  const activeStreamBroadcasterUserId = activeStreamParticipant ? participantUserId(activeStreamParticipant) : "";
+  const activeStreamViewerParticipants = useMemo(() => {
+    if (!activeStreamBroadcasterUserId) return [];
+    const viewerIds = new Set(streamViewerIds[activeStreamBroadcasterUserId] ?? []);
+    return participants.filter((participant) => viewerIds.has(participantUserId(participant)));
+  }, [activeStreamBroadcasterUserId, participants, streamViewerIds]);
 
   useEffect(() => {
-    if (watchingStreamIdentity && !watchingStreamParticipant) setWatchingStreamIdentity("");
-  }, [watchingStreamIdentity, watchingStreamParticipant]);
+    if (!hasScreenShare) {
+      if (watchingStreamIdentity) setWatchingStreamIdentity("");
+      return;
+    }
+    if (watchingStreamParticipant) return;
+    if (preferredStreamingParticipant) setWatchingStreamIdentity(preferredStreamingParticipant.identity);
+  }, [hasScreenShare, preferredStreamingParticipant, watchingStreamIdentity, watchingStreamParticipant]);
 
   const watchingBroadcasterUserId = watchingStreamParticipant ? participantUserId(watchingStreamParticipant) : "";
   useEffect(() => {
@@ -1471,9 +1565,12 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
       });
       const context = new AudioContext();
       const source = context.createMediaStreamSource(stream);
+      const inputGain = context.createGain();
+      inputGain.gain.value = microphoneSensitivityGain(microphoneSensitivity);
       const analyser = context.createAnalyser();
       analyser.fftSize = 256;
-      source.connect(analyser);
+      source.connect(inputGain);
+      inputGain.connect(analyser);
       const data = new Uint8Array(analyser.frequencyBinCount);
       micTestStreamRef.current = stream;
       micTestContextRef.current = context;
@@ -1539,34 +1636,53 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
           </div>
         ) : status !== ConnectionState.Connected ? (
           <div className="center-state large"><LoaderCircle className="spin" /> Entrando no canal de voz...</div>
+        ) : hasScreenShare && activeStreamParticipant ? (
+          <div className="voice-stream-focus-layout">
+            <div className="voice-stream-main-stage">
+              <StreamFocusPanel
+                key={activeStreamParticipant.identity}
+                participant={activeStreamParticipant}
+                sinkId={outputDevice}
+                viewerCount={streamViewerCounts[participantUserId(activeStreamParticipant)] ?? 0}
+                viewers={activeStreamViewerParticipants}
+              />
+            </div>
+            <aside className="voice-participant-stack" aria-label="Participantes da chamada">
+              <header><span><Users size={14}/> Participantes</span><strong>{participants.length}</strong></header>
+              <div className="voice-participant-stack-scroll">
+                {participants.map((participant) => (
+                  <ParticipantTile
+                    key={participant.sid || participant.identity}
+                    participant={participant}
+                    compact
+                    preferCamera
+                    active={participant.identity === activeStreamParticipant.identity}
+                    deafened={participant.isLocal ? deafened : false}
+                    viewerCount={streamViewerCounts[participantUserId(participant)] ?? 0}
+                    onWatchStream={participant.isScreenShareEnabled ? () => setWatchingStreamIdentity(participant.identity) : undefined}
+                    onContextMenu={participant.isLocal ? undefined : (event) => openParticipantMenu(participant, event)}
+                    onActivate={participant.isLocal || participant.isScreenShareEnabled ? undefined : (event) => openParticipantMenu(participant, event)}
+                  />
+                ))}
+              </div>
+            </aside>
+          </div>
         ) : (
-          <div className={`participant-grid ${hasScreenShare ? "has-screen-share" : ""}`}>
+          <div className="participant-grid">
             {participants.map((participant) => (
               <ParticipantTile
                 key={participant.sid || participant.identity}
                 participant={participant}
                 deafened={participant.isLocal ? deafened : false}
                 viewerCount={streamViewerCounts[participantUserId(participant)] ?? 0}
-                onWatchStream={() => setWatchingStreamIdentity(participant.identity)}
-                onContextMenu={participant.isLocal || participant.isScreenShareEnabled ? undefined : (event) => openParticipantMenu(participant, event)}
+                onWatchStream={participant.isScreenShareEnabled ? () => setWatchingStreamIdentity(participant.identity) : undefined}
+                onContextMenu={participant.isLocal ? undefined : (event) => openParticipantMenu(participant, event)}
                 onActivate={participant.isLocal || participant.isScreenShareEnabled ? undefined : (event) => openParticipantMenu(participant, event)}
               />
             ))}
           </div>
         )}
       </div>
-
-      {watchingStreamParticipant && (
-        <StreamViewer
-          key={watchingStreamParticipant.identity}
-          participant={watchingStreamParticipant}
-          availableStreams={streamingParticipants}
-          sinkId={outputDevice}
-          viewerCount={streamViewerCounts[participantUserId(watchingStreamParticipant)] ?? 0}
-          onSwitch={setWatchingStreamIdentity}
-          onClose={() => setWatchingStreamIdentity("")}
-        />
-      )}
 
       {participantMenu && selectedParticipant && (
         <ContextMenu x={participantMenu.x} y={participantMenu.y} onClose={() => { setParticipantMenu(null); setRolesExpanded(false); }}>
@@ -1643,6 +1759,8 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
       })()}
 
       <footer className="voice-controls-wrap">
+        {soundboardOpen && <SoundboardPanel guildId={channel.guildId} channelId={channel.id} socket={socket} canManage={canManageSoundboard} onClose={() => setSoundboardOpen(false)} />}
+        {soundboardNotice && <div className="soundboard-now-playing"><span>{soundboardNotice.sound.emoji || "🔊"}</span><div><small>{soundboardNotice.playedBy.displayName} tocou</small><strong>{soundboardNotice.sound.name}</strong></div><i/><i/><i/></div>}
         {audioBlocked && <div className="media-warning"><VolumeX size={15}/> O navegador bloqueou o som da chamada. <button type="button" onClick={() => void enablePlayback()}>Ativar som</button></div>}
         {microphoneProblem && <div className="media-warning microphone-runtime-warning"><MicOff size={16}/><span><strong>Nao estamos recebendo audio do seu microfone.</strong> {microphoneProblem}</span>{onOpenVoiceSettings && <button type="button" onClick={onOpenVoiceSettings}>Abrir Voz e video</button>}</div>}
         {mediaWarning && <div className="media-warning">{mediaWarning}</div>}
@@ -1654,7 +1772,7 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
             {cameraEnabled ? <Video size={21} strokeWidth={2.15}/> : <VideoOff size={21} strokeWidth={2.15}/>}
           </button>
           <div className="voice-screen-control-wrap">
-            <button className={`media-button screen-control ${screenEnabled ? "active" : ""}`} onClick={() => screenEnabled ? setScreenMenuOpen((value) => !value) : void toggleMedia("screen")} disabled={busy || status !== ConnectionState.Connected || !mediaPermissions.canShareScreen} title={!mediaPermissions.canShareScreen ? "Transmissao de tela desativada pelas permissoes do servidor" : screenEnabled ? "Opcoes da transmissao" : undefined} aria-label={screenEnabled ? "Opcoes da transmissao" : `Compartilhar tela em ${quality}`}>
+            <button className={`media-button screen-control ${screenEnabled ? "active" : ""}`} onClick={() => { setSoundboardOpen(false); if (screenEnabled) setScreenMenuOpen((value) => !value); else void toggleMedia("screen"); }} disabled={busy || status !== ConnectionState.Connected || !mediaPermissions.canShareScreen} title={!mediaPermissions.canShareScreen ? "Transmissao de tela desativada pelas permissoes do servidor" : screenEnabled ? "Opcoes da transmissao" : undefined} aria-label={screenEnabled ? "Opcoes da transmissao" : `Compartilhar tela em ${quality}`}>
               <ScreenShare size={21} strokeWidth={2.15} />
               {screenEnabled && (streamViewerCounts[currentUserId] ?? 0) > 0 && <span className="screen-viewer-count"><Eye size={11}/>{streamViewerCounts[currentUserId]}</span>}
             </button>
@@ -1664,6 +1782,7 @@ if (persistedSessionRef.current && activeRoom.state !== ConnectionState.Disconne
               <button type="button" className="danger" onClick={() => void toggleMedia("screen")} disabled={busy}><X size={15}/> Encerrar transmissao</button>
             </div>}
           </div>
+          <button className={`media-button soundboard-trigger ${soundboardOpen ? "active" : ""}`} onClick={() => { setScreenMenuOpen(false); setSoundboardOpen((value) => !value); }} disabled={status !== ConnectionState.Connected} aria-label="Abrir painel de sons" title="Sons"><Music2 size={21}/></button>
           <button className={`media-button ${deafened ? "deafened" : ""}`} onClick={toggleLocalDeafen} disabled={status !== ConnectionState.Connected} aria-label={deafened ? "Ativar audio da chamada" : "Silenciar audio da chamada"}>
             {deafened ? <VolumeX /> : <Volume2 />}
           </button>

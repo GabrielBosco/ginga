@@ -46,14 +46,15 @@ while IFS= read -r -d '' file; do
 done < "$TMP_LIST"
 ok "nenhum segredo, backup, node_modules, dist ou temporario publicado"
 
-# Marcadores conhecidos da instalacao de producao do mantenedor nao pertencem ao source publico.
-PATTERN='ginga\.opik\.net|ginga\.serveirc\.com|100\.64\.[0-9]+\.[0-9]+'
+# Endereco publico canonico pode aparecer em homepage/updater. Bloqueie apenas
+# endpoints legados e enderecos privados da instalacao do mantenedor.
+PATTERN='ginga\.serveirc\.com|100\.64\.[0-9]+\.[0-9]+'
 MATCHES=$(xargs -0 grep -nEIH -- "$PATTERN" < "$TMP_LIST" 2>/dev/null || true)
 if [[ -n "$MATCHES" ]]; then
   printf '%s\n' "$MATCHES" >&2
   fail "endpoint especifico de producao encontrado"
 fi
-ok "nenhum endpoint especifico da instalacao de producao encontrado"
+ok "nenhum endpoint legado/privado da instalacao encontrado"
 
 # Credenciais obviamente preenchidas. Placeholders do .env.example sao permitidos.
 SECRET_MATCHES=$(xargs -0 grep -nEIH -- '(SMTP_PASSWORD|POSTGRES_PASSWORD|REDIS_PASSWORD|JWT_SECRET|LIVEKIT_API_SECRET|RESEND_API_KEY)[[:space:]]*=[[:space:]]*[^[:space:]#]+' < "$TMP_LIST" 2>/dev/null \
@@ -71,6 +72,41 @@ DESKTOP_VERSION=$(node -p "require('./apps/desktop/package.json').version")
 [[ "$ROOT_VERSION" == "$API_VERSION" && "$API_VERSION" == "$WEB_VERSION" && "$WEB_VERSION" == "$DESKTOP_VERSION" ]] \
   || fail "versoes divergentes: root=$ROOT_VERSION api=$API_VERSION web=$WEB_VERSION desktop=$DESKTOP_VERSION"
 ok "Root/API/Web/Desktop sincronizados em $API_VERSION"
+
+if [[ "$API_VERSION" == "0.4.7" || "$API_VERSION" == "0.4.8" ]]; then
+  [[ -f apps/web/src/components/SoundboardPanel.tsx ]] || fail "SoundboardPanel.tsx ausente na 0.4.7"
+  [[ -f apps/web/src/lib/soundboard.ts ]] || fail "lib/soundboard.ts ausente na 0.4.7"
+  [[ -f apps/web/src/ui-v047.css ]] || fail "ui-v047.css ausente na 0.4.7"
+  [[ -f apps/web/src/ui-v047-final.css ]] || fail "ui-v047-final.css ausente na 0.4.7"
+  grep -Fq 'import "./ui-v047-final.css";' apps/web/src/main.tsx || fail "camada final responsiva 0.4.7 nao importada"
+  grep -Fq 'compactNavigation' apps/web/src/components/SettingsShell.tsx || fail "SettingsShell perdeu navegacao mobile previsivel"
+  grep -Fq 'voice:soundboard-play' apps/api/src/socket.ts || fail "socket do Soundboard ausente na 0.4.7"
+  grep -Fq 'GingaGuildSoundboardSound' apps/api/src/v090Storage.ts || fail "storage do Soundboard ausente na 0.4.7"
+  grep -Fq 'voice:soundboard-played' apps/web/src/components/PersistentVoiceAudio.tsx || fail "playback persistente do Soundboard ausente na 0.4.7"
+  grep -Fq 'SoundboardPanel' apps/web/src/components/Workspace.tsx || fail "mini-card de voz perdeu acesso ao Soundboard"
+  [[ -f apps/web/src/auth-v047.css ]] || fail "auth-v047.css ausente na 0.4.7"
+  [[ -f apps/web/src/auth-v047-r2.css ]] || fail "auth-v047-r2.css ausente na 0.4.7"
+  [[ -f apps/web/src/lib/unreadState.ts ]] || fail "persistencia de nao lidas ausente na 0.4.7"
+  grep -Fq 'import "./auth-v047.css";' apps/web/src/main.tsx || fail "camada de autenticacao 0.4.7 nao importada"
+  grep -Fq 'import "./auth-v047-r2.css";' apps/web/src/main.tsx || fail "camada responsiva AUTH R2 nao importada"
+  grep -Fq 'auth-mobile-brand' apps/web/src/components/AuthScreen.tsx || fail "login mobile perdeu cabecalho compacto"
+  grep -Fq 'loadPersistedUnreadState' apps/web/src/components/Workspace.tsx || fail "Workspace perdeu persistencia de nao lidas"
+  grep -Fq 'ginga_remember_session' apps/api/src/routes/auth.ts || fail "cookie de sessao lembrada ausente"
+  grep -Fq '/session/restore' apps/api/src/routes/auth.ts || fail "restauracao de sessao lembrada ausente"
+  grep -Fq '/login/2fa-only' apps/api/src/routes/auth.ts || fail "login de recuperacao por 2FA ausente"
+  grep -Fq 'createRememberedAuthSession' apps/api/src/authSessions.ts || fail "storage da sessao lembrada ausente"
+  grep -Fq 'Entrar com 2FA' apps/web/src/components/AuthScreen.tsx || fail "UI de login com 2FA ausente"
+  ok "Soundboard + autenticacao responsiva + nao lidas persistentes 0.4.7+ presentes"
+fi
+
+if [[ "$API_VERSION" == "0.4.8" ]]; then
+  [[ -x scripts/security-regression-check.sh ]] || fail "security-regression-check.sh ausente ou sem permissao de execucao"
+  scripts/security-regression-check.sh
+  [[ -f apps/api/src/tenantValidation.ts ]] || fail "tenantValidation.ts ausente na 0.4.8"
+  grep -Fq 'playbackMode: "CLIENT_EDGE"' apps/api/src/routes/music.ts || fail "Ginga Music perdeu playback client-edge"
+  grep -Fq 'audioProxiedByServer: false' apps/api/src/routes/music.ts || fail "Ginga Music voltou a sinalizar proxy de audio pelo servidor"
+  ok "hardening de tenant + Music client-edge 0.4.8 presentes"
+fi
 
 # Evita regressao do erro que quebrou o build Linux no electron-builder 26.15.3.
 python3 - <<'PY'

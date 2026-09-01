@@ -41,6 +41,10 @@ const schema = z.object({
   if (/CHANGE_ME/i.test(value.JWT_SECRET)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["JWT_SECRET"], message: "JWT_SECRET padrao nao e permitido" });
   if (/CHANGE_ME/i.test(value.LIVEKIT_API_KEY)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["LIVEKIT_API_KEY"], message: "LIVEKIT_API_KEY padrao nao e permitido" });
   if (/CHANGE_ME/i.test(value.LIVEKIT_API_SECRET)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["LIVEKIT_API_SECRET"], message: "LIVEKIT_API_SECRET padrao nao e permitido" });
+  const postgresPassword = process.env.POSTGRES_PASSWORD?.trim() ?? "";
+  const redisPassword = process.env.REDIS_PASSWORD?.trim() ?? "";
+  if (/CHANGE_ME/i.test(value.DATABASE_URL) || /CHANGE_ME/i.test(postgresPassword)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["DATABASE_URL"], message: "Senha padrao do PostgreSQL nao e permitida" });
+  if (/CHANGE_ME/i.test(redisPassword)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REDIS_PASSWORD"], message: "Senha padrao do Redis nao e permitida" });
 });
 
 const parsed = schema.safeParse(process.env);

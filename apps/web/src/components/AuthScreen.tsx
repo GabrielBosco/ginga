@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { BookOpen, Download, Eye, EyeOff, ExternalLink, Github, Headphones, KeyRound, MessageCircleMore, MonitorUp, ShieldCheck, UsersRound } from "lucide-react";
+import { BookOpen, CalendarDays, Download, Eye, EyeOff, FileText, Github, Headphones, KeyRound, MessageCircleMore, MonitorUp, ShieldCheck, UsersRound, WifiOff } from "lucide-react";
 import { ApiError, api, setToken } from "../lib/api";
 import type { User } from "../types";
 
@@ -9,6 +9,7 @@ interface AuthScreenProps {
 
 type Mode = "login" | "register";
 type RegisterStep = "form" | "code";
+type LoginMethod = "password" | "two-factor";
 
 type DesktopBridge = {
   isDesktop?: boolean;
@@ -19,6 +20,7 @@ type RegistrationPayload = {
   email: string;
   username: string;
   displayName: string;
+  birthDate: string;
   password: string;
 };
 
@@ -71,6 +73,11 @@ function initialMode(isDesktop: boolean): Mode {
   return window.location.pathname.toLowerCase().startsWith("/register") ? "register" : "login";
 }
 
+function initialLoginMethod(): LoginMethod {
+  if (typeof window === "undefined") return "password";
+  return new URLSearchParams(window.location.search).get("login") === "2fa" ? "two-factor" : "password";
+}
+
 function validUpdateManifest(value: unknown): value is UpdateManifest {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<UpdateManifest>;
@@ -80,6 +87,13 @@ function validUpdateManifest(value: unknown): value is UpdateManifest {
     && typeof item.version === "string"
     && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(item.version)
     && item.file === `Ginga-Setup-${item.version}-x64.exe`;
+}
+
+function linuxFormatLabel(type: string) {
+  if (type === "appimage") return "AppImage";
+  if (type === "deb") return "DEB";
+  if (type === "rpm") return "RPM";
+  return type.toUpperCase();
 }
 
 function validLinuxManifest(value: unknown, arch: "x64" | "arm64"): value is LinuxManifest {
@@ -96,10 +110,33 @@ function validLinuxManifest(value: unknown, arch: "x64" | "arm64"): value is Lin
     && item.files.some((file) => file.file === item.primary);
 }
 
+function isoDateLocal(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function maximumRegistrationBirthDate() {
+  const today = new Date();
+  return isoDateLocal(new Date(today.getFullYear() - 16, today.getMonth(), today.getDate()));
+}
+
+function isAtLeastSixteen(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const birth = new Date(year, month - 1, day);
+  if (birth.getFullYear() !== year || birth.getMonth() !== month - 1 || birth.getDate() !== day) return false;
+  const today = new Date();
+  const cutoff = new Date(today.getFullYear() - 16, today.getMonth(), today.getDate());
+  return birth.getTime() <= cutoff.getTime();
+}
+
 export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const desktop = desktopBridge();
   const isDesktop = Boolean(desktop?.isDesktop);
   const [mode, setMode] = useState<Mode>(() => initialMode(isDesktop));
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>(() => initialLoginMethod());
   const [registerStep, setRegisterStep] = useState<RegisterStep>("form");
   const [pendingRegistration, setPendingRegistration] = useState<RegistrationPayload | null>(null);
   const [challengeId, setChallengeId] = useState("");
@@ -108,11 +145,16 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [twoFactorChallengeId, setTwoFactorChallengeId] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [rememberTwoFactorDevice, setRememberTwoFactorDevice] = useState(false);
+  const [rememberSession, setRememberSession] = useState(() => {
+    try { return localStorage.getItem("ginga.remember-login") === "1"; } catch { return false; }
+  });
   const [showPassword, setShowPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [errorField, setErrorField] = useState("");
+  const [online, setOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
   const [download, setDownload] = useState<{ href: string; version: string } | null>(null);
   const [downloadState, setDownloadState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [downloadRetry, setDownloadRetry] = useState(0);
@@ -120,6 +162,26 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const authCardRef = useRef<HTMLFormElement>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
   const githubRepositoryUrl = String(import.meta.env.VITE_GITHUB_REPOSITORY_URL ?? "").trim();
+
+  useEffect(() => {
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.add("ginga-auth-dark");
+    document.body.classList.add("ginga-auth-dark");
+    return () => {
+      document.documentElement.classList.remove("ginga-auth-dark");
+      document.body.classList.remove("ginga-auth-dark");
+    };
+  }, []);
 
   useEffect(() => {
     if (isDesktop) return;
@@ -224,12 +286,31 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     setTwoFactorChallengeId("");
     setTwoFactorCode("");
     setRememberTwoFactorDevice(false);
+    setLoginMethod("password");
     resetRegistrationFlow();
     if (!isDesktop) {
       const nextPath = nextMode === "register" ? "/register" : "/";
       if (window.location.pathname !== nextPath) window.history.replaceState(null, "", nextPath);
       requestAnimationFrame(() => authCardRef.current?.querySelector<HTMLInputElement>("input")?.focus());
     }
+  }
+
+  function changeLoginMethod(next: LoginMethod) {
+    setLoginMethod(next);
+    setTwoFactorChallengeId("");
+    setTwoFactorCode("");
+    setRememberTwoFactorDevice(next === "two-factor" ? rememberSession : false);
+    setPasswordValue("");
+    setShowPassword(false);
+    setError("");
+    setErrorField("");
+    if (!isDesktop) {
+      const url = new URL(window.location.href);
+      if (next === "two-factor") url.searchParams.set("login", "2fa");
+      else url.searchParams.delete("login");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+    }
+    requestAnimationFrame(() => authCardRef.current?.querySelector<HTMLInputElement>('input[name="login"]')?.focus());
   }
 
   async function finishAuthentication(path: string, payload: object) {
@@ -241,12 +322,12 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     onAuthenticated(result);
   }
 
-  async function submitLogin(payload: { login: string; password: string }) {
+  async function submitLogin(payload: { login: string; password: string; rememberMe: boolean }) {
     const result = await api<LoginResult>("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
     if ("twoFactorRequired" in result && result.twoFactorRequired) {
       setTwoFactorChallengeId(result.challengeId);
       setTwoFactorCode("");
-      setRememberTwoFactorDevice(false);
+      setRememberTwoFactorDevice(payload.rememberMe);
       setPasswordValue("");
       return;
     }
@@ -276,6 +357,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         email: payload.email,
         username: payload.username,
         displayName: payload.displayName,
+        birthDate: payload.birthDate,
         password: payload.password
       })
     });
@@ -299,12 +381,32 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         if (twoFactorChallengeId) {
           const code = twoFactorCode.trim();
           if (code.length < 6) throw new Error("Digite o codigo do autenticador ou um codigo de recuperacao.");
-          await finishAuthentication("/api/auth/login/2fa", { challengeId: twoFactorChallengeId, code, rememberDevice: rememberTwoFactorDevice });
+          await finishAuthentication("/api/auth/login/2fa", {
+            challengeId: twoFactorChallengeId,
+            code,
+            rememberDevice: rememberTwoFactorDevice,
+            rememberSession
+          });
           return;
         }
+        if (loginMethod === "two-factor") {
+          const login = String(form.get("login") ?? "").trim();
+          const code = twoFactorCode.trim();
+          if (login.length < 3) throw new Error("Digite seu usuario ou e-mail.");
+          if (code.length < 6) throw new Error("Digite o codigo do autenticador ou um codigo de recuperacao.");
+          await finishAuthentication("/api/auth/login/2fa-only", {
+            login,
+            code,
+            rememberMe: rememberSession,
+            rememberDevice: rememberTwoFactorDevice
+          });
+          return;
+        }
+        try { localStorage.setItem("ginga.remember-login", rememberSession ? "1" : "0"); } catch { /* storage indisponivel */ }
         await submitLogin({
           login: String(form.get("login") ?? "").trim(),
-          password: String(form.get("password") ?? "")
+          password: String(form.get("password") ?? ""),
+          rememberMe: rememberSession
         });
         return;
       }
@@ -325,8 +427,13 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         email: String(form.get("email") ?? "").trim(),
         username: String(form.get("username") ?? "").trim(),
         displayName: String(form.get("displayName") ?? "").trim(),
+        birthDate: String(form.get("birthDate") ?? "").trim(),
         password: String(form.get("password") ?? "")
       };
+      if (!isAtLeastSixteen(payload.birthDate)) {
+        setErrorField("birthDate");
+        throw new Error("Voce precisa ter pelo menos 16 anos para criar uma conta.");
+      }
       if (payload.password.length < 8) {
         setErrorField("password");
         throw new Error("Sua senha precisa ter pelo menos 8 caracteres.");
@@ -351,6 +458,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           email: pendingRegistration.email,
           username: pendingRegistration.username,
           displayName: pendingRegistration.displayName,
+          birthDate: pendingRegistration.birthDate,
           password: pendingRegistration.password
         })
       });
@@ -374,25 +482,53 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   }
 
   const form = (
-    <form ref={authCardRef} className="auth-card" onSubmit={submit}>
-      <img className="auth-app-icon-image" src="/ginga-mark.svg" alt="" />
+    <form ref={authCardRef} className="auth-card auth-card-v2" onSubmit={submit} noValidate={false}>
       <div className="auth-heading">
-        <h2>{mode === "login" ? twoFactorChallengeId ? "Verificacao em duas etapas" : "Bem-vindo de volta" : registerStep === "code" ? "Confirme seu e-mail" : "Crie sua conta"}</h2>
-        <p>{mode === "login" ? twoFactorChallengeId ? "Abra seu aplicativo autenticador e confirme este acesso." : "Entre para continuar no Ginga." : registerStep === "code" ? `Enviamos um codigo para ${pendingRegistration?.email ?? "seu e-mail"}.` : "Seu usuario, seu espaco e suas conversas em um so lugar."}</p>
+        <h2>{mode === "login" ? twoFactorChallengeId ? "Confirme que e voce" : loginMethod === "two-factor" ? "Entrar com 2FA" : "Bem-vindo de volta" : registerStep === "code" ? "Confirme seu e-mail" : "Crie sua conta"}</h2>
+        <p>{mode === "login" ? twoFactorChallengeId ? "Use o autenticador ou um codigo de recuperacao para concluir o acesso." : loginMethod === "two-factor" ? "Esqueceu a senha? Se o 2FA estiver ativo, voce pode entrar usando seu codigo do autenticador ou um codigo de recuperacao." : "Entre para continuar suas conversas exatamente de onde parou." : registerStep === "code" ? `Enviamos um codigo para ${pendingRegistration?.email ?? "seu e-mail"}.` : "Seu usuario, seu espaco e suas conversas em um so lugar."}</p>
       </div>
+
+      {!online && <div className="auth-network-warning" role="status"><WifiOff size={17}/><div><strong>Sem conexao com a rede</strong><span>Seus dados preenchidos ficam nesta tela. Reconecte a internet e tente novamente.</span></div></div>}
 
       {mode === "register" && registerStep === "form" && (
         <>
           <label className={errorField === "displayName" ? "field-invalid" : ""}>Nome exibido<input name="displayName" required minLength={2} maxLength={32} placeholder="Como voce quer aparecer" autoComplete="name" /></label>
           <label className={errorField === "username" ? "field-invalid" : ""}>Nome de usuario<input name="username" required minLength={3} maxLength={24} placeholder="seu_usuario" autoComplete="username" /><small className="auth-field-hint">3 a 24 caracteres. Letras, numeros, ponto, traco e _.</small></label>
           <label className={errorField === "email" ? "field-invalid" : ""}>E-mail<input name="email" type="email" required maxLength={160} placeholder="voce@exemplo.com" autoComplete="email" /><small className="auth-field-hint">Use um e-mail real: voce precisara confirmar o codigo recebido.</small></label>
+          <label className={errorField === "birthDate" ? "field-invalid" : ""}>Data de nascimento<span className="auth-birth-date-field"><CalendarDays size={16}/><input name="birthDate" type="date" required max={maximumRegistrationBirthDate()} autoComplete="bday" onChange={() => { if (errorField === "birthDate") setErrorField(""); }}/></span><small className="auth-field-hint">O Ginga e destinado a pessoas com 16 anos ou mais.</small></label>
         </>
       )}
 
-      {mode === "login" && !twoFactorChallengeId && <label>Usuario ou e-mail<input name="login" required placeholder="usuario ou e-mail" autoComplete="username" /></label>}
+      {mode === "login" && !twoFactorChallengeId && <label>Usuario ou e-mail<input name="login" required placeholder="seu usuario ou e-mail" autoComplete="username" autoFocus /></label>}
 
-      {((mode === "login" && !twoFactorChallengeId) || (mode === "register" && registerStep === "form")) && (
-        <label className={errorField === "password" ? "field-invalid" : ""}>Senha<span className="password-field"><input name="password" type={showPassword ? "text" : "password"} required minLength={mode === "register" ? 8 : 1} maxLength={128} value={passwordValue} onChange={(event) => { setPasswordValue(event.target.value); if (errorField === "password") setErrorField(""); }} placeholder="••••••••" autoComplete={mode === "login" ? "current-password" : "new-password"} /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label="Mostrar ou ocultar senha">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span>{mode === "register" && registerStep === "form" && <span className={`password-requirement ${passwordValue.length >= 8 ? "ok" : ""}`}><ShieldCheck size={14}/><span>{passwordValue.length >= 8 ? "O Ginga tambem verifica se esta senha ja apareceu em vazamentos" : `Minimo de 8 caracteres (${passwordValue.length}/8)`}</span></span>}</label>
+      {((mode === "login" && !twoFactorChallengeId && loginMethod === "password") || (mode === "register" && registerStep === "form")) && (
+        <label className={errorField === "password" ? "field-invalid" : ""}>Senha<span className="password-field"><input name="password" type={showPassword ? "text" : "password"} required minLength={mode === "register" ? 8 : 1} maxLength={128} value={passwordValue} onChange={(event) => { setPasswordValue(event.target.value); if (errorField === "password") setErrorField(""); }} onKeyDown={(event) => setCapsLockOn(event.getModifierState("CapsLock"))} onKeyUp={(event) => setCapsLockOn(event.getModifierState("CapsLock"))} onBlur={() => setCapsLockOn(false)} placeholder="••••••••" autoComplete={mode === "login" ? "current-password" : "new-password"} /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span>{capsLockOn && <small className="auth-caps-warning">Caps Lock esta ativado.</small>}{mode === "register" && registerStep === "form" && <span className={`password-requirement ${passwordValue.length >= 8 ? "ok" : ""}`}><ShieldCheck size={14}/><span>{passwordValue.length >= 8 ? "A senha tambem e comparada com bases conhecidas de vazamentos." : `Minimo de 8 caracteres (${passwordValue.length}/8)`}</span></span>}</label>
+      )}
+
+      {mode === "login" && !twoFactorChallengeId && loginMethod === "password" && (
+        <label className="auth-remember-session">
+          <input type="checkbox" checked={rememberSession} onChange={(event) => {
+            setRememberSession(event.target.checked);
+            try { localStorage.setItem("ginga.remember-login", event.target.checked ? "1" : "0"); } catch { /* storage indisponivel */ }
+          }} />
+          <span><strong>Continuar conectado</strong><small>Mantem esta sessao neste dispositivo por ate 30 dias, com renovacao segura.</small></span>
+        </label>
+      )}
+
+      {mode === "login" && !twoFactorChallengeId && loginMethod === "two-factor" && (
+        <div className="verification-box two-factor-login-box two-factor-passwordless-box">
+          <span className="two-factor-login-icon"><KeyRound size={20}/></span>
+          <label>Codigo do autenticador ou recuperacao<input className="verification-code-input" value={twoFactorCode} onChange={(event) => setTwoFactorCode(event.target.value.replace(/\s+/g, "").slice(0, 32))} autoComplete="one-time-code" placeholder="000000 ou XXXX-XXXX-XXXX" required /></label>
+          <label className="auth-remember-session compact">
+            <input type="checkbox" checked={rememberSession} onChange={(event) => setRememberSession(event.target.checked)} />
+            <span><strong>Continuar conectado</strong><small>Restaura sua sessao automaticamente neste dispositivo.</small></span>
+          </label>
+          <label className="auth-remember-device compact">
+            <input type="checkbox" checked={rememberTwoFactorDevice} onChange={(event) => setRememberTwoFactorDevice(event.target.checked)} />
+            <span><strong>Confiar neste dispositivo</strong><small>Nao pedir 2FA novamente por 30 dias quando voce usar sua senha.</small></span>
+          </label>
+          <div className="verification-hint warning"><ShieldCheck size={16}/><span>Este fluxo usa o 2FA como recuperacao de acesso. Use apenas em um dispositivo seu. Codigos de recuperacao sao descartados depois do uso.</span></div>
+        </div>
       )}
 
       {mode === "login" && twoFactorChallengeId && (
@@ -401,7 +537,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           <label>Codigo do autenticador ou recuperacao<input className="verification-code-input" value={twoFactorCode} onChange={(event) => setTwoFactorCode(event.target.value.replace(/\s+/g, "").slice(0, 32))} autoComplete="one-time-code" placeholder="000000 ou codigo de recuperacao" required autoFocus /></label>
           <label className="auth-remember-device">
             <input type="checkbox" checked={rememberTwoFactorDevice} onChange={(event) => setRememberTwoFactorDevice(event.target.checked)} />
-            <span><strong>Lembrar deste dispositivo</strong><small>Nao pedir o codigo 2FA novamente por 30 dias neste navegador.</small></span>
+            <span><strong>Confiar neste dispositivo</strong><small>Nao pedir o codigo 2FA novamente por 30 dias neste navegador.</small></span>
           </label>
           <div className="verification-hint"><ShieldCheck size={16}/><span>Se perdeu o autenticador, use um dos codigos de recuperacao salvos quando ativou o 2FA.</span></div>
         </div>
@@ -414,8 +550,8 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         </div>
       )}
 
-      {error && <div className="form-error">{error}</div>}
-      <button className="primary-button auth-submit" disabled={loading}>{loading ? "Aguarde..." : mode === "login" ? twoFactorChallengeId ? "Confirmar acesso" : "Entrar" : registerStep === "code" ? "Confirmar e criar conta" : registrationPolicy?.required === false ? "Criar conta" : "Enviar codigo por e-mail"}</button>
+      {error && <div className="form-error" role="alert" aria-live="polite">{error}</div>}
+      <button className="primary-button auth-submit" disabled={loading}>{loading ? "Aguarde..." : mode === "login" ? twoFactorChallengeId ? "Confirmar acesso" : loginMethod === "two-factor" ? "Entrar com 2FA" : "Entrar" : registerStep === "code" ? "Confirmar e criar conta" : registrationPolicy?.required === false ? "Criar conta" : "Enviar codigo por e-mail"}</button>
 
       {mode === "register" && registerStep === "code" && (
         <div className="verification-actions">
@@ -426,76 +562,100 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
       {mode === "login" && twoFactorChallengeId && <div className="verification-actions"><button type="button" className="auth-link-button muted" onClick={() => { setTwoFactorChallengeId(""); setTwoFactorCode(""); setRememberTwoFactorDevice(false); setError(""); }}>Voltar para usuario e senha</button></div>}
 
+      {mode === "login" && !twoFactorChallengeId && (
+        <div className="auth-recovery-actions auth-aux-links">
+          {loginMethod === "password" ? (
+            <>
+              <button type="button" className="auth-aux-link" onClick={() => changeLoginMethod("two-factor")}><KeyRound size={14}/><span>Entrar com 2FA</span></button>
+              {isDesktop ? <button type="button" className="auth-aux-link" onClick={() => void desktop?.openExternalPath?.("/reset-password")}><ShieldCheck size={14}/><span>Redefinir senha</span></button> : <a className="auth-aux-link" href="/reset-password"><ShieldCheck size={14}/><span>Redefinir senha</span></a>}
+            </>
+          ) : (
+            <button type="button" className="auth-aux-link auth-aux-link-wide" onClick={() => changeLoginMethod("password")}><KeyRound size={14}/><span>Usar usuario e senha</span></button>
+          )}
+        </div>
+      )}
+
       {isDesktop ? (
         <div className="auth-links">
           <button type="button" className="auth-link-button" onClick={() => void desktop?.openExternalPath?.("/register")}>Criar conta no site</button>
-          <button type="button" className="auth-link-button muted" onClick={() => void desktop?.openExternalPath?.("/reset-password")}>Esqueci minha senha</button>
         </div>
       ) : mode === "login" ? (
-        <>
-          <p className="auth-switch">Esqueceu a senha? <a href="/reset-password">Redefinir senha</a></p>
-          <p className="auth-switch">Ainda nao tem conta? <button type="button" onClick={() => changeMode("register")}>Criar conta</button></p>
-        </>
+        <p className="auth-switch">Ainda nao tem conta? <button type="button" onClick={() => changeMode("register")}>Criar conta</button></p>
       ) : (
         <p className="auth-switch">Ja tem uma conta? <button type="button" onClick={() => changeMode("login")}>Entrar</button></p>
       )}
+
+      <div className="auth-legal-links" aria-label="Informacoes legais">
+        {mode === "register" && registerStep === "form" && <p>Ao criar a conta, voce confirma que tem pelo menos 16 anos e concorda com os documentos abaixo.</p>}
+        <span>
+          {isDesktop ? <button type="button" onClick={() => void desktop?.openExternalPath?.("/terms")}><FileText size={13}/> Termos de Uso</button> : <a href="/terms"><FileText size={13}/> Termos de Uso</a>}
+          {isDesktop ? <button type="button" onClick={() => void desktop?.openExternalPath?.("/privacy")}><ShieldCheck size={13}/> Politica de Privacidade</button> : <a href="/privacy"><ShieldCheck size={13}/> Politica de Privacidade</a>}
+        </span>
+      </div>
     </form>
   );
 
   if (isDesktop) {
     return (
-      <main className="auth-page auth-simple auth-desktop">
+      <main className="auth-page auth-simple auth-desktop auth-v047-r2 auth-v047-r3 auth-v048-redesign">
+        <div className="auth-desktop-brand" aria-label="Ginga"><img src="/ginga-mark.svg" alt=""/><strong>Ginga</strong></div>
         <section className="auth-panel">{form}</section>
       </main>
     );
   }
 
   return (
-    <main className="auth-page auth-site auth-site-product">
-      <section className="auth-hero">
-        <header className="auth-site-nav">
-          <div className="brand-lockup"><img src="/ginga-mark.svg" alt="" /><span>Ginga</span></div>
-          <nav>
-            <a className="site-nav-link" href="/knowledge"><BookOpen size={15}/> Base de conhecimento</a>
-            {githubRepositoryUrl && <a className="site-nav-link" href={githubRepositoryUrl} target="_blank" rel="noreferrer"><Github size={15}/> GitHub</a>}
-            {download ? <a className="site-download-link" href={download.href} title={`Ginga ${download.version}`}><Download size={16} /> Baixar</a> : downloadState === "loading" ? <span className="site-download-link disabled"><Download size={16} /> Procurando...</span> : <button className="site-download-link site-download-retry" type="button" onClick={retryDownload}><Download size={16} /> Tentar novamente</button>}
-            <button className="site-login-button" type="button" onClick={focusLogin}>Entrar</button>
+    <main className="auth-page auth-site auth-site-product auth-v047-r2 auth-v047-r3 auth-v048-redesign">
+      <section className="auth-hero auth-product-side">
+        <header className="auth-product-topbar">
+          <div className="auth-brand-lockup"><img src="/ginga-mark.svg" alt=""/><strong>Ginga</strong></div>
+          <nav className="auth-product-nav" aria-label="Links publicos">
+            <a href="/knowledge"><BookOpen size={15}/> Ajuda</a>
+            {githubRepositoryUrl && <a href={githubRepositoryUrl} target="_blank" rel="noreferrer"><Github size={15}/> GitHub</a>}
+            {download ? <a href={download.href} title={`Windows ${download.version}`}><Download size={15}/> Windows</a> : downloadState === "loading" ? <span><Download size={15}/> Verificando</span> : <button type="button" onClick={retryDownload}><Download size={15}/> Atualizar</button>}
           </nav>
         </header>
 
-        <div className="hero-copy">
-          <span className="eyebrow">GINGA</span>
-          <h1>Converse do seu jeito.</h1>
-          <p>Texto, voz, comunidades e compartilhamento de tela em um so lugar. Rapido, moderno e feito para manter todo mundo conectado.</p>
-          <div className="site-hero-actions">
-            {download ? <a className="primary-button hero-download-button" href={download.href} title={`Baixar Ginga ${download.version}`}><Download size={18} /> Baixar para Windows</a> : downloadState === "loading" ? <button className="primary-button hero-download-button" type="button" disabled><Download size={18} /> Procurando ultima versao...</button> : <button className="primary-button hero-download-button" type="button" onClick={retryDownload}><Download size={18} /> Tentar download novamente</button>}
-            {linuxDownloads.x64 && <div className="linux-download-options"><a className="secondary-button hero-linux-download-button" href={linuxDownloads.x64.primaryHref} title={`Ginga ${linuxDownloads.x64.version} Linux x64`}><Download size={18}/> Linux x64</a><span className="linux-download-formats">{linuxDownloads.x64.files.map((file)=><a key={file.file} href={file.href}>{file.type === "appimage" ? "AppImage" : `.${file.type}`}</a>)}</span></div>}
-            {linuxDownloads.arm64 && <div className="linux-download-options"><a className="secondary-button hero-linux-download-button" href={linuxDownloads.arm64.primaryHref} title={`Ginga ${linuxDownloads.arm64.version} Linux ARM64`}><Download size={18}/> Linux ARM64</a><span className="linux-download-formats">{linuxDownloads.arm64.files.map((file)=><a key={file.file} href={file.href}>{file.type === "appimage" ? "AppImage" : `.${file.type}`}</a>)}</span></div>}
-            <button type="button" className="secondary-button hero-login-button" onClick={focusLogin}>Abrir no navegador</button>
-            {githubRepositoryUrl && <a className="secondary-button hero-github-button" href={githubRepositoryUrl} target="_blank" rel="noreferrer"><Github size={17}/> Abrir repositorio <ExternalLink size={13}/></a>}
+        <div className="auth-product-content">
+          <div className="auth-product-copy">
+            <h1>Converse do seu jeito.</h1>
+            <p>Texto, voz e compartilhamento de tela em um lugar simples de usar, sem tirar voce do que esta fazendo.</p>
           </div>
-          <div className="feature-row auth-product-features">
-            <span><MessageCircleMore size={15} /> Mensagens diretas</span>
-            <span><Headphones size={15} /> Canais de voz</span>
-            <span><MonitorUp size={15} /> Compartilhamento de tela</span>
-            <span><UsersRound size={15} /> Comunidades</span>
-            <span><Github size={15} /> Open Source</span>
+
+          <div className="auth-chat-mock" aria-label="Previa de uma conversa">
+            <div className="auth-chat-mock-bar"><Headphones size={15}/><span>#estudio-geral</span><small>2 na chamada</small></div>
+            <div className="auth-chat-mock-body">
+              <div className="auth-chat-message">
+                <span className="auth-chat-avatar violet">J</span>
+                <div><strong>Jenifer</strong><p>bora subir a call, terminei os prints do layout</p></div>
+              </div>
+              <div className="auth-chat-message">
+                <span className="auth-chat-avatar amber">B</span>
+                <div><strong>Bosco</strong><p>entrando agora, vou compartilhar a tela</p></div>
+              </div>
+              <div className="auth-chat-typing"><span>Jenifer esta digitando</span><i/><i/><i/></div>
+            </div>
           </div>
         </div>
 
-        <div className="auth-product-preview" aria-label="Recursos do Ginga">
-          <div className="auth-preview-channel"><span>VOZ</span><strong><Headphones size={15}/> Bate-papo</strong><small>Converse, compartilhe a tela e organize sua comunidade.</small></div>
-          <div className="auth-preview-divider" />
-          <div className="auth-preview-items"><span><MessageCircleMore size={15}/><b>Texto</b><small>Mensagens e arquivos</small></span><span><MonitorUp size={15}/><b>Tela</b><small>Compartilhamento em voz</small></span><span><UsersRound size={15}/><b>Comunidade</b><small>Servidores e canais</small></span></div>
-          <a href="/knowledge"><BookOpen size={15}/> Aprender a usar o Ginga <ExternalLink size={12}/></a>
+        <div className="auth-capability-band" aria-label="Recursos principais">
+          <div><MessageCircleMore size={18}/><span><strong>Mensagens diretas</strong><small>Historico sincronizado em qualquer dispositivo.</small></span></div>
+          <div><Headphones size={18}/><span><strong>Canais de voz</strong><small>Entre e saia da conversa sem friccao.</small></span></div>
+          <div><MonitorUp size={18}/><span><strong>Tela compartilhada</strong><small>Mostre o que importa sem plugin adicional.</small></span></div>
+          <div><UsersRound size={18}/><span><strong>Comunidades</strong><small>Organize servidores, canais e pessoas.</small></span></div>
         </div>
+
+        {(linuxDownloads.x64 || linuxDownloads.arm64) && (
+          <div className="auth-linux-strip">
+            {linuxDownloads.x64 && <span><strong>Linux x64</strong>{linuxDownloads.x64.files.map((file) => <a key={file.file} href={file.href}>{linuxFormatLabel(file.type)}</a>)}</span>}
+            {linuxDownloads.arm64 && <span><strong>Linux ARM64</strong>{linuxDownloads.arm64.files.map((file) => <a key={file.file} href={file.href}>{linuxFormatLabel(file.type)}</a>)}</span>}
+          </div>
+        )}
       </section>
 
-      <section className="auth-panel auth-site-panel">
+      <section className="auth-panel auth-site-panel auth-login-side">
+        <div className="auth-mobile-brand" aria-label="Ginga"><span className="auth-mobile-brand-lockup"><img src="/ginga-mark.svg" alt=""/><strong>Ginga</strong></span></div>
         {form}
-        {download && <a className="auth-site-mobile-download" href={download.href}><Download size={16} /> Baixar Ginga {download.version} para Windows</a>}
-        {linuxDownloads.x64 && <a className="auth-site-mobile-download" href={linuxDownloads.x64.primaryHref}><Download size={16}/> Baixar Ginga {linuxDownloads.x64.version} para Linux x64</a>}
-        <small className="auth-site-footer">Ginga · Open Source</small>
       </section>
     </main>
   );

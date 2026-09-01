@@ -57,7 +57,7 @@ Depois substitua o conteúdo do clone pela árvore limpa, preservando somente `.
 ```bash
 rsync -av --delete \
   --exclude='.git/' \
-  /caminho/Ginga-v0.4.5-GITHUB-READY/ \
+  /caminho/Ginga-v0.4.8-GITHUB-READY/ \
   /caminho/do/clone/ginga/
 ```
 
@@ -75,20 +75,20 @@ Commit e push:
 
 ```bash
 git add -A
-git commit -m "release: Ginga v0.4.5"
+git commit -m "release: Ginga v0.4.8"
 git push origin main
 ```
 
-## Tag 0.4.5
+## Tag 0.4.8
 
 Crie a tag somente depois que o commit correto estiver em `main`:
 
 ```bash
-git tag -a v0.4.5 -m "Ginga v0.4.5"
-git push origin v0.4.5
+git tag -a v0.4.8 -m "Ginga v0.4.8"
+git push origin v0.4.8
 ```
 
-Se `v0.4.5` já existir, não sobrescreva uma tag pública sem revisar o histórico.
+Se `v0.4.8` já existir, não sobrescreva uma tag pública sem revisar o histórico.
 
 ## O que não entra no Git
 
@@ -107,15 +107,15 @@ A chave **pública** `apps/desktop/update-public.pem` pode e deve acompanhar o c
 
 Não versione instaladores no histórico do Git. Publique-os em **Releases** e/ou no feed `/updates/` do servidor.
 
-Para a `0.4.5`, os artefatos Desktop esperados são:
+Para a `0.4.8`, os artefatos Desktop esperados são:
 
 ```text
-Ginga-Setup-0.4.5-x64.exe
-Ginga-0.4.5-linux-x64.AppImage
-Ginga-0.4.5-linux-x64.deb
-Ginga-0.4.5-linux-x64.rpm
-Ginga-0.4.5-linux-arm64.AppImage
-Ginga-0.4.5-linux-arm64.deb
+Ginga-Setup-0.4.8-x64.exe
+Ginga-0.4.8-linux-x64.AppImage
+Ginga-0.4.8-linux-x64.deb
+Ginga-0.4.8-linux-x64.rpm
+Ginga-0.4.8-linux-arm64.AppImage
+Ginga-0.4.8-linux-arm64.deb
 ```
 
 ## Configurações recomendadas no GitHub

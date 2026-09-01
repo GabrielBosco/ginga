@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Allow: /knowledge
+Allow: /terms
+Allow: /privacy
+Disallow: /api/
+Disallow: /admin
+Disallow: /developers
+Disallow: /oauth2/
+Disallow: /reset-password
+Disallow: /invite/
+
+Sitemap: https://ginga.opik.net:3090/sitemap.xml

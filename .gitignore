@@ -19,6 +19,14 @@ dist/
 **/dist/
 out/
 **/out/
+build/
+**/build/
+.next/
+**/.next/
+coverage/
+**/coverage/
+.cache/
+**/.cache/
 .vite/
 *.tsbuildinfo
 *.log

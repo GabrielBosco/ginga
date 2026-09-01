@@ -5,13 +5,17 @@ import rateLimit from "express-rate-limit";
 import nodemailer from "nodemailer";
 import { z } from "zod";
 import { publicUser, signToken } from "../auth.js";
-import { createAuthSession, listAuthSessions, replaceCurrentAuthSession, revokeAllAuthSessions, revokeAuthSession } from "../authSessions.js";
+import {
+  createAuthSession, createRememberedAuthSession, listAuthSessions, replaceCurrentAuthSession,
+  restoreRememberedAuthSession, revokeAllAuthSessions, revokeAuthSession, revokeRememberedAuthSession
+} from "../authSessions.js";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { asyncHandler, HttpError } from "../errors.js";
 import { requireAuth } from "../middleware.js";
 import { hashPassword, verifyPassword } from "../password.js";
 import { randomColor } from "../utils.js";
+import { birthDateInputSchema, birthDateToDate } from "../agePolicy.js";
 import { assertDeliverableEmail, assertPasswordNotPwned } from "../credentialSecurity.js";
 import {
   createTrustedTwoFactorDevice, createTwoFactorLoginChallenge, createTwoFactorSetup, disableTwoFactor, enableTwoFactor,
@@ -22,6 +26,7 @@ import {
 export const authRouter = Router();
 
 const TRUSTED_2FA_COOKIE = "ginga_trusted_2fa";
+const REMEMBER_SESSION_COOKIE = "ginga_remember_session";
 
 function readCookie(req: Request, name: string) {
   const header = String(req.headers.cookie || "");
@@ -60,6 +65,42 @@ function clearTrustedTwoFactorCookie(req: Request, res: Response) {
   });
 }
 
+function setRememberSessionCookie(req: Request, res: Response, token: string, expiresInSeconds: number) {
+  res.cookie(REMEMBER_SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: requestUsesHttps(req),
+    path: "/api/auth",
+    maxAge: expiresInSeconds * 1000
+  });
+}
+
+function clearRememberSessionCookie(req: Request, res: Response) {
+  res.clearCookie(REMEMBER_SESSION_COOKIE, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: requestUsesHttps(req),
+    path: "/api/auth"
+  });
+}
+
+async function createLoginSession(userId: string, req: Request, res: Response, rememberMe: boolean) {
+  // Se este navegador ja possuia uma sessao persistente, revoga o segredo
+  // anterior antes de trocar o modo de login. Isso evita refresh tokens
+  // abandonados continuarem validos depois que o cookie foi substituido.
+  const previousRefreshToken = readCookie(req, REMEMBER_SESSION_COOKIE);
+  if (previousRefreshToken) {
+    await revokeRememberedAuthSession(previousRefreshToken).catch(() => false);
+  }
+  if (!rememberMe) {
+    clearRememberSessionCookie(req, res);
+    return createAuthSession(userId, req);
+  }
+  const remembered = await createRememberedAuthSession(userId, req);
+  setRememberSessionCookie(req, res, remembered.refreshToken, remembered.expiresInSeconds);
+  return remembered.sessionId;
+}
+
 function requestUserAgent(req: Request) {
   return String(req.header("user-agent") || "Dispositivo desconhecido");
 }
@@ -89,12 +130,30 @@ const sensitiveActionLimiter = rateLimit({
   message: { error: "Muitas tentativas. Aguarde alguns minutos." }
 });
 
+const rememberedSessionLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 90,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: "Muitas tentativas de restaurar a sessao. Aguarde alguns minutos." }
+});
+
 const twoFactorLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   limit: 30,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Muitas tentativas de verificacao em duas etapas. Aguarde alguns minutos." }
+});
+
+const twoFactorPasswordlessLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 8,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: "Muitas tentativas de acesso com 2FA. Aguarde alguns minutos." }
 });
 
 const passwordPolicyLimiter = rateLimit({
@@ -253,17 +312,27 @@ const registerSchema = z.object({
   email: z.string().trim().email("Digite um e-mail valido.").max(160, "O e-mail e muito longo.").transform((value) => value.toLowerCase()),
   username: z.string().trim().min(3, "O nome de usuario precisa ter pelo menos 3 caracteres.").max(24, "O nome de usuario pode ter no maximo 24 caracteres.").regex(/^[a-zA-Z0-9_.-]+$/, "Use apenas letras, numeros, ponto, traco ou underline no usuario.").transform((value) => value.toLowerCase()),
   displayName: z.string().trim().min(2, "O nome exibido precisa ter pelo menos 2 caracteres.").max(32, "O nome exibido pode ter no maximo 32 caracteres."),
+  birthDate: birthDateInputSchema.transform(birthDateToDate),
   password: z.string().min(8, "A senha precisa ter pelo menos 8 caracteres.").max(128, "A senha e muito longa.")
 });
 
 const loginSchema = z.object({
   login: z.string().trim().min(3).max(160).transform((value) => value.toLowerCase()),
-  password: z.string().min(1).max(128)
+  password: z.string().min(1).max(128),
+  rememberMe: z.boolean().optional().default(false)
 });
 
 const twoFactorLoginSchema = z.object({
   challengeId: z.string().trim().min(32).max(200),
   code: z.string().trim().min(6).max(32),
+  rememberDevice: z.boolean().optional().default(false),
+  rememberSession: z.boolean().optional().default(false)
+});
+
+const twoFactorPasswordlessLoginSchema = z.object({
+  login: z.string().trim().min(3).max(160).transform((value) => value.toLowerCase()),
+  code: z.string().trim().min(6).max(32),
+  rememberMe: z.boolean().optional().default(false),
   rememberDevice: z.boolean().optional().default(false)
 });
 
@@ -321,6 +390,7 @@ authRouter.post("/register", registerLimiter, asyncHandler(async (req, res) => {
           email: data.email,
           username: data.username,
           displayName: data.displayName,
+          birthDate: data.birthDate,
           passwordHash,
           avatarColor: randomColor(),
           systemRole: shouldOwnPlatform ? "PLATFORM_ADMIN" : "USER",
@@ -390,7 +460,7 @@ authRouter.post("/login", loginLimiter, asyncHandler(async (req, res) => {
       const trusted = await verifyTrustedTwoFactorDevice(updated.id, trustedToken, requestUserAgent(req));
       if (trusted) {
         const trustedLogin = await prisma.user.update({ where: { id: updated.id }, data: { lastLoginAt: new Date() } });
-        const sessionId = await createAuthSession(trustedLogin.id, req);
+        const sessionId = await createLoginSession(trustedLogin.id, req, res, data.rememberMe);
         return res.json({ token: signToken(trustedLogin, sessionId), user: publicUser(trustedLogin), twoFactorTrustedDevice: true });
       }
       clearTrustedTwoFactorCookie(req, res);
@@ -399,7 +469,7 @@ authRouter.post("/login", loginLimiter, asyncHandler(async (req, res) => {
     return res.json({ twoFactorRequired: true, ...challenge });
   }
 
-  const sessionId = await createAuthSession(updated.id, req);
+  const sessionId = await createLoginSession(updated.id, req, res, data.rememberMe);
   return res.json({ token: signToken(updated, sessionId), user: publicUser(updated) });
 }));
 
@@ -415,8 +485,52 @@ authRouter.post("/login/2fa", twoFactorLimiter, asyncHandler(async (req, res) =>
   } else {
     clearTrustedTwoFactorCookie(req, res);
   }
-  const sessionId = await createAuthSession(updated.id, req);
+  const sessionId = await createLoginSession(updated.id, req, res, data.rememberSession);
   return res.json({ token: signToken(updated, sessionId), user: publicUser(updated) });
+}));
+
+authRouter.post("/login/2fa-only", twoFactorPasswordlessLimiter, asyncHandler(async (req, res) => {
+  const data = twoFactorPasswordlessLoginSchema.parse(req.body);
+  const user = await prisma.user.findFirst({
+    where: { accountType: "HUMAN", OR: [{ email: data.login }, { username: data.login }] }
+  });
+  // Resposta generica: nao informa se a conta existe ou se possui 2FA.
+  if (!user || user.accountDisabled || !(await isTwoFactorEnabled(user.id))) {
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    throw new HttpError(401, "Conta ou codigo de autenticacao invalidos.");
+  }
+  if (user.loginLockedUntil && user.loginLockedUntil.getTime() > Date.now()) {
+    throw new HttpError(429, accountLockedMessage(user.loginLockedUntil));
+  }
+  const verified = await verifyTwoFactorCode(user.id, data.code);
+  if (!verified.ok) throw new HttpError(401, "Conta ou codigo de autenticacao invalidos.");
+  const updated = await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), failedLoginAttempts: 0, loginLockedUntil: null } });
+  if (data.rememberDevice) {
+    const trusted = await createTrustedTwoFactorDevice(updated.id, requestUserAgent(req));
+    setTrustedTwoFactorCookie(req, res, trusted.token, trusted.expiresInSeconds);
+  } else {
+    clearTrustedTwoFactorCookie(req, res);
+  }
+  const sessionId = await createLoginSession(updated.id, req, res, data.rememberMe);
+  return res.json({ token: signToken(updated, sessionId), user: publicUser(updated), authenticatedWithTwoFactorOnly: true });
+}));
+
+authRouter.post("/session/restore", rememberedSessionLimiter, asyncHandler(async (req, res) => {
+  const refreshToken = readCookie(req, REMEMBER_SESSION_COOKIE);
+  if (!refreshToken) throw new HttpError(401, "Nenhuma sessao lembrada neste dispositivo.");
+  const restored = await restoreRememberedAuthSession(refreshToken, req);
+  if (!restored) {
+    clearRememberSessionCookie(req, res);
+    throw new HttpError(401, "A sessao lembrada expirou ou foi revogada.");
+  }
+  const user = await prisma.user.findUnique({ where: { id: restored.userId } });
+  if (!user || user.accountType !== "HUMAN" || user.accountDisabled) {
+    await revokeAuthSession(restored.userId, restored.sessionId).catch(() => false);
+    clearRememberSessionCookie(req, res);
+    throw new HttpError(401, "Conta indisponivel.");
+  }
+  setRememberSessionCookie(req, res, restored.refreshToken, restored.expiresInSeconds);
+  return res.json({ token: signToken(user, restored.sessionId), user: publicUser({ ...user, email: user.email }), remembered: true });
 }));
 
 authRouter.get("/me", requireAuth, asyncHandler(async (req, res) => {
@@ -529,6 +643,7 @@ authRouter.post("/password-reset/confirm", passwordResetConfirmLimiter, asyncHan
   await revokeAllAuthSessions(result.id);
   await revokeTrustedTwoFactorDevices(result.id);
   clearTrustedTwoFactorCookie(req, res);
+  clearRememberSessionCookie(req, res);
   req.app.get("io")?.in?.(`user:${result.id}`)?.disconnectSockets?.(true);
   void sendPasswordChangedEmail(result.email, result.displayName).catch((error) => console.warn("Falha ao enviar aviso de senha alterada", error));
   res.json({ ok: true, message: "Senha alterada. Entre novamente com a nova senha." });
@@ -580,6 +695,7 @@ authRouter.post("/2fa/enable", requireAuth, twoFactorLimiter, asyncHandler(async
   const data = twoFactorCodeSchema.parse(req.body);
   const recoveryCodes = await enableTwoFactor(req.auth!.sub, data.code);
   const user = await prisma.user.update({ where: { id: req.auth!.sub }, data: { tokenVersion: { increment: 1 } } });
+  clearRememberSessionCookie(req, res);
   const sessionId = await replaceCurrentAuthSession(user.id, req, req.auth!.sid);
   res.json({ recoveryCodes, token: signToken(user, sessionId), user: publicUser(user) });
 }));
@@ -600,6 +716,7 @@ authRouter.post("/2fa/disable", requireAuth, twoFactorLimiter, asyncHandler(asyn
   if (!verified.ok) throw new HttpError(401, "Codigo do autenticador invalido.", { field: "code" });
   await disableTwoFactor(user.id);
   clearTrustedTwoFactorCookie(req, res);
+  clearRememberSessionCookie(req, res);
   const updated = await prisma.user.update({ where: { id: user.id }, data: { tokenVersion: { increment: 1 } } });
   const sessionId = await replaceCurrentAuthSession(updated.id, req, req.auth!.sid);
   res.json({ token: signToken(updated, sessionId), user: publicUser(updated) });
@@ -617,9 +734,18 @@ authRouter.delete("/sessions/:sessionId", requireAuth, sensitiveActionLimiter, a
   res.status(204).end();
 }));
 
+authRouter.post("/logout", requireAuth, asyncHandler(async (req, res) => {
+  const refreshToken = readCookie(req, REMEMBER_SESSION_COOKIE);
+  if (refreshToken) await revokeRememberedAuthSession(refreshToken).catch(() => false);
+  if (req.auth!.sid) await revokeAuthSession(req.auth!.sub, req.auth!.sid).catch(() => false);
+  clearRememberSessionCookie(req, res);
+  res.status(204).end();
+}));
+
 authRouter.post("/logout-all", requireAuth, sensitiveActionLimiter, asyncHandler(async (req, res) => {
   await revokeTrustedTwoFactorDevices(req.auth!.sub);
   clearTrustedTwoFactorCookie(req, res);
+  clearRememberSessionCookie(req, res);
   const user = await prisma.user.update({
     where: { id: req.auth!.sub },
     data: { tokenVersion: { increment: 1 } }

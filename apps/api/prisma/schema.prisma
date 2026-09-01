@@ -69,6 +69,7 @@ model User {
   email               String                     @unique
   username            String                     @unique
   displayName         String
+  birthDate           DateTime?                  @db.Date
   passwordHash        String
   avatarColor         String
   bio                 String                     @default("") @db.VarChar(240)

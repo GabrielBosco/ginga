@@ -1,6 +1,6 @@
 # Cliente Desktop
 
-Versão atual: `0.4.5`.
+Versão atual: `0.4.8`.
 
 O Desktop fica em `apps/desktop` e usa Electron.
 
@@ -24,7 +24,7 @@ Assim, a URL de uma instalação específica não precisa ficar hardcoded no Git
 Release oficial:
 
 ```bash
-./release-win.sh 0.4.5
+./release-win.sh 0.4.8
 ```
 
 A cadeia de updater utiliza chave pública no cliente e chave privada fora do Git:
@@ -47,13 +47,13 @@ Build x64:
 Publicação x64:
 
 ```bash
-./release-linux.sh 0.4.5 --x64
+./release-linux.sh 0.4.8 --x64
 ```
 
 Publicação x64 + ARM64:
 
 ```bash
-./release-linux.sh 0.4.5 --all
+./release-linux.sh 0.4.8 --all
 ```
 
 O `electron-builder 26.15.3` usado pelo projeto exige `packageName` nos blocos `build.deb` e `build.rpm`, não em `build.linux`. O gate `scripts/prepare-github.sh` verifica essa regressão.

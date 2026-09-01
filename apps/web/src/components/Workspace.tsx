@@ -71,6 +71,7 @@ import { setVoiceScreenShare, switchVoiceScreenSource } from "../lib/voiceScreen
 import { GUILD_PREFERENCES_EVENT, guildAllowsMessageActivity, guildNotificationMode, isChannelMuted, isGuildSilent, loadGuildPreferences, muteChannelFor, muteGuildFor, setGuildNotificationMode, unmuteChannel, unmuteGuild, updateGuildPreferences } from "../lib/serverPreferences";
 import { setDesktopUnreadCount, showSystemNotification } from "../lib/notifications";
 import { playUiSound } from "../lib/sounds";
+import { loadPersistedUnreadState, savePersistedUnreadState, type PersistedUnreadState } from "../lib/unreadState";
 import type {
   Channel,
   ChannelCategory,
@@ -108,6 +109,7 @@ import { UserProfileModal } from "./UserProfileModal";
 import { ProfileErrorBoundary } from "./ProfileErrorBoundary";
 import { VoiceRoom } from "./VoiceRoom";
 import { PersistentVoiceAudio } from "./PersistentVoiceAudio";
+import { SoundboardPanel } from "./SoundboardPanel";
 import { UserBadges } from "./UserBadges";
 
 import { gingaConfirm, gingaPrompt } from "../lib/dialogs";
@@ -156,7 +158,6 @@ const SERVER_FOLDER_COLORS = ["#7c3cff", "#2c74ff", "#22d3ee", "#23a559", "#f0b2
 const SERVER_INVITE_MESSAGE_PREFIX = "[[ginga:server-invite:";
 const PARTICIPANT_MUTE_KEY = "ginga.voice.participantMutes";
 const PARTICIPANT_VOLUME_KEY = "ginga.voice.participantVolumes";
-
 function localVoiceMuteState(userId: string) {
   try { return Boolean((JSON.parse(localStorage.getItem(PARTICIPANT_MUTE_KEY) || "{}") as Record<string, boolean>)[userId]); } catch { return false; }
 }
@@ -273,9 +274,11 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   const [categoryMenu, setCategoryMenu] = useState<{ x: number; y: number; category: ChannelCategory } | null>(null);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [userSettingsTab, setUserSettingsTab] = useState<UserSettingsTab>("account");
-  const [unreadChannels, setUnreadChannels] = useState<Record<string, number>>({});
-  const [mentionedChannels, setMentionedChannels] = useState<Set<string>>(new Set());
-  const [unreadDirect, setUnreadDirect] = useState<Record<string, number>>({});
+  const initialUnreadStateRef = useRef<PersistedUnreadState | null>(null);
+  if (!initialUnreadStateRef.current) initialUnreadStateRef.current = loadPersistedUnreadState(user.id);
+  const [unreadChannels, setUnreadChannels] = useState<Record<string, number>>(() => initialUnreadStateRef.current?.channels ?? {});
+  const [mentionedChannels, setMentionedChannels] = useState<Set<string>>(() => new Set(initialUnreadStateRef.current?.mentions ?? []));
+  const [unreadDirect, setUnreadDirect] = useState<Record<string, number>>(() => initialUnreadStateRef.current?.direct ?? {});
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [serverSettingsInitialTab, setServerSettingsInitialTab] = useState<ServerSettingsTab | undefined>(undefined);
   const [profileCard, setProfileCard] = useState<ProfileCardState | null>(null);
@@ -283,6 +286,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   const [collapsedMemberGroups, setCollapsedMemberGroups] = useState<Set<string>>(() => new Set());
   const [collapsedChannelCategories, setCollapsedChannelCategories] = useState<Set<string>>(() => new Set());
   const [persistentScreenMenuOpen, setPersistentScreenMenuOpen] = useState(false);
+  const [persistentSoundboardOpen, setPersistentSoundboardOpen] = useState(false);
   const [streamViewerCounts, setStreamViewerCounts] = useState<Record<string, number>>({});
   const [inviteCode, setInviteCode] = useState("");
   const [inviteOrigin, setInviteOrigin] = useState("");
@@ -802,6 +806,14 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
     document.title = attentionUnreadCount > 0 ? `(${attentionUnreadCount > 99 ? "99+" : attentionUnreadCount}) Ginga` : "Ginga";
   }, [attentionUnreadCount]);
 
+  useEffect(() => {
+    savePersistedUnreadState(user.id, {
+      channels: unreadChannels,
+      direct: unreadDirect,
+      mentions: Array.from(mentionedChannels)
+    });
+  }, [mentionedChannels, unreadChannels, unreadDirect, user.id]);
+
   const notificationCenterItems = useMemo(() => {
     const items: Array<{ id:string; kind:"channel"|"direct"; title:string; detail:string; count:number; mention:boolean; guildId?:string; channelId?:string; conversationId?:string }> = [];
     for (const guild of guilds) { const prefs=loadGuildPreferences(guild.id); for (const channel of guild.channels) { const count=unreadChannels[channel.id]??0; if(!count)continue; items.push({id:`channel:${channel.id}`,kind:"channel",title:`#${channel.name}`,detail:guild.name+(isChannelMuted(prefs,channel.id)?" · silenciado":""),count,mention:mentionedChannels.has(channel.id),guildId:guild.id,channelId:channel.id}); } }
@@ -1017,6 +1029,10 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
   const showPersistentVoiceCard = Boolean(activeVoiceChannelId && activeVoiceChannel && !voiceViewVisible);
   const persistentScreenEnabled = Boolean(window.__gingaVoiceSession?.channelId === activeVoiceChannelId && window.__gingaVoiceSession.room.localParticipant.isScreenShareEnabled) || Boolean(localVoicePresence?.streaming);
   const persistentViewerCount = activeVoiceChannelId ? (streamViewerCounts[`${activeVoiceChannelId}:${user.id}`] ?? 0) : 0;
+
+  useEffect(() => {
+    setPersistentSoundboardOpen(false);
+  }, [activeVoiceChannelId]);
 
   useEffect(() => {
     const onVoiceDisconnected = (payload: { guildId: string }) => {
@@ -2474,6 +2490,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
 
         {showPersistentVoiceCard && activeVoiceChannel && (
           <section className="voice-connection-card">
+            {persistentSoundboardOpen && activeVoiceGuild && <SoundboardPanel guildId={activeVoiceGuild.id} channelId={activeVoiceChannel.id} socket={socket} canManage={activeVoiceGuild.permissions.canManageServer} onClose={() => setPersistentSoundboardOpen(false)} />}
             <button className="voice-connection-info" type="button" onClick={openActiveVoiceChannel}>
               <span className="voice-connection-signal"><Headset size={17}/></span>
               <span><strong>Voz conectada</strong><small>{activeVoiceChannel.name}{activeVoiceGuild ? ` · ${activeVoiceGuild.name}` : ""}</small></span>
@@ -2481,8 +2498,9 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
             <div className="voice-connection-actions">
               <button type="button" className={localVoiceMuted ? "active off" : ""} onClick={() => void togglePersistentVoiceMic()} aria-label={localVoiceMuted ? "Ativar microfone" : "Desativar microfone"}>{localVoiceMuted ? <MicOff size={16}/> : <Mic size={16}/>}</button>
               <button type="button" className={localVoiceDeafened ? "active off" : ""} onClick={togglePersistentVoiceDeafen} aria-label={localVoiceDeafened ? "Ativar som da chamada" : "Silenciar som da chamada"}>{localVoiceDeafened ? <VolumeX size={16}/> : <Volume2 size={16}/>}</button>
+              <button type="button" className={`soundboard-trigger ${persistentSoundboardOpen ? "active" : ""}`} onClick={() => { setPersistentScreenMenuOpen(false); setPersistentSoundboardOpen((value) => !value); }} aria-label="Abrir painel de sons" title="Sons"><Music2 size={16}/></button>
               <span className="persistent-screen-control">
-                <button type="button" className={persistentScreenEnabled ? "active streaming" : ""} onClick={() => persistentScreenEnabled ? setPersistentScreenMenuOpen((value) => !value) : void togglePersistentVoiceScreen()} aria-label={persistentScreenEnabled ? "Opcoes da transmissao" : "Compartilhar tela"} title={persistentScreenEnabled ? `${persistentViewerCount} assistindo` : "Compartilhar tela"}><ScreenShare size={16}/>{persistentScreenEnabled && persistentViewerCount > 0 && <b>{persistentViewerCount}</b>}</button>
+                <button type="button" className={persistentScreenEnabled ? "active streaming" : ""} onClick={() => { setPersistentSoundboardOpen(false); if (persistentScreenEnabled) setPersistentScreenMenuOpen((value) => !value); else void togglePersistentVoiceScreen(); }} aria-label={persistentScreenEnabled ? "Opcoes da transmissao" : "Compartilhar tela"} title={persistentScreenEnabled ? `${persistentViewerCount} assistindo` : "Compartilhar tela"}><ScreenShare size={16}/>{persistentScreenEnabled && persistentViewerCount > 0 && <b>{persistentViewerCount}</b>}</button>
                 {persistentScreenEnabled && persistentScreenMenuOpen && <span className="persistent-screen-menu">
                   <span className="persistent-screen-audience"><Eye size={13}/><strong>{persistentViewerCount}</strong> assistindo</span>
                   <button type="button" onClick={() => void switchPersistentVoiceScreen()}><RefreshCw size={14}/> Trocar janela</button>
@@ -2496,7 +2514,7 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
         )}
       </aside>
 
-      <PersistentVoiceAudio activeChannelId={activeVoiceChannelId} activeGuildId={activeVoiceGuild?.id} voiceViewVisible={voiceViewVisible} />
+      <PersistentVoiceAudio activeChannelId={activeVoiceChannelId} activeGuildId={activeVoiceGuild?.id} voiceViewVisible={voiceViewVisible} socket={socket} />
       <GingaMusicPlayer guildId={activeVoiceGuild?.id ?? ""} channelId={activeVoiceChannelId} userId={user.id} socket={socket} deafened={Boolean(localVoicePresence?.deafened)} onState={rememberMusicState} />
 
       <section className="main-panel">
@@ -2542,10 +2560,10 @@ export function Workspace({ token, user, onLogout, onSessionUpdate, onNavigate, 
             <div className="server-onboarding-tip"><Sparkles size={16}/><span>Depois voce pode organizar servidores em pastas, convidar amigos por DM e instalar bots pelo Portal de Desenvolvedores.</span></div>
           </section>
         )}
-        {section === "space" && selectedGuild && selectedChannel && ["TEXT","ANNOUNCEMENT"].includes(selectedChannel.type) && <ChatView key={selectedChannel.id} channel={selectedChannel} currentUser={user} socket={socket} permissions={selectedGuild.permissions} guildOwnerId={selectedGuild.ownerId} members={members} forwardChannels={selectedGuild.channels.filter((item) => ["TEXT","ANNOUNCEMENT"].includes(item.type))} onUserClick={(target, rect) => openUserCard(target, rect, members.find((member) => member.user.id === target.id), selectedGuild.id)} onModerateMember={(action,target)=>{ setVoiceBanReason(""); setVoiceTimeoutReason(""); if(action==="ban")setVoiceBanDuration("7D"); if(action==="timeout")setVoiceTimeoutDuration(10); setVoiceModerationTarget({action,user:target,guildId:selectedGuild.id}); }} />}
+        {section === "space" && selectedGuild && selectedChannel && ["TEXT","ANNOUNCEMENT"].includes(selectedChannel.type) && <ChatView key={selectedChannel.id} channel={selectedChannel} currentUser={user} socket={socket} permissions={selectedGuild.permissions} guildOwnerId={selectedGuild.ownerId} members={members} forwardChannels={selectedGuild.channels.filter((item) => ["TEXT","ANNOUNCEMENT"].includes(item.type))} onUserClick={(target, rect) => openUserCard(target, rect, members.find((member) => member.user.id === target.id), selectedGuild.id)} onUserContextMenu={(target, x, y) => { const member = members.find((item) => item.user.id === target.id); if (member) { setMemberMenu({ x, y, member }); return; } openUserCard(target, DOMRect.fromRect({ x, y, width: 1, height: 1 }), undefined, selectedGuild.id); }} />}
         {section === "space" && selectedGuild && selectedChannel?.type === "FORUM" && <ForumView key={selectedChannel.id} channel={selectedChannel} currentUser={user} socket={socket} canManage={selectedGuild.permissions.canManageForums} />}
         {section === "space" && selectedGuild && selectedChannel?.type === "EVENT" && <EventsView key={selectedChannel.id} channel={selectedChannel} guild={selectedGuild} currentUser={user} socket={socket} />}
-        {section === "space" && selectedGuild && selectedChannel?.type === "VOICE" && <VoiceRoom key={selectedChannel.id} channel={selectedChannel} currentUserId={user.id} voiceChannels={selectedGuild.channels.filter((item) => item.type === "VOICE")} socket={socket} onLeave={leaveVoice} onOpenVoiceSettings={() => { setUserSettingsTab("voice"); setShowUserSettings(true); }} onOpenParticipantProfile={openUserProfileById} onMessageParticipant={startConversation} onCallParticipant={startDirectCallWithUser} onKickParticipant={kickVoiceParticipant} onBanParticipant={banVoiceParticipant} onTimeoutParticipant={timeoutVoiceParticipant} onServerMuteParticipant={(userId, muted) => setServerVoiceModeration(userId, { muted }, selectedGuild.id)} onServerDeafenParticipant={(userId, deafened) => setServerVoiceModeration(userId, { deafened }, selectedGuild.id)} onMoveParticipant={moveVoiceParticipant} onDisconnectParticipant={(userId) => disconnectVoiceParticipant(selectedGuild.id, userId)} canKickParticipants={selectedGuild.permissions.canKickMembers} canMoveParticipants={selectedGuild.permissions.canMoveMembers} canBanParticipants={selectedGuild.permissions.canBanMembers} canTimeoutParticipants={selectedGuild.permissions.canManageMembers || selectedGuild.permissions.canKickMembers} canMuteParticipants={selectedGuild.permissions.canMuteMembers} canDeafenParticipants={selectedGuild.permissions.canDeafenMembers} canManageParticipantRoles={selectedGuild.permissions.canManageRoles} canShareScreen={selectedGuild.permissions.canShareScreen} canUseVideo={selectedGuild.permissions.canUseVideo} autoWatchUserId={voiceStreamTarget?.channelId === selectedChannel.id ? voiceStreamTarget.userId : ""} onManageParticipantRoles={() => { setServerSettingsInitialTab("members"); setShowServerSettings(true); }} />}
+        {section === "space" && selectedGuild && selectedChannel?.type === "VOICE" && <VoiceRoom key={selectedChannel.id} channel={selectedChannel} currentUserId={user.id} voiceChannels={selectedGuild.channels.filter((item) => item.type === "VOICE")} socket={socket} onLeave={leaveVoice} onOpenVoiceSettings={() => { setUserSettingsTab("voice"); setShowUserSettings(true); }} onOpenParticipantProfile={openUserProfileById} onMessageParticipant={startConversation} onCallParticipant={startDirectCallWithUser} onKickParticipant={kickVoiceParticipant} onBanParticipant={banVoiceParticipant} onTimeoutParticipant={timeoutVoiceParticipant} onServerMuteParticipant={(userId, muted) => setServerVoiceModeration(userId, { muted }, selectedGuild.id)} onServerDeafenParticipant={(userId, deafened) => setServerVoiceModeration(userId, { deafened }, selectedGuild.id)} onMoveParticipant={moveVoiceParticipant} onDisconnectParticipant={(userId) => disconnectVoiceParticipant(selectedGuild.id, userId)} canKickParticipants={selectedGuild.permissions.canKickMembers} canMoveParticipants={selectedGuild.permissions.canMoveMembers} canBanParticipants={selectedGuild.permissions.canBanMembers} canTimeoutParticipants={selectedGuild.permissions.canManageMembers || selectedGuild.permissions.canKickMembers} canMuteParticipants={selectedGuild.permissions.canMuteMembers} canDeafenParticipants={selectedGuild.permissions.canDeafenMembers} canManageParticipantRoles={selectedGuild.permissions.canManageRoles} canShareScreen={selectedGuild.permissions.canShareScreen} canUseVideo={selectedGuild.permissions.canUseVideo} canManageSoundboard={selectedGuild.permissions.canManageServer} autoWatchUserId={voiceStreamTarget?.channelId === selectedChannel.id ? voiceStreamTarget.userId : ""} onManageParticipantRoles={() => { setServerSettingsInitialTab("members"); setShowServerSettings(true); }} />}
       </section>
 
       {section === "space" && (

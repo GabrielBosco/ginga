@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Archive, Ban, Bookmark, Bot, Crown, CalendarClock, Check, ChevronUp, Clock3, Copy, Download, File as FileIcon, FileArchive, FileAudio, FileText, Forward, Image as ImageIcon, ListTodo, Link, LoaderCircle, Megaphone, MessageSquare, Paperclip, Pencil, Pin, Plus, Reply, Search, Send, Smile, Trash2, UserMinus, Video, X } from "lucide-react";
+import { Archive, ArrowDown, Bookmark, Bot, Crown, CalendarClock, Check, ChevronUp, Clock3, Copy, Download, File as FileIcon, FileArchive, FileAudio, FileText, Forward, Image as ImageIcon, ListTodo, Link, LoaderCircle, Megaphone, MessageSquare, Paperclip, Pencil, Pin, Plus, Reply, Search, Send, Smile, Trash2, Video, X } from "lucide-react";
 import type { Socket } from "socket.io-client";
 import { api, uploadFile } from "../lib/api";
 import { useDeveloperMode } from "../lib/developerMode";
@@ -26,7 +26,7 @@ interface ChatViewProps {
   members?: GuildMember[];
   forwardChannels?: Channel[];
   onUserClick?: (user: User, rect: DOMRect) => void;
-  onModerateMember?: (action: "timeout" | "kick" | "ban", user: User) => void;
+  onUserContextMenu?: (user: User, x: number, y: number) => void;
 }
 
 interface ChannelCommand {
@@ -51,7 +51,35 @@ const quickMessageTemplates = [
 ];
 
 const timeFormatter = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
-const dateFormatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+const longDateFormatter = new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+const shortDateFormatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+const weekdayFormatter = new Intl.DateTimeFormat("pt-BR", { weekday: "long" });
+const fullTimeFormatter = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+function capitalizeDateLabel(value: string) {
+  return value ? value.charAt(0).toLocaleUpperCase("pt-BR") + value.slice(1) : value;
+}
+
+function localDayStamp(date: Date) {
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function formatDayDivider(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  const diffDays = Math.round((localDayStamp(today) - localDayStamp(date)) / 86_400_000);
+  const fullDate = capitalizeDateLabel(longDateFormatter.format(date));
+  const calendarDate = shortDateFormatter.format(date);
+  if (diffDays === 0) return { relative: "Hoje", fullDate };
+  if (diffDays === 1) return { relative: "Ontem", fullDate };
+  if (diffDays > 1 && diffDays < 7) return { relative: capitalizeDateLabel(weekdayFormatter.format(date)), fullDate: calendarDate };
+  return { relative: calendarDate, fullDate };
+}
+
+function formatFullTimestamp(value: string) {
+  const date = new Date(value);
+  return `${capitalizeDateLabel(longDateFormatter.format(date))} às ${fullTimeFormatter.format(date)}`;
+}
 
 const everyoneMentionPattern = /(?:^|[^a-zA-Z0-9_.-])@(todos|everyone|here)(?=$|[^a-zA-Z0-9_.-])/i;
 const customEmojiTokenPattern = /\[\[ginga-emoji\|([^|\]]{1,32})\|([^|\]]+)\]\]/g;
@@ -257,7 +285,7 @@ function MessageAttachment({ attachment, onPreview }: { attachment: Attachment; 
   );
 }
 
-export function ChatView({ channel, currentUser, socket, permissions, guildOwnerId, members = [], forwardChannels = [], onUserClick, onModerateMember }: ChatViewProps) {
+export function ChatView({ channel, currentUser, socket, permissions, guildOwnerId, members = [], forwardChannels = [], onUserClick, onUserContextMenu }: ChatViewProps) {
   const memberVisuals = useMemo(() => {
     const map = new Map<string, { color?: string; roleName?: string; roleIcon?: string; owner: boolean }>();
     for (const member of members) {
@@ -328,6 +356,7 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
   const [customEmojiBusy, setCustomEmojiBusy] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -339,6 +368,7 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
+  const initialScrollPendingRef = useRef(true);
   const dragDepthRef = useRef(0);
   const skipDraftSaveRef = useRef(false);
   const arrivalHighlightTimerRef = useRef<number | null>(null);
@@ -355,8 +385,14 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
   }
 
   function scrollToLatest(behavior: ScrollBehavior = "smooth") {
+    const element = messageScrollRef.current;
     nearBottomRef.current = true;
     setNewMessageCount(0);
+    setShowScrollToBottom(false);
+    if (element) {
+      element.scrollTo({ top: element.scrollHeight, behavior });
+      return;
+    }
     bottomRef.current?.scrollIntoView({ behavior, block: "end" });
   }
 
@@ -365,6 +401,8 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
     try { setContent(localStorage.getItem(draftStorageKey()) || ""); } catch { setContent(""); }
     setReplyTo(null);
     setNewMessageCount(0);
+    setShowScrollToBottom(false);
+    initialScrollPendingRef.current = true;
     setSearchOpen(false);
     setSearchQuery("");
     setRemoteSearchResults([]);
@@ -389,8 +427,36 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
 
   useEffect(() => {
     if (loading) return;
+
+    if (initialScrollPendingRef.current) {
+      initialScrollPendingRef.current = false;
+      let secondFrame = 0;
+      const firstFrame = window.requestAnimationFrame(() => {
+        scrollToLatest("auto");
+        secondFrame = window.requestAnimationFrame(() => scrollToLatest("auto"));
+      });
+      return () => {
+        window.cancelAnimationFrame(firstFrame);
+        if (secondFrame) window.cancelAnimationFrame(secondFrame);
+      };
+    }
+
     if (nearBottomRef.current) requestAnimationFrame(() => scrollToLatest(messages.length ? "smooth" : "auto"));
-  }, [messages.length, loading]);
+  }, [channel.id, messages.length, loading]);
+
+  useEffect(() => {
+    const element = messageScrollRef.current;
+    if (!element) return;
+    const keepBottomStable = () => {
+      if (nearBottomRef.current) requestAnimationFrame(() => scrollToLatest("auto"));
+    };
+    element.addEventListener("load", keepBottomStable, true);
+    element.addEventListener("loadedmetadata", keepBottomStable, true);
+    return () => {
+      element.removeEventListener("load", keepBottomStable, true);
+      element.removeEventListener("loadedmetadata", keepBottomStable, true);
+    };
+  }, [channel.id]);
 
   useEffect(() => {
     let active = true;
@@ -645,6 +711,7 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
   useEffect(() => {
     const openMessage = (detail?: { channelId?: string; messageId?: string }) => {
       if (!detail?.messageId || detail.channelId !== channel.id) return;
+      initialScrollPendingRef.current = false;
       try { sessionStorage.removeItem("ginga.pendingMessageJump"); } catch {}
       void jumpToMessage(detail.messageId);
     };
@@ -839,7 +906,11 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
         replyToId: replyTo?.id ?? null
       }, (response: AckResponse) => {
         if (!response?.ok) { reject(new Error(response?.error ?? "Nao foi possivel enviar a mensagem de voz")); return; }
-        if (response.message) setMessages((current) => current.some((item) => item.id === response.message!.id) ? current : [...current, response.message!]);
+        if (response.message) {
+          nearBottomRef.current = true;
+          setMessages((current) => current.some((item) => item.id === response.message!.id) ? current : [...current, response.message!]);
+          requestAnimationFrame(() => scrollToLatest("smooth"));
+        }
         if (channel.slowModeSeconds && !permissions.canManageMessages) setSlowModeRemaining(channel.slowModeSeconds);
         setReplyTo(null);
         resolve();
@@ -887,7 +958,9 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
         return;
       }
       if (response.message) {
+        nearBottomRef.current = true;
         setMessages((current) => current.some((item) => item.id === response.message!.id) ? current : [...current, response.message!]);
+        requestAnimationFrame(() => scrollToLatest("smooth"));
       }
       setContent("");
       if (channel.slowModeSeconds && !permissions.canManageMessages) setSlowModeRemaining(channel.slowModeSeconds);
@@ -1188,7 +1261,7 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
           {searchLoading && <div className="chat-search-empty"><LoaderCircle className="spin" size={15}/> Buscando no historico...</div>}
           {!searchLoading && searchError && <div className="chat-search-empty">{searchError}</div>}
           {!searchLoading && searchQuery.trim().length >= 2 && !searchError && searchResults.length === 0 && <div className="chat-search-empty">Nenhuma mensagem encontrada.</div>}
-          {searchResults.map((message) => <button type="button" key={message.id} onClick={() => { void jumpToMessage(message.id); setSearchOpen(false); }}><Avatar user={message.author} size="sm"/><span><strong className="role-colored-name" style={memberVisuals.get(message.authorId)?.color ? { color: memberVisuals.get(message.authorId)!.color } : undefined}>{message.author.displayName}{memberVisuals.get(message.authorId)?.owner && <Crown size={12} className="guild-owner-crown" />}</strong><small>{new Date(message.createdAt).toLocaleString("pt-BR")}</small><em>{message.content?.slice(0, 140) || message.attachments[0]?.originalName || "Mensagem com anexo"}</em></span></button>)}
+          {searchResults.map((message) => <button type="button" key={message.id} onClick={() => { void jumpToMessage(message.id); setSearchOpen(false); }}><Avatar user={message.author} size="sm"/><span><strong className="role-colored-name" style={memberVisuals.get(message.authorId)?.color ? { color: memberVisuals.get(message.authorId)!.color } : undefined}>{message.author.displayName}{memberVisuals.get(message.authorId)?.owner && <Crown size={12} className="guild-owner-crown" />}</strong><small>{formatFullTimestamp(message.createdAt)}</small><em>{message.content?.slice(0, 140) || message.attachments[0]?.originalName || "Mensagem com anexo"}</em></span></button>)}
         </div>
       </aside>}
       {pinsOpen && <aside className="pinned-panel">
@@ -1197,7 +1270,7 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
           {pinsLoading && <div className="center-state"><LoaderCircle className="spin"/> Carregando...</div>}
           {!pinsLoading && pinsNotice && <div className="pinned-panel-notice">{pinsNotice}</div>}
           {!pinsLoading && pinnedMessages.length===0 && <div className="saved-empty">Nenhuma mensagem fixada neste canal.</div>}
-          {!pinsLoading && pinnedMessages.map((message)=><article key={message.id} className="pinned-message-card" onClick={()=>void jumpToMessage(message.id)}><Avatar user={message.author} size="sm"/><div><div className="pinned-message-meta"><strong className="role-colored-name" style={memberVisuals.get(message.authorId)?.color ? { color: memberVisuals.get(message.authorId)!.color } : undefined}>{message.author.displayName}{memberVisuals.get(message.authorId)?.owner && <Crown size={12} className="guild-owner-crown" />}</strong><small>{new Date(message.createdAt).toLocaleString("pt-BR")}</small></div><div className="pinned-message-content">{message.content ? <MessageContent content={message.content} username={currentUser.username} members={members} onUserClick={onUserClick} /> : "Mensagem com anexo"}</div>{message.attachments.length > 0 && <span className="pinned-attachment-count"><Paperclip size={12}/>{message.attachments.length} anexo{message.attachments.length === 1 ? "" : "s"}</span>}</div>{permissions.canPinMessages&&<button type="button" aria-label="Desafixar mensagem" onClick={(event)=>{event.stopPropagation();void pinMessage(message);}}><X size={15}/></button>}</article>)}
+          {!pinsLoading && pinnedMessages.map((message)=><article key={message.id} className="pinned-message-card" onClick={()=>void jumpToMessage(message.id)}><Avatar user={message.author} size="sm"/><div><div className="pinned-message-meta"><strong className="role-colored-name" style={memberVisuals.get(message.authorId)?.color ? { color: memberVisuals.get(message.authorId)!.color } : undefined}>{message.author.displayName}{memberVisuals.get(message.authorId)?.owner && <Crown size={12} className="guild-owner-crown" />}</strong><small>{formatFullTimestamp(message.createdAt)}</small></div><div className="pinned-message-content">{message.content ? <MessageContent content={message.content} username={currentUser.username} members={members} onUserClick={onUserClick} /> : "Mensagem com anexo"}</div>{message.attachments.length > 0 && <span className="pinned-attachment-count"><Paperclip size={12}/>{message.attachments.length} anexo{message.attachments.length === 1 ? "" : "s"}</span>}</div>{permissions.canPinMessages&&<button type="button" aria-label="Desafixar mensagem" onClick={(event)=>{event.stopPropagation();void pinMessage(message);}}><X size={15}/></button>}</article>)}
         </div>
       </aside>}
       {feedback && <div className="ginga-toast"><Check size={15}/>{feedback}</div>}
@@ -1205,6 +1278,7 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
       <div className="message-scroll" ref={messageScrollRef} onScroll={() => {
         const near = isNearBottom();
         nearBottomRef.current = near;
+        setShowScrollToBottom(!near);
         if (near) setNewMessageCount(0);
       }}>
         {loading && <div className="center-state"><LoaderCircle className="spin" /> Carregando conversa...</div>}
@@ -1229,17 +1303,18 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
 
           return (
             <div key={message.id}>
-              {dayMarkers.get(message.id) && (
-                <div className="day-divider"><span>{dateFormatter.format(new Date(message.createdAt))}</span></div>
-              )}
+              {dayMarkers.get(message.id) && (() => {
+                const label = formatDayDivider(message.createdAt);
+                return <div className="day-divider" title={label.fullDate}><span><strong>{label.relative}</strong><small>{label.fullDate}</small></span></div>;
+              })()}
               <article id={`message-${message.id}`} className={`message-row ${compact ? "message-compact" : ""} ${channel.type === "ANNOUNCEMENT" ? "announcement-message-row" : ""} ${message.authorId === currentUser.id ? "message-own" : ""} ${message.authorId !== currentUser.id && messageMentionsUser(message.content, currentUser.username) ? "message-mentioned" : ""} ${message.id === highlightedMessageId ? "message-arrived" : ""}`} onContextMenu={(event) => { event.preventDefault(); openMessageMenu(message, event.clientX, event.clientY); }}>
-                {!compact && <button className="message-user-button avatar-button" type="button" onClick={(event) => onUserClick?.(message.author, event.currentTarget.getBoundingClientRect())}><Avatar user={message.author} size="md" /></button>}
-                {compact && <time className="compact-time">{timeFormatter.format(new Date(message.createdAt))}</time>}
+                {!compact && <button className="message-user-button avatar-button" type="button" aria-label={`Abrir perfil de ${message.author.displayName}`} onClick={(event) => onUserClick?.(message.author, event.currentTarget.getBoundingClientRect())} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setMessageMenu(null); onUserContextMenu?.(message.author, event.clientX, event.clientY); }}><Avatar user={message.author} size="md" /></button>}
+                {compact && <time className="compact-time" dateTime={message.createdAt} title={formatFullTimestamp(message.createdAt)}>{timeFormatter.format(new Date(message.createdAt))}</time>}
                 <div className="message-body">
                   {!compact && (
                     <div className="message-meta">
-                      <button className="message-author-button" type="button" onClick={(event) => onUserClick?.(message.author, event.currentTarget.getBoundingClientRect())}><strong className="role-colored-name" style={memberVisuals.get(message.authorId)?.color ? { color: memberVisuals.get(message.authorId)!.color } : undefined}>{message.author.displayName}{memberVisuals.get(message.authorId)?.owner && <Crown size={13} className="guild-owner-crown" aria-label="Criador do servidor" />} <UserBadges user={message.author} compact /></strong><span>@{message.author.username}</span></button>
-                      <time>{timeFormatter.format(new Date(message.createdAt))}</time>
+                      <button className="message-author-button" type="button" onClick={(event) => onUserClick?.(message.author, event.currentTarget.getBoundingClientRect())} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setMessageMenu(null); onUserContextMenu?.(message.author, event.clientX, event.clientY); }}><strong className="role-colored-name" style={memberVisuals.get(message.authorId)?.color ? { color: memberVisuals.get(message.authorId)!.color } : undefined}>{message.author.displayName}{memberVisuals.get(message.authorId)?.owner && <Crown size={13} className="guild-owner-crown" aria-label="Criador do servidor" />} <UserBadges user={message.author} compact /></strong><span>@{message.author.username}</span></button>
+                      <time dateTime={message.createdAt} title={formatFullTimestamp(message.createdAt)}>{timeFormatter.format(new Date(message.createdAt))}</time>
                     </div>
                   )}
                   {message.replyTo && <button className="message-reply-ref" type="button" onClick={() => void jumpToMessage(message.replyTo!.id)} aria-label="Ir para mensagem respondida"><Reply size={13}/><strong className="role-colored-name" style={memberVisuals.get(message.replyTo.authorId)?.color ? { color: memberVisuals.get(message.replyTo.authorId)!.color } : undefined}>{message.replyTo.author.displayName}{memberVisuals.get(message.replyTo.authorId)?.owner && <Crown size={11} className="guild-owner-crown" />}</strong><span>{message.replyTo.content?.slice(0,90) || "Mensagem"}</span></button>}
@@ -1289,7 +1364,7 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
         })}
         <div ref={bottomRef} />
       </div>
-      {newMessageCount > 0 && <button type="button" className="new-messages-jump" onClick={() => scrollToLatest()}>{newMessageCount} mensagem{newMessageCount === 1 ? " nova" : "s novas"} <span>Ir para o fim</span></button>}
+      {showScrollToBottom && <button type="button" className={`new-messages-jump ${newMessageCount > 0 ? "has-new" : ""}`} onClick={() => scrollToLatest()} aria-label={newMessageCount > 0 ? `${newMessageCount} mensagens novas. Ir para o final.` : "Ir para o final da conversa"}><ArrowDown size={17}/><span>{newMessageCount > 0 ? `${newMessageCount} mensagem${newMessageCount === 1 ? " nova" : "s novas"}` : "Ir para o final"}</span>{newMessageCount > 0 && <strong>Ver agora</strong>}</button>}
       {dragActive && <div className="chat-drop-overlay"><Paperclip size={28}/><strong>Solte para enviar</strong><span>Ate 10 arquivos por mensagem</span></div>}
 
       {messageMenu && <ContextMenu x={messageMenu.x} y={messageMenu.y} onClose={() => setMessageMenu(null)}>
@@ -1305,11 +1380,6 @@ export function ChatView({ channel, currentUser, socket, permissions, guildOwner
         <button onClick={()=>void createTaskFromMessage(messageMenu.message)}><ListTodo size={15}/> Criar tarefa</button>
         {permissions.canPinMessages && <button onClick={()=>{void pinMessage(messageMenu.message);setMessageMenu(null);}}><Pin size={15}/> {messageMenu.message.isPinned ? "Desafixar" : "Fixar"}</button>}
         {messageMenu.message.authorId === currentUser.id && <button onClick={()=>beginEditMessage(messageMenu.message)}><Pencil size={15}/> Editar</button>}
-        {messageMenu.message.authorId !== currentUser.id && (messageMenu.message.author.accountType === undefined || messageMenu.message.author.accountType === "HUMAN") && onModerateMember && (permissions.canManageMembers || permissions.canKickMembers || permissions.canBanMembers) && <><div className="context-menu-separator"/><div className="context-menu-label">MODERAR AUTOR</div>
-          {(permissions.canManageMembers || permissions.canKickMembers) && <button onClick={()=>{const target=messageMenu.message.author;setMessageMenu(null);onModerateMember("timeout",target);}}><Clock3 size={15}/> Aplicar timeout</button>}
-          {permissions.canKickMembers && <button className="danger" onClick={()=>{const target=messageMenu.message.author;setMessageMenu(null);onModerateMember("kick",target);}}><UserMinus size={15}/> Expulsar autor</button>}
-          {permissions.canBanMembers && <button className="danger" onClick={()=>{const target=messageMenu.message.author;setMessageMenu(null);onModerateMember("ban",target);}}><Ban size={15}/> Banir autor</button>}
-        </>}
         {(messageMenu.message.authorId === currentUser.id || permissions.canManageMessages) && <><div className="context-menu-separator"/><button className="danger" onClick={()=>{void deleteMessage(messageMenu.message);setMessageMenu(null);}}><Trash2 size={15}/> Excluir</button></>}
       </ContextMenu>}
 

@@ -125,9 +125,9 @@ interface GingaMusicPlayerProps {
 /**
  * Motor local do Ginga Music.
  *
- * O servidor sincroniza fila/clock, mas o audio e reproduzido por um unico player
- * por usuario/navegador. Volume e mute sao preferencias individuais e nunca sao
- * enviados para os outros membros da sala.
+ * O servidor e apenas control-plane: sincroniza fila/clock. O audio nunca
+ * atravessa a API/LiveKit do Ginga; cada ouvinte reproduz direto do provedor.
+ * Volume e mute sao preferencias individuais e nunca sao enviados aos outros.
  */
 export function GingaMusicPlayer({ guildId, channelId, userId, socket, deafened = false, onState }: GingaMusicPlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -147,11 +147,12 @@ export function GingaMusicPlayer({ guildId, channelId, userId, socket, deafened 
   const instanceIdRef = useRef(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
   const [state, setState] = useState<MusicState | null>(null);
   const [localPlaybackOwner, setLocalPlaybackOwner] = useState(false);
-  const [serverPlaybackOwner, setServerPlaybackOwner] = useState(false);
   const [preferences, setPreferences] = useState<MusicUserPreferences>({ volume: 70, muted: false });
 
   const effectiveVolume = deafened || preferences.muted ? 0 : preferences.volume;
-  const playbackOwner = localPlaybackOwner && serverPlaybackOwner;
+  // O audio e edge/local: cada usuario ouve direto do YouTube/SoundCloud.
+  // Somente o lock local evita eco em duas abas da mesma conta.
+  const playbackOwner = localPlaybackOwner;
   playbackOwnerRef.current = playbackOwner;
   effectiveVolumeRef.current = effectiveVolume;
 
@@ -257,43 +258,6 @@ export function GingaMusicPlayer({ guildId, channelId, userId, socket, deafened 
     };
   }, [guildId, setLocalOwner, userId]);
 
-  // Lease no backend: impede a mesma conta de tocar o bot duas vezes ao mesmo tempo
-  // quando Web + Desktop (ou dois navegadores) estao conectados na mesma sala.
-  useEffect(() => {
-    if (!guildId || !channelId || !userId || !localPlaybackOwner) {
-      setServerPlaybackOwner(false);
-      return;
-    }
-    let disposed = false;
-    const clientId = instanceIdRef.current;
-
-    const heartbeat = async () => {
-      try {
-        const result = await api<{ owner: boolean; expiresAt: number }>(`/api/guilds/${guildId}/music/playback-lease`, {
-          method: "POST",
-          body: JSON.stringify({ clientId, action: "ACQUIRE" })
-        });
-        if (!disposed) setServerPlaybackOwner(Boolean(result.owner));
-      } catch {
-        // Se o lease falhar por uma indisponibilidade temporaria, preserva a reproducao
-        // local em vez de derrubar o audio. O lock local ainda evita duplicacao na mesma origem.
-        if (!disposed) setServerPlaybackOwner(true);
-      }
-    };
-
-    void heartbeat();
-    const timer = window.setInterval(() => void heartbeat(), 4_000);
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-      setServerPlaybackOwner(false);
-      void api(`/api/guilds/${guildId}/music/playback-lease`, {
-        method: "POST",
-        body: JSON.stringify({ clientId, action: "RELEASE" })
-      }).catch(() => undefined);
-    };
-  }, [channelId, guildId, localPlaybackOwner, userId]);
-
   useEffect(() => {
     if (!socket) return;
     const onMusicState = (next: MusicState) => {
@@ -306,15 +270,27 @@ export function GingaMusicPlayer({ guildId, channelId, userId, socket, deafened 
   const reportEnded = useCallback((trackId: string) => {
     if (!guildId || !trackId || endedRequestRef.current === trackId || !playbackOwnerRef.current) return;
     endedRequestRef.current = trackId;
-    void api<{ state: MusicState }>(`/api/guilds/${guildId}/music/control`, {
-      method: "POST",
-      body: JSON.stringify({ action: "ENDED", expectedTrackId: trackId })
-    }).then((result) => acceptState(result.state)).catch(() => undefined).finally(() => {
-      window.setTimeout(() => {
+    const snapshot = stateRef.current;
+    const requestedByMe = snapshot?.current?.id === trackId && snapshot.current.requestedBy === userId;
+    // A API 0.4.8 agenda o fim de faixas com duracao conhecida. O callback do
+    // provider e fallback: o requester tenta primeiro e os demais so depois,
+    // evitando uma rajada de requests em salas grandes.
+    const delayMs = requestedByMe ? 850 + Math.floor(Math.random() * 450) : 4_000 + Math.floor(Math.random() * 4_000);
+    window.setTimeout(() => {
+      if (stateRef.current?.current?.id !== trackId || !playbackOwnerRef.current) {
         if (endedRequestRef.current === trackId) endedRequestRef.current = "";
-      }, 700);
-    });
-  }, [acceptState, guildId]);
+        return;
+      }
+      void api<{ state: MusicState }>(`/api/guilds/${guildId}/music/control`, {
+        method: "POST",
+        body: JSON.stringify({ action: "ENDED", expectedTrackId: trackId })
+      }).then((result) => acceptState(result.state)).catch(() => undefined).finally(() => {
+        window.setTimeout(() => {
+          if (endedRequestRef.current === trackId) endedRequestRef.current = "";
+        }, 1_500);
+      });
+    }, delayMs);
+  }, [acceptState, guildId, userId]);
 
   const destroyEngine = useCallback(() => {
     engineGenerationRef.current += 1;

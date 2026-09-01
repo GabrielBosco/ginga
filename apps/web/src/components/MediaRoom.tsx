@@ -27,7 +27,8 @@ import {
 } from "livekit-client";
 import type { Socket } from "socket.io-client";
 import { api } from "../lib/api";
-import { loadVoicePreferences } from "../lib/voicePreferences";
+import { applyMicrophoneSensitivity, loadVoicePreferences } from "../lib/voicePreferences";
+import { setVoiceScreenShare } from "../lib/voiceScreenShare";
 import { watchVoiceNetworkStats } from "../lib/voiceDiagnostics";
 import type { LiveKitCredentials, User } from "../types";
 import type { DirectCall } from "../lib/directCalls";
@@ -443,21 +444,21 @@ export function MediaRoom({ title, subtitle, tokenPath, tokenBody, socket, prese
       if (kind === "mic") {
         const next = !room.localParticipant.isMicrophoneEnabled;
         desiredMicEnabledRef.current = next;
-        await room.localParticipant.setMicrophoneEnabled(next);
+        const preferences = loadVoicePreferences();
+        await room.localParticipant.setMicrophoneEnabled(next, next ? {
+          deviceId: preferences.microphoneDevice || undefined,
+          echoCancellation: true,
+          noiseSuppression: preferences.noiseSuppression,
+          autoGainControl: true
+        } : undefined);
+        if (next) await applyMicrophoneSensitivity(room, preferences.microphoneSensitivity).catch(() => false);
       }
       if (kind === "camera") await room.localParticipant.setCameraEnabled(!room.localParticipant.isCameraEnabled);
       if (kind === "screen") {
-        if (room.localParticipant.isScreenShareEnabled) {
-          desiredScreenEnabledRef.current = false;
-          await room.localParticipant.setScreenShareEnabled(false);
-        } else {
-          const preferences = loadVoicePreferences();
-          const resolution = preferences.quality === "1080p" ? { width: 1920, height: 1080 } : preferences.quality === "480p" ? { width: 854, height: 480 } : { width: 1280, height: 720 };
-          const share = room.localParticipant.setScreenShareEnabled as unknown as (enabled: boolean, options?: Record<string, unknown>) => Promise<unknown>;
-          desiredScreenEnabledRef.current = true;
-          try { await share.call(room.localParticipant, true, { audio: true, systemAudio: "include", contentHint: "motion", resolution: { ...resolution, frameRate: preferences.streamFps } }); }
-          catch (caught) { desiredScreenEnabledRef.current = false; throw caught; }
-        }
+        const next = !room.localParticipant.isScreenShareEnabled;
+        desiredScreenEnabledRef.current = next;
+        try { await setVoiceScreenShare(room, next); }
+        catch (caught) { if (next) desiredScreenEnabledRef.current = false; throw caught; }
       }
       setMicEnabled(room.localParticipant.isMicrophoneEnabled);
       setCameraEnabled(room.localParticipant.isCameraEnabled);

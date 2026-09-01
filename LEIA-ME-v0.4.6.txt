@@ -1,0 +1,43 @@
+GINGA 0.4.6 - UI/UX POLISH + CHAT NAVIGATION
+==============================================
+
+1) APLICAR O SOURCE
+
+cd /root/Ginga-v0.4.6-UI-UX-POLISH-source
+./scripts/apply-update-safe.sh "$(pwd)"
+
+2) REBUILD SERVIDOR
+
+cd /opt/ginga
+docker compose build api web
+docker compose up -d --force-recreate api web
+docker compose ps
+
+3) VALIDAR WINDOWS + LINUX
+
+cd /opt/ginga-build
+./scripts/pre-release-check.sh 0.4.6 --all
+
+4) PUBLICAR CLIENTES
+
+Windows + Linux x64 + ARM64:
+./release-all.sh 0.4.6 --all
+
+Somente Windows:
+./release-win.sh 0.4.6
+
+Somente Linux x64:
+./release-linux.sh 0.4.6 --x64
+
+OBSERVACOES
+- Preserve secrets/update-signing/private.pem. Nao use --init-key se a cadeia atual do updater ja esta em producao.
+- apply-update-safe.sh preserva .env, updates/, secrets/ e artefatos publicados.
+- A configuracao Linux mantem packageName em build.deb/build.rpm para electron-builder 26.15.3.
+- Depois do deploy Web, use Ctrl+F5 somente se o navegador ainda estiver com assets antigos em cache.
+
+
+NOVIDADES DE TRANSMISSAO
+- Stream ativa fica centralizada; participantes ficam em cards empilhados.
+- Espectadores aparecem no canto inferior esquerdo da live (3 avatares +N).
+- Contador/lista sao atualizados em tempo real pela API/Socket.IO.
+- Como esta versao altera API e Web, faca rebuild dos dois servicos.

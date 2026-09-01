@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import { Activity, Archive, AudioLines, BellRing, Bookmark, CalendarClock, Camera, CircleCheck, Code2, Copy, Download, ExternalLink, Eye, Gamepad2, Headphones, Keyboard, KeyRound, LockKeyhole, Mic, MicOff, MonitorUp, Palette, RefreshCw, Save, ShieldCheck, Trash2, TriangleAlert, UserCog } from "lucide-react";
+import { Activity, Archive, AudioLines, BellRing, Bookmark, CalendarClock, Camera, CircleCheck, Code2, Copy, Download, ExternalLink, Eye, FileText, Gamepad2, Headphones, Keyboard, KeyRound, LockKeyhole, Mic, MicOff, MonitorUp, Palette, RefreshCw, Save, ShieldCheck, Trash2, TriangleAlert, UserCog } from "lucide-react";
 import { api, setToken } from "../lib/api";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { loadDeveloperPreferences, saveDeveloperPreferences } from "../lib/developerMode";
@@ -20,9 +20,9 @@ import QRCode from "qrcode";
 import { Avatar } from "./Avatar";
 import { SettingsShell } from "./SettingsShell";
 import { UserSocialPanel } from "./UserSocialPanel";
-import { applyVoiceDevice, loadVoicePreferences, saveVoicePreferences, type VoicePreferences } from "../lib/voicePreferences";
+import { applyMicrophoneSensitivity, applyVoiceDevice, loadVoicePreferences, microphoneSensitivityGain, saveVoicePreferences, type VoicePreferences } from "../lib/voicePreferences";
 import { bindingFromKeyboardEvent, bindingFromMouseEvent, formatPushToTalkBinding } from "../lib/pushToTalkBinding";
-import { detectDesktopGame, isGameOverlayAvailable, loadGameOverlayPreferences, previewGameOverlay, saveGameOverlayPreferences, type DesktopDetectedGame, type GameOverlayPreferences } from "../lib/gameOverlay";
+import { detectDesktopGame, getGameOverlayStatus, isGameOverlayAvailable, loadGameOverlayPreferences, previewGameOverlay, saveGameOverlayPreferences, type DesktopDetectedGame, type GameOverlayPreferences, type GameOverlayRuntimeStatus } from "../lib/gameOverlay";
 
 export type UserSettingsTab = "account" | "profile" | "social" | "privacy" | "voice" | "saved" | "notifications" | "appearance" | "updates" | "gaming" | "diagnostics" | "developer" | "security";
 
@@ -35,7 +35,7 @@ interface UserSettingsModalProps {
 }
 
 
-interface AuthSessionItem { id:string; createdAt:string; lastSeenAt:string; revokedAt:string|null; ipHash:string|null; userAgent:string; current?:boolean; }
+interface AuthSessionItem { id:string; createdAt:string; lastSeenAt:string; revokedAt:string|null; ipHash:string|null; userAgent:string; current?:boolean; remembered?:boolean; expiresAt?:string|null; }
 interface TrustedTwoFactorDeviceItem { id:string; userAgent:string; createdAt:string; lastUsedAt:string; expiresAt:string; current:boolean; }
 interface TwoFactorStatus { available:boolean; enabled:boolean; }
 interface TwoFactorSetup { secret:string; otpauthUri:string; }
@@ -51,6 +51,7 @@ interface DesktopUpdateBridge {
   getStartMinimized?:()=>Promise<{enabled:boolean;supported:boolean}>;
   setStartMinimized?:(enabled:boolean)=>Promise<{enabled:boolean;supported:boolean}>;
   getDiagnostics?:()=>Promise<DesktopDiagnostics>;
+  openExternalPath?:(path:string)=>Promise<boolean>;
 }
 interface GamingProfileSettings {
   showGameActivity:boolean;
@@ -60,6 +61,19 @@ interface GamingProfileSettings {
   gameSource:"NONE"|"MANUAL"|"DESKTOP";
 }
 interface GamingProfileResponse { profile: PublicGamingProfile & { settings: GamingProfileSettings } }
+
+function gameOverlayStatusText(status: GameOverlayRuntimeStatus | null) {
+  if (!status) return { title: "Desktop aguardando", detail: "Abra esta tela no aplicativo Desktop para usar a sobreposicao.", tone: "idle" };
+  if (!status.supported) return { title: "Disponivel no Windows", detail: "A sobreposicao de jogo usa a janela nativa do Ginga Desktop para Windows.", tone: "idle" };
+  if (!status.shortcutRegistered) return { title: "Atalho ocupado", detail: "Ctrl + Shift + O esta sendo usado por outro aplicativo. A sobreposicao automatica continua funcionando.", tone: "warn" };
+  if (status.reason === "disabled") return { title: "Sobreposicao desativada", detail: "Ative a opcao abaixo para mostrar a camada durante os jogos.", tone: "idle" };
+  if (status.reason === "game_not_detected") return { title: "Aguardando um jogo", detail: "O Desktop esta monitorando somente a lista local de jogos reconhecidos.", tone: "idle" };
+  if (status.reason === "game_not_focused") return { title: "Jogo detectado · em segundo plano", detail: "A camada foi escondida enquanto voce esta fora do jogo e volta sozinha ao retornar.", tone: "ready" };
+  if (status.reason === "manual_hidden") return { title: "Oculta pelo atalho", detail: "Pressione Ctrl + Shift + O para mostrar novamente.", tone: "warn" };
+  if (status.reason === "voice_required") return { title: "Aguardando chamada de voz", detail: "A opcao 'Somente durante uma chamada' esta ativa.", tone: "idle" };
+  if (status.visible) return { title: "Sobreposicao ativa", detail: "A camada esta visivel sobre o jogo detectado.", tone: "ready" };
+  return { title: "Sobreposicao pronta", detail: "O Desktop vai mostrar a camada assim que o jogo reconhecido estiver em foco.", tone: "ready" };
+}
 interface ServerDiagnostics {
   status:"healthy"|"degraded";
   version:string;
@@ -176,6 +190,8 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
   const [gameOverlay, setGameOverlay] = useState<GameOverlayPreferences>(() => loadGameOverlayPreferences());
   const [gamingProfile, setGamingProfile] = useState<GamingProfileSettings | null>(null);
   const [detectedGame, setDetectedGame] = useState<DesktopDetectedGame | null>(null);
+  const [gameOverlayStatus, setGameOverlayStatus] = useState<GameOverlayRuntimeStatus | null>(null);
+  const [gamingWarning, setGamingWarning] = useState("");
   const [gamingBusy, setGamingBusy] = useState(false);
   const [pttBindingCapture, setPttBindingCapture] = useState(false);
   const [voiceDevices, setVoiceDevices] = useState<{ microphones: MediaDeviceInfo[]; speakers: MediaDeviceInfo[]; cameras: MediaDeviceInfo[] }>({ microphones: [], speakers: [], cameras: [] });
@@ -286,18 +302,31 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
     if (tab !== "gaming" || !isGameOverlayAvailable()) return;
     let cancelled = false;
     setGamingBusy(true);
-    Promise.all([
+    setGamingWarning("");
+    // A sobreposicao e local do Desktop e nao pode depender da disponibilidade
+    // do perfil publico. Mesmo se a API de presenca estiver degradada, jogo,
+    // preview, atalho e chamada continuam configuraveis.
+    setGameOverlay(loadGameOverlayPreferences());
+    Promise.allSettled([
       api<GamingProfileResponse>("/api/gaming-profile/me"),
-      detectDesktopGame()
-    ]).then(([profileResult, detected]) => {
+      detectDesktopGame(),
+      getGameOverlayStatus()
+    ]).then(([profileResult, detectedResult, statusResult]) => {
       if (cancelled) return;
-      setGamingProfile(profileResult.profile.settings);
-      setDetectedGame(detected);
-      setGameOverlay(loadGameOverlayPreferences());
-    }).catch((caught) => {
-      if (!cancelled) setError(caught instanceof Error ? caught.message : "Nao foi possivel carregar jogos e sobreposicao");
+      if (profileResult.status === "fulfilled") {
+        setGamingProfile(profileResult.value.profile.settings);
+      } else {
+        setGamingProfile(null);
+        setGamingWarning("A presenca publica de jogo esta temporariamente indisponivel. A sobreposicao local continua funcionando normalmente.");
+      }
+      if (detectedResult.status === "fulfilled") setDetectedGame(detectedResult.value);
+      else setDetectedGame({ supported: true, activity: null, error: "Falha na deteccao local" });
+      if (statusResult.status === "fulfilled") setGameOverlayStatus(statusResult.value);
     }).finally(() => { if (!cancelled) setGamingBusy(false); });
-    return () => { cancelled = true; };
+    const statusTimer = window.setInterval(() => {
+      void getGameOverlayStatus().then((value) => { if (!cancelled) setGameOverlayStatus(value); }).catch(() => {});
+    }, 2000);
+    return () => { cancelled = true; window.clearInterval(statusTimer); };
   }, [tab]);
 
   useEffect(() => {
@@ -567,10 +596,13 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
       const context = new AudioContext();
       if (context.state === "suspended") await context.resume();
       const source = context.createMediaStreamSource(stream);
+      const inputGain = context.createGain();
+      inputGain.gain.value = microphoneSensitivityGain(voice.microphoneSensitivity);
       const analyser = context.createAnalyser();
       analyser.fftSize = 512;
       analyser.smoothingTimeConstant = 0.72;
-      source.connect(analyser);
+      source.connect(inputGain);
+      inputGain.connect(analyser);
       const data = new Uint8Array(analyser.fftSize);
       let bestLevel = 0;
       const startedAt = performance.now();
@@ -683,6 +715,15 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
     setError("");
   }
 
+  function updateMicrophoneSensitivity(value: number) {
+    const microphoneSensitivity = Math.max(0, Math.min(100, Math.round(value)));
+    const next = { ...voice, microphoneSensitivity };
+    updateVoice(next, window.__gingaVoiceSession ? "Sensibilidade aplicada na chamada atual" : "Sensibilidade do microfone salva");
+    void applyMicrophoneSensitivity(window.__gingaVoiceSession?.room, microphoneSensitivity).catch(() => {
+      setNotice("Sensibilidade salva. Ela sera aplicada ao reativar o microfone.");
+    });
+  }
+
   async function changeVoiceDevice(kind: MediaDeviceKind, key: "microphoneDevice" | "outputDevice" | "cameraDevice", deviceId: string) {
     if (kind === "audioinput") {
       stopMicrophoneTest(true);
@@ -712,6 +753,7 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
   async function updateGameOverlay(next: GameOverlayPreferences, success = "Preferencias da sobreposicao salvas") {
     const saved = await saveGameOverlayPreferences(next);
     setGameOverlay(saved);
+    setGameOverlayStatus(await getGameOverlayStatus().catch(() => null));
     setNotice(success); setError("");
   }
 
@@ -721,6 +763,7 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
     try {
       const result = await detectDesktopGame();
       setDetectedGame(result);
+      setGameOverlayStatus(await getGameOverlayStatus().catch(() => null));
       setNotice(result.activity?.name ? `Jogo detectado: ${result.activity.name}` : "Nenhum jogo reconhecido em execucao agora");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Falha ao detectar jogo"); }
     finally { setGamingBusy(false); }
@@ -729,6 +772,7 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
   async function showOverlayPreview() {
     try {
       const ok = await previewGameOverlay();
+      setGameOverlayStatus(await getGameOverlayStatus().catch(() => null));
       if (ok) setNotice("Previa da sobreposicao exibida por alguns segundos");
       else setError("A sobreposicao esta disponivel apenas no Ginga Desktop");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Nao foi possivel exibir a previa"); }
@@ -1156,6 +1200,13 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
               <input type="checkbox" checked={privacy.allowDirectMessages} onChange={(event) => { const next = { ...privacy, allowDirectMessages: event.target.checked }; setPrivacy(next); void savePrivacy(next); }} />
             </label>
           </div>
+          <div className="settings-legal-links">
+            <div><ShieldCheck size={17}/><span><strong>Documentos do Ginga</strong><small>Consulte a qualquer momento como o servico funciona e como seus dados sao tratados.</small></span></div>
+            <span>
+              <button type="button" className="secondary-button compact-button" onClick={() => { const bridge=desktopUpdaterBridge(); if(bridge?.isDesktop&&bridge.openExternalPath){void bridge.openExternalPath("/privacy");}else{window.open("/privacy","_blank","noopener,noreferrer");} }}><ShieldCheck size={14}/> Politica de Privacidade</button>
+              <button type="button" className="secondary-button compact-button" onClick={() => { const bridge=desktopUpdaterBridge(); if(bridge?.isDesktop&&bridge.openExternalPath){void bridge.openExternalPath("/terms");}else{window.open("/terms","_blank","noopener,noreferrer");} }}><FileText size={14}/> Termos de Uso</button>
+            </span>
+          </div>
         </section>
       )}
 
@@ -1222,6 +1273,14 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
               </div>
               <small className="voice-ptt-binding-hint">Teclas de letras, numeros, F1-F24, modificadores, setas, teclado numerico e botoes Mouse 1, 2, 3, 4, 5 ou adicionais sao aceitos. Mouse 1/2 pode interferir com cliques enquanto o PTT estiver ativo.</small>
             </div>}
+            <div className="voice-microphone-sensitivity">
+              <div className="voice-microphone-sensitivity-copy">
+                <span><strong>Sensibilidade do microfone</strong><small>Aumenta o ganho de entrada para captar melhor falas baixas. 50% preserva o volume original.</small></span>
+                <output>{voice.microphoneSensitivity}%</output>
+              </div>
+              <input type="range" min="0" max="100" step="1" value={voice.microphoneSensitivity} onChange={(event) => updateMicrophoneSensitivity(Number(event.target.value))} aria-label="Sensibilidade do microfone"/>
+              <div className="voice-microphone-sensitivity-scale"><span>Menos sensivel</span><span>Normal</span><span>Mais sensivel</span></div>
+            </div>
             <div className="settings-toggle-list voice-processing-toggle">
               <label className="settings-toggle-row"><div><strong>Reducao de ruido</strong><span>Usa supressao de ruido, cancelamento de eco e ganho automatico do WebRTC.</span></div><input type="checkbox" checked={voice.noiseSuppression} onChange={(event) => updateVoice({ ...voice, noiseSuppression: event.target.checked })}/></label>
             </div>
@@ -1242,6 +1301,8 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
         <section className="settings-page-section game-overlay-settings-page">
           <div className="settings-page-title"><span className="settings-eyebrow">GINGA GAMING</span><h1>Jogos e sobreposicao</h1><p>Mostre o jogo que voce esta jogando e acompanhe sua chamada sem precisar sair da partida.</p></div>
 
+          {gamingWarning && <div className="game-overlay-local-warning"><TriangleAlert size={16}/><div><strong>Presenca publica indisponivel</strong><span>{gamingWarning}</span></div></div>}
+
           <div className="settings-section-card game-presence-card">
             <div className="settings-section-card-title"><Gamepad2 size={19}/><div><strong>Presenca de jogo</strong><span>A deteccao acontece localmente no Desktop. O servidor recebe somente o nome do jogo reconhecido.</span></div></div>
             <div className="game-detection-status">
@@ -1257,6 +1318,7 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
 
           <div className="settings-section-card game-overlay-card">
             <div className="settings-section-card-title"><MonitorUp size={19}/><div><strong>Sobreposicao no jogo</strong><span>Uma camada leve do Ginga fica acima do jogo mostrando chamada e atividade. Nao injeta codigo no processo do jogo.</span></div></div>
+            {(() => { const statusCopy = gameOverlayStatusText(gameOverlayStatus); return <div className={`game-overlay-runtime-status ${statusCopy.tone}`}><span className="game-overlay-runtime-dot"/><div><strong>{statusCopy.title}</strong><span>{statusCopy.detail}</span>{gameOverlayStatus?.detectedGame?.name && <small>{gameOverlayStatus.detectedGame.name}{gameOverlayStatus.detectedGame.windowDetected ? " · janela detectada" : ""}</small>}</div><kbd>Ctrl + Shift + O</kbd></div>; })()}
             <div className="settings-toggle-list">
               <label className="settings-toggle-row"><div><strong>Ativar sobreposicao</strong><span>Aparece automaticamente quando um jogo reconhecido estiver aberto. Atalho global: Ctrl + Shift + O.</span></div><input type="checkbox" checked={gameOverlay.enabled} onChange={(event) => void updateGameOverlay({ ...gameOverlay, enabled:event.target.checked })}/></label>
               <label className="settings-toggle-row"><div><strong>Mostrar jogo</strong><span>Mostra o nome do jogo detectado no topo da sobreposicao.</span></div><input type="checkbox" checked={gameOverlay.showGame} disabled={!gameOverlay.enabled} onChange={(event) => void updateGameOverlay({ ...gameOverlay, showGame:event.target.checked })}/></label>
@@ -1453,7 +1515,7 @@ export function UserSettingsModal({ user, onClose, onSessionUpdate, initialTab =
 
           <div className="security-panel"><KeyRound size={28} /><div><strong>Alterar senha</strong><span>O Ginga envia um link de uso unico para o seu e-mail. Senhas encontradas em vazamentos conhecidos sao recusadas.</span></div></div>
           <div className="inline-alert info"><ShieldCheck size={17}/><div><strong>Senha e e-mail protegidos</strong><span>O cadastro exige confirmacao por e-mail e verifica se a senha apareceu em bases publicas de vazamentos sem enviar sua senha para esses servicos.</span></div></div>
-          <div className="security-sessions-block"><strong>Sessoes e dispositivos</strong>{authSessionsLoading?<div className="security-session-empty">Carregando...</div>:<div className="security-session-list">{authSessions.filter(i=>!i.revokedAt||i.current).map(session=><article key={session.id} className={`security-session-row ${session.current?"current":""}`}><MonitorUp size={18}/><div><strong>{session.userAgent}</strong><span>Ultima atividade {new Date(session.lastSeenAt).toLocaleString("pt-BR")}</span><small>Rede #{session.ipHash?.slice(0,10)??"-"}</small></div>{!session.current&&!session.revokedAt&&<button type="button" className="danger-button compact-button" onClick={()=>void revokeOwnSession(session.id)} disabled={Boolean(sessionActionId)}><Trash2 size={14}/> Desconectar</button>}</article>)}</div>}</div>
+          <div className="security-sessions-block"><strong>Sessoes e dispositivos</strong>{authSessionsLoading?<div className="security-session-empty">Carregando...</div>:<div className="security-session-list">{authSessions.filter(i=>!i.revokedAt||i.current).map(session=><article key={session.id} className={`security-session-row ${session.current?"current":""}`}><MonitorUp size={18}/><div><strong>{session.userAgent}</strong><span>Ultima atividade {new Date(session.lastSeenAt).toLocaleString("pt-BR")}</span><small>Rede #{session.ipHash?.slice(0,10)??"-"}{session.remembered?` · lembrado${session.expiresAt?` ate ${new Date(session.expiresAt).toLocaleDateString("pt-BR")}`:""}`:""}</small></div>{!session.current&&!session.revokedAt&&<button type="button" className="danger-button compact-button" onClick={()=>void revokeOwnSession(session.id)} disabled={Boolean(sessionActionId)}><Trash2 size={14}/> Desconectar</button>}</article>)}</div>}</div>
           <div className="settings-action-row"><button type="button" className="primary-button" disabled={busy} onClick={() => void requestOwnPasswordReset()}><KeyRound size={16} /> Enviar link para alterar senha</button><button type="button" className="secondary-button" disabled={busy} onClick={() => void logoutAllDevices()}><ShieldCheck size={16} /> Revogar outras sessoes</button></div>
         </section>
       )}

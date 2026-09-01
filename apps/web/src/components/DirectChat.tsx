@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
-import { CheckCircle2, Download, File as FileIcon, FileArchive, FileAudio, FileText, Image as ImageIcon, LoaderCircle, Paperclip, Pencil, Phone, PhoneCall, PhoneMissed, PhoneOff, Reply, Send, Trash2, Users, Video, X } from "lucide-react";
+import { ArrowDown, CheckCircle2, Download, File as FileIcon, FileArchive, FileAudio, FileText, Image as ImageIcon, LoaderCircle, Paperclip, Pencil, Phone, PhoneCall, PhoneMissed, PhoneOff, Reply, Send, Trash2, Users, Video, X } from "lucide-react";
 import type { Socket } from "socket.io-client";
 import { api, uploadFile } from "../lib/api";
 import type { DirectCall } from "../lib/directCalls";
@@ -33,8 +33,36 @@ interface AckResponse {
 }
 
 const timeFormatter = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
-const dateFormatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+const longDateFormatter = new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+const shortDateFormatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+const weekdayFormatter = new Intl.DateTimeFormat("pt-BR", { weekday: "long" });
+const fullTimeFormatter = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const serverInvitePattern = /^\[\[ginga:server-invite:([A-Za-z0-9_-]{5,16})\]\]$/i;
+
+function capitalizeDateLabel(value: string) {
+  return value ? value.charAt(0).toLocaleUpperCase("pt-BR") + value.slice(1) : value;
+}
+
+function localDayStamp(date: Date) {
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function formatDayDivider(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  const diffDays = Math.round((localDayStamp(today) - localDayStamp(date)) / 86_400_000);
+  const fullDate = capitalizeDateLabel(longDateFormatter.format(date));
+  const calendarDate = shortDateFormatter.format(date);
+  if (diffDays === 0) return { relative: "Hoje", fullDate };
+  if (diffDays === 1) return { relative: "Ontem", fullDate };
+  if (diffDays > 1 && diffDays < 7) return { relative: capitalizeDateLabel(weekdayFormatter.format(date)), fullDate: calendarDate };
+  return { relative: calendarDate, fullDate };
+}
+
+function formatFullTimestamp(value: string) {
+  const date = new Date(value);
+  return `${capitalizeDateLabel(longDateFormatter.format(date))} às ${fullTimeFormatter.format(date)}`;
+}
 
 interface DirectInvitePreview {
   code: string;
@@ -158,8 +186,31 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
   const [callHistory, setCallHistory] = useState<DirectCall[]>([]);
+  const [newMessageCount, setNewMessageCount] = useState(0);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messageScrollRef = useRef<HTMLDivElement>(null);
+  const nearBottomRef = useRef(true);
+  const initialScrollPendingRef = useRef(true);
+
+  function isNearBottom() {
+    const element = messageScrollRef.current;
+    if (!element) return true;
+    return element.scrollHeight - element.scrollTop - element.clientHeight < 140;
+  }
+
+  function scrollToLatest(behavior: ScrollBehavior = "smooth") {
+    const element = messageScrollRef.current;
+    nearBottomRef.current = true;
+    setNewMessageCount(0);
+    setShowScrollToBottom(false);
+    if (element) {
+      element.scrollTo({ top: element.scrollHeight, behavior });
+      return;
+    }
+    bottomRef.current?.scrollIntoView({ behavior, block: "end" });
+  }
 
   useEffect(() => {
     let active = true;
@@ -169,6 +220,10 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
     setReplyTo(null);
     setEditingId("");
     setContent("");
+    setNewMessageCount(0);
+    setShowScrollToBottom(false);
+    nearBottomRef.current = true;
+    initialScrollPendingRef.current = true;
     api<{ messages: DirectMessage[] }>(`/api/direct/conversations/${conversation.id}/messages`)
       .then((result) => { if (active) setMessages(result.messages); })
       .catch((caught) => { if (active) setError(caught instanceof Error ? caught.message : "Falha ao carregar a conversa"); })
@@ -177,6 +232,7 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
     const onMessage = (message: DirectMessage) => {
       if (message.conversationId !== conversation.id) return;
       setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+      if (message.authorId !== currentUser.id && !nearBottomRef.current) setNewMessageCount((count) => count + 1);
       onConversationActivity?.();
     };
     const onUpdated = (message: DirectMessage) => {
@@ -200,7 +256,7 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
       socket.off("direct:message:updated", onUpdated);
       socket.off("direct:message:deleted", onDeleted);
     };
-  }, [conversation.id, onConversationActivity, socket]);
+  }, [conversation.id, currentUser.id, onConversationActivity, socket]);
 
   useEffect(() => {
     let active = true;
@@ -213,7 +269,36 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
     return () => { active = false; window.removeEventListener("ginga:direct-calls:update", onCalls); };
   }, [conversation.otherUser.id]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: loading ? "auto" : "smooth" }); }, [callHistory.length, messages.length, loading]);
+  useEffect(() => {
+    if (loading) return;
+    if (initialScrollPendingRef.current) {
+      initialScrollPendingRef.current = false;
+      let secondFrame = 0;
+      const firstFrame = window.requestAnimationFrame(() => {
+        scrollToLatest("auto");
+        secondFrame = window.requestAnimationFrame(() => scrollToLatest("auto"));
+      });
+      return () => {
+        window.cancelAnimationFrame(firstFrame);
+        if (secondFrame) window.cancelAnimationFrame(secondFrame);
+      };
+    }
+    if (nearBottomRef.current) requestAnimationFrame(() => scrollToLatest(messages.length || callHistory.length ? "smooth" : "auto"));
+  }, [conversation.id, callHistory.length, messages.length, loading]);
+
+  useEffect(() => {
+    const element = messageScrollRef.current;
+    if (!element) return;
+    const keepBottomStable = () => {
+      if (nearBottomRef.current) requestAnimationFrame(() => scrollToLatest("auto"));
+    };
+    element.addEventListener("load", keepBottomStable, true);
+    element.addEventListener("loadedmetadata", keepBottomStable, true);
+    return () => {
+      element.removeEventListener("load", keepBottomStable, true);
+      element.removeEventListener("loadedmetadata", keepBottomStable, true);
+    };
+  }, [conversation.id]);
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -294,6 +379,8 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
         if (!response?.ok) { reject(new Error(response?.error ?? "Nao foi possivel enviar a mensagem de voz")); return; }
         if (response.message) setMessages((current) => current.some((item) => item.id === response.message!.id) ? current : [...current, response.message!]);
         setReplyTo(null);
+        nearBottomRef.current = true;
+        requestAnimationFrame(() => scrollToLatest("smooth"));
         onConversationActivity?.();
         resolve();
       });
@@ -334,6 +421,8 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
       if (!response?.ok) { setError(response?.error ?? "Nao foi possivel enviar a mensagem"); return; }
       if (response.message) setMessages((current) => current.some((item) => item.id === response.message!.id) ? current : [...current, response.message!]);
       setContent(""); setPendingAttachments([]); setReplyTo(null);
+      nearBottomRef.current = true;
+      requestAnimationFrame(() => scrollToLatest("smooth"));
       onConversationActivity?.();
       textareaRef.current?.focus();
     });
@@ -410,14 +499,19 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
 
       {dragActive && <div className="chat-drop-overlay"><Paperclip size={30}/><strong>Solte para enviar</strong><span>Ate 10 arquivos por mensagem</span></div>}
 
-      <div className="message-scroll">
+      <div className="message-scroll" ref={messageScrollRef} onScroll={() => {
+        const near = isNearBottom();
+        nearBottomRef.current = near;
+        setShowScrollToBottom(!near);
+        if (near) setNewMessageCount(0);
+      }}>
         {loading && <div className="center-state"><LoaderCircle className="spin" /> Carregando conversa...</div>}
         {!loading && messages.length === 0 && <div className="direct-empty"><Avatar user={other} size="xl" /><h2>{other.displayName}</h2><p>Este e o inicio da conversa com @{other.username}. Mensagens, arquivos e chamadas privadas ficam aqui.</p></div>}
 
         {timelineItems.map((item, index) => {
           if (item.kind === "call") {
             return <div key={item.key}>
-              {dayMarkers.has(item.key) && <div className="day-divider"><span>{dateFormatter.format(new Date(item.at))}</span></div>}
+              {dayMarkers.has(item.key) && (() => { const label = formatDayDivider(item.at); return <div className="day-divider" title={label.fullDate}><span><strong>{label.relative}</strong><small>{label.fullDate}</small></span></div>; })()}
               <DirectCallEventCard call={item.call} currentUser={currentUser} onJoin={item.call.state === "ACTIVE" ? onJoinCall : undefined}/>
             </div>;
           }
@@ -428,12 +522,12 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
           const replied = message.replyToId ? messages.find((candidate) => candidate.id === message.replyToId) : null;
           const inviteCode = serverInviteCode(message.content);
           return <div key={item.key}>
-            {dayMarkers.has(item.key) && <div className="day-divider"><span>{dateFormatter.format(new Date(message.createdAt))}</span></div>}
+            {dayMarkers.has(item.key) && (() => { const label = formatDayDivider(message.createdAt); return <div className="day-divider" title={label.fullDate}><span><strong>{label.relative}</strong><small>{label.fullDate}</small></span></div>; })()}
             <article className={`message-row direct-message-row ${compact ? "message-compact" : ""} ${message.authorId === currentUser.id ? "message-own" : ""}`}>
               {!compact && <button className="message-user-button avatar-button" type="button" onClick={(event) => onUserClick?.(message.author, event.currentTarget.getBoundingClientRect())}><Avatar user={message.author} size="md" /></button>}
-              {compact && <time className="compact-time">{timeFormatter.format(new Date(message.createdAt))}</time>}
+              {compact && <time className="compact-time" dateTime={message.createdAt} title={formatFullTimestamp(message.createdAt)}>{timeFormatter.format(new Date(message.createdAt))}</time>}
               <div className="message-body">
-                {!compact && <div className="message-meta"><button className="message-author-button" type="button" onClick={(event) => onUserClick?.(message.author, event.currentTarget.getBoundingClientRect())}><strong>{message.author.displayName}</strong><span>@{message.author.username}</span></button><time>{timeFormatter.format(new Date(message.createdAt))}{message.editedAt ? " · editada" : ""}</time></div>}
+                {!compact && <div className="message-meta"><button className="message-author-button" type="button" onClick={(event) => onUserClick?.(message.author, event.currentTarget.getBoundingClientRect())}><strong>{message.author.displayName}</strong><span>@{message.author.username}</span></button><time dateTime={message.createdAt} title={formatFullTimestamp(message.createdAt)}>{timeFormatter.format(new Date(message.createdAt))}{message.editedAt ? " · editada" : ""}</time></div>}
                 {replied && <button className="direct-reply-reference" type="button" onClick={() => document.querySelector(`[data-direct-message-id="${replied.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}><Reply size={13}/><strong>{replied.author.displayName}</strong><span>{directReplyPreview(replied)}</span></button>}
                 <div data-direct-message-id={message.id}>{inviteCode ? <DirectServerInviteCard code={inviteCode} onJoin={onJoinServerInvite}/> : message.content ? <div className="message-text"><MessageContent content={message.content}/></div> : null}</div>
                 {message.attachments.length > 0 && <div className="message-attachments">{message.attachments.map((attachment) => <MessageAttachment key={attachment.id} attachment={attachment} onPreview={setMediaViewer} />)}</div>}
@@ -448,6 +542,7 @@ export function DirectChat({ conversation, currentUser, socket, online, onStartC
         })}
         <div ref={bottomRef} />
       </div>
+      {showScrollToBottom && <button type="button" className={`new-messages-jump ${newMessageCount > 0 ? "has-new" : ""}`} onClick={() => scrollToLatest()} aria-label={newMessageCount > 0 ? `${newMessageCount} mensagens novas. Ir para o final.` : "Ir para o final da conversa"}><ArrowDown size={17}/><span>{newMessageCount > 0 ? `${newMessageCount} mensagem${newMessageCount === 1 ? " nova" : "s novas"}` : "Ir para o final"}</span>{newMessageCount > 0 && <strong>Ver agora</strong>}</button>}
 
       <form className="composer-wrap" onSubmit={(event) => void submit(event)}>
         {error && <div className="composer-error">{error}</div>}

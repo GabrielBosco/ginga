@@ -9,7 +9,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Rode ./scripts/init.sh para gerar POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -25,12 +25,12 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-    command: ["/bin/sh", "-ec", 'if [ -n "$$REDIS_PASSWORD" ]; then exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"; else exec redis-server --appendonly yes; fi']
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Rode ./scripts/init.sh para gerar REDIS_PASSWORD}
+    command: ["/bin/sh", "-ec", 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"']
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", 'if [ -n "$$REDIS_PASSWORD" ]; then redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping; else redis-cli ping; fi']
+      test: ["CMD-SHELL", 'redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -49,7 +49,7 @@ services:
       LIVEKIT_TURN_ENABLED: ${LIVEKIT_TURN_ENABLED:-true}
       LIVEKIT_TURN_UDP_PORT: ${LIVEKIT_TURN_UDP_PORT:-3478}
       LIVEKIT_LOG_LEVEL: ${LIVEKIT_LOG_LEVEL:-warn}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Rode ./scripts/init.sh para gerar REDIS_PASSWORD}
     volumes:
       - livekit_config:/out
       - ./infra/livekit/generate.sh:/generate.sh:ro
@@ -90,7 +90,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD:?Rode ./scripts/init.sh para gerar POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       UPLOAD_DIR: /data/uploads
     volumes:
       - uploads_data:/data/uploads
@@ -111,6 +111,8 @@ services:
       context: ./apps/web
       args:
         VITE_GITHUB_REPOSITORY_URL: ${GITHUB_REPOSITORY_URL:-}
+        PUBLIC_LIVEKIT_URL: ${PUBLIC_LIVEKIT_URL:-}
+        LIVEKIT_DOMAIN: ${LIVEKIT_DOMAIN:-}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

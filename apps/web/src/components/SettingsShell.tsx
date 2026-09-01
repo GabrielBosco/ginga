@@ -39,10 +39,23 @@ export function SettingsShell<T extends string>({ title, subtitle, tabs, activeT
     });
   }, [tabs]);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => readCollapsedGroups(storageKey));
+  const [compactNavigation, setCompactNavigation] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 820px)").matches);
 
   useEffect(() => {
     setCollapsedGroups(readCollapsedGroups(storageKey));
   }, [storageKey]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 820px)");
+    const sync = () => setCompactNavigation(media.matches);
+    sync();
+    if (media.addEventListener) media.addEventListener("change", sync);
+    else media.addListener?.(sync);
+    return () => {
+      if (media.removeEventListener) media.removeEventListener("change", sync);
+      else media.removeListener?.(sync);
+    };
+  }, []);
 
   const activeGroup = normalizedTabs.find((item) => item.id === activeTab)?.resolvedGroup ?? "";
 
@@ -78,10 +91,10 @@ export function SettingsShell<T extends string>({ title, subtitle, tabs, activeT
           {normalizedTabs.map((tab, index) => {
             const previousGroup = index > 0 ? normalizedTabs[index - 1]?.resolvedGroup : null;
             const showGroup = tab.resolvedGroup !== previousGroup;
-            const collapsed = collapsedGroups.has(tab.resolvedGroup);
+            const collapsed = !compactNavigation && collapsedGroups.has(tab.resolvedGroup);
             return (
               <Fragment key={tab.id}>
-                {showGroup && (
+                {showGroup && !compactNavigation && (
                   <button
                     type="button"
                     className={`settings-nav-group-toggle ${collapsed ? "is-collapsed" : ""}`}

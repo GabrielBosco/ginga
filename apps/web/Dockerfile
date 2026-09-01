@@ -19,7 +19,27 @@ RUN apk add --no-cache \
     && mkdir -p /usr/share/nginx/html
 
 COPY nginx-main.conf /etc/nginx/nginx.conf
-COPY nginx.conf /etc/nginx/http.d/default.conf
+ARG PUBLIC_LIVEKIT_URL=""
+ARG LIVEKIT_DOMAIN=""
+COPY nginx.conf /tmp/ginga-nginx.conf
+RUN set -eu; \
+    origins=""; \
+    if [ -n "$LIVEKIT_DOMAIN" ]; then \
+      origins="$origins https://$LIVEKIT_DOMAIN wss://$LIVEKIT_DOMAIN"; \
+    fi; \
+    if [ -n "$PUBLIC_LIVEKIT_URL" ]; then \
+      scheme="${PUBLIC_LIVEKIT_URL%%://*}"; \
+      rest="${PUBLIC_LIVEKIT_URL#*://}"; \
+      authority="${rest%%/*}"; \
+      case "$scheme" in \
+        wss|https) origins="$origins https://$authority wss://$authority" ;; \
+        ws|http) origins="$origins http://$authority ws://$authority" ;; \
+      esac; \
+    fi; \
+    sed "s|__LIVEKIT_CONNECT_SRC__|$origins|g" /tmp/ginga-nginx.conf > /etc/nginx/http.d/default.conf; \
+    rm -f /tmp/ginga-nginx.conf; \
+    grep -q "connect-src 'self'" /etc/nginx/http.d/default.conf; \
+    ! grep -q '__LIVEKIT_CONNECT_SRC__' /etc/nginx/http.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80

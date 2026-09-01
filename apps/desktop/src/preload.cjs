@@ -33,6 +33,7 @@ const desktopApi = Object.freeze({
   setGameOverlaySettings: (settings) => ipcRenderer.invoke('ginga:game-overlay-settings-set', settings),
   updateGameOverlayState: (state) => ipcRenderer.invoke('ginga:game-overlay-state', state),
   previewGameOverlay: () => ipcRenderer.invoke('ginga:game-overlay-preview'),
+  getGameOverlayStatus: () => ipcRenderer.invoke('ginga:game-overlay-status'),
   readSessionToken: () => ipcRenderer.sendSync('ginga:session-read-sync'),
   writeSessionToken: (token) => ipcRenderer.sendSync('ginga:session-write-sync', token || ''),
   openExternalPath: (path) => ipcRenderer.invoke('ginga:open-external-path', path),
@@ -65,14 +66,14 @@ function installDesktopChrome() {
       if (process.platform === 'win32') document.documentElement.classList.add('ginga-desktop-windows');
 
       // Windows usa frame customizado. Linux/macOS mantem a moldura nativa do SO:
-      // nao injete uma segunda titlebar, padding de 32px nem controles falsos nesses sistemas.
+      // nao injete uma segunda titlebar, padding extra nem controles falsos nesses sistemas.
       if (process.platform !== 'win32') return;
 
       if (!document.getElementById('ginga-desktop-chrome-style')) {
         const style = document.createElement('style');
         style.id = 'ginga-desktop-chrome-style';
         style.textContent = `
-          :root { --ginga-desktop-chrome-height:32px; }
+          :root { --ginga-desktop-chrome-height:28px; --ginga-desktop-titlebar-height:28px; }
           html[data-ginga-desktop="true"] body { padding-top:var(--ginga-desktop-chrome-height) !important; min-height:100vh !important; background:#0c1015 !important; }
           html[data-ginga-desktop="true"] #root { height:calc(100vh - var(--ginga-desktop-chrome-height)) !important; min-height:0 !important; }
           html[data-ginga-desktop="true"] .workspace,
@@ -80,20 +81,20 @@ function installDesktopChrome() {
           html[data-ginga-desktop="true"] .auth-page,
           html[data-ginga-desktop="true"] .auth-site,
           html[data-ginga-desktop="true"] .app-loading { height:calc(100vh - var(--ginga-desktop-chrome-height)) !important; min-height:0 !important; }
-          .ginga-desktop-titlebar { position:fixed; inset:0 0 auto 0; height:var(--ginga-desktop-chrome-height); z-index:2147483646; display:flex; align-items:center; background:#0c1015; border-bottom:1px solid rgba(255,255,255,.045); color:#8e98a4; -webkit-app-region:drag; user-select:none; font-family:Inter,"Segoe UI",sans-serif; }
-          .ginga-desktop-titlebar-brand { height:100%; display:flex; align-items:center; padding:0 14px; color:#737e8b; font-size:10px; font-weight:700; letter-spacing:.035em; opacity:.9; }
-          .ginga-desktop-update { position:absolute; left:50%; top:4px; transform:translateX(-50%); height:24px; max-width:min(520px,calc(100vw - 360px)); padding:0 12px; border:1px solid rgba(92,171,129,.24); border-radius:7px; background:rgba(49,91,69,.26); color:#b6d8c4; display:flex; align-items:center; gap:7px; font:600 10px/1 Inter,"Segoe UI",sans-serif; cursor:pointer; -webkit-app-region:no-drag; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 4px 18px rgba(0,0,0,.14); transition:background .14s ease,border-color .14s ease,color .14s ease; }
+          .ginga-desktop-titlebar { position:fixed; inset:0 0 auto 0; height:var(--ginga-desktop-chrome-height); z-index:2147483646; display:flex; align-items:center; background:rgba(12,16,21,.98); border-bottom:1px solid rgba(255,255,255,.04); color:#8e98a4; -webkit-app-region:drag; user-select:none; font-family:Inter,"Segoe UI",sans-serif; box-shadow:0 1px 0 rgba(0,0,0,.2); }
+          .ginga-desktop-titlebar-brand { height:100%; display:flex; align-items:center; padding:0 12px; color:#7f8995; font-size:9.5px; font-weight:720; letter-spacing:.025em; opacity:.92; }
+          .ginga-desktop-update { position:absolute; left:50%; top:3px; transform:translateX(-50%); height:22px; max-width:min(520px,calc(100vw - 360px)); padding:0 12px; border:1px solid rgba(92,171,129,.24); border-radius:7px; background:rgba(49,91,69,.26); color:#b6d8c4; display:flex; align-items:center; gap:7px; font:600 10px/1 Inter,"Segoe UI",sans-serif; cursor:pointer; -webkit-app-region:no-drag; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 4px 18px rgba(0,0,0,.14); transition:background .14s ease,border-color .14s ease,color .14s ease; }
           .ginga-desktop-update[hidden] { display:none !important; }
           .ginga-desktop-update:hover { background:rgba(56,113,82,.38); border-color:rgba(102,195,146,.34); color:#d8efe2; }
           .ginga-desktop-update:disabled { cursor:default; opacity:.72; }
           .ginga-desktop-update-dot { width:6px; height:6px; flex:0 0 auto; border-radius:50%; background:#67bf8e; box-shadow:0 0 0 4px rgba(103,191,142,.09); animation:ginga-update-pulse 1.8s ease-in-out infinite; }
           @keyframes ginga-update-pulse { 50% { box-shadow:0 0 0 7px rgba(103,191,142,0); } }
-          .ginga-window-controls { position:absolute; top:0; right:0; z-index:2; height:100%; display:flex; align-items:stretch; -webkit-app-region:no-drag; }
-          .ginga-window-control { width:46px; height:32px; padding:0; border:0; border-radius:0; display:grid; place-items:center; background:transparent; color:#7f8995; cursor:default; outline:0; transition:background .12s ease,color .12s ease; }
-          .ginga-window-control svg { width:11px; height:11px; stroke:currentColor; stroke-width:1.45; fill:none; }
-          .ginga-window-control:hover { background:#1a2027; color:#dce2e7; }
-          .ginga-window-control.close:hover { background:#c84b54; color:#fff; }
-          .ginga-window-control:active { filter:brightness(.87); }
+          .ginga-window-controls { position:absolute; top:0; right:3px; z-index:2; height:100%; display:flex; align-items:center; gap:2px; -webkit-app-region:no-drag; }
+          .ginga-window-control { width:38px; height:22px; padding:0; border:0; border-radius:6px; display:grid; place-items:center; background:transparent; color:#818b97; cursor:default; outline:0; transition:background .12s ease,color .12s ease,transform .12s ease; }
+          .ginga-window-control svg { width:10px; height:10px; stroke:currentColor; stroke-width:1.5; fill:none; }
+          .ginga-window-control:hover { background:rgba(255,255,255,.065); color:#eef2f6; }
+          .ginga-window-control.close:hover { background:#c94f59; color:#fff; }
+          .ginga-window-control:active { transform:scale(.94); filter:brightness(.9); }
         `;
         document.head.appendChild(style);
       }

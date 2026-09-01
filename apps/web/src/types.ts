@@ -203,6 +203,8 @@ export interface MusicSettings {
   defaultVoiceChannelId: string | null;
   youtubeSearchEnabled: boolean;
   soundcloudSearchEnabled: boolean;
+  playbackMode: "CLIENT_EDGE";
+  audioProxiedByServer: boolean;
   maxQueue: number;
   maxPlaylistItems: number;
 }

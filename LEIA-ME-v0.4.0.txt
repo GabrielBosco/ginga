@@ -1,0 +1,28 @@
+GINGA 0.4.0 - BIG PERSONALIZATION + DESKTOP RECOVERY
+
+O que esta versao resolve:
+- corrige o Desktop que podia abrir com aparencia/comportamento de Web apos o update;
+- restaura a bridge do Electron e a barra superior nativa do Ginga;
+- trava o zoom do Desktop em 100% para evitar breakpoints errados;
+- adiciona personalizacao visual por servidor;
+- adiciona personalizacao completa de perfil com banner, cores, tema, pronomes e links.
+
+ONDE CONFIGURAR
+Servidor:
+  Gerenciar espaco > Aparencia
+
+Perfil:
+  Configuracoes do usuario > Perfil
+
+BANCO
+Nao ha SQL manual. As tabelas auxiliares fazem migracao aditiva/idempotente na primeira inicializacao da API atualizada.
+
+PACOTE FONTE
+Este ZIP foi preparado para compartilhamento e nao deve conter node_modules, executaveis, .env real, backups de release ou chave privada de assinatura.
+Mantenha apps/desktop/update-public.pem: ele e a chave PUBLICA usada para validar updates.
+
+BUILD WINDOWS
+Na maquina oficial de build, preserve fora do pacote compartilhavel:
+  /opt/ginga-build/secrets/update-signing/private.pem
+
+Depois de instalar as dependencias, gere a versao 0.4.0 pelo fluxo normal de release.

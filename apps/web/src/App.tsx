@@ -5,8 +5,9 @@ import { AdminPortal } from "./components/AdminPortal";
 import { DeveloperPortal, OAuthAuthorize } from "./components/DeveloperPortal";
 import { InviteLanding } from "./components/InviteLanding";
 import { KnowledgeBase } from "./components/KnowledgeBase";
+import { LegalPage } from "./components/LegalPage";
 import { PasswordResetPage } from "./components/PasswordResetPage";
-import { api, getToken, setToken } from "./lib/api";
+import { api, getToken, restoreRememberedSession, setToken } from "./lib/api";
 import { applyAppearancePreferences, loadAppearancePreferences } from "./lib/preferences";
 import type { User } from "./types";
 
@@ -30,17 +31,37 @@ export default function App() {
 
   useEffect(() => {
     const onSessionInvalid = () => setSession(null);
+    const onSessionRestored = (event: Event) => {
+      const detail = (event as CustomEvent<Session>).detail;
+      if (detail?.token && detail?.user) setSession(detail);
+    };
     window.addEventListener("ginga:session-invalid", onSessionInvalid as EventListener);
-    return () => window.removeEventListener("ginga:session-invalid", onSessionInvalid as EventListener);
+    window.addEventListener("ginga:session-restored", onSessionRestored as EventListener);
+    return () => {
+      window.removeEventListener("ginga:session-invalid", onSessionInvalid as EventListener);
+      window.removeEventListener("ginga:session-restored", onSessionRestored as EventListener);
+    };
   }, []);
 
   useEffect(() => {
     applyAppearancePreferences(loadAppearancePreferences());
-    const token = getToken();
-    if (!token) { setSession(null); return; }
-    api<{ user: User }>("/api/auth/me")
-      .then((result) => setSession({ token, user: result.user }))
-      .catch(() => { setToken(null); setSession(null); });
+    let cancelled = false;
+    void (async () => {
+      const token = getToken();
+      if (token) {
+        try {
+          const result = await api<{ user: User }>("/api/auth/me");
+          const activeToken = getToken() ?? token;
+          if (!cancelled) setSession({ token: activeToken, user: result.user });
+          return;
+        } catch {
+          // O helper da API ja tenta restaurar uma sessao lembrada antes de falhar.
+        }
+      }
+      const remembered = await restoreRememberedSession();
+      if (!cancelled) setSession(remembered ? { token: remembered.token, user: remembered.user } : null);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -58,6 +79,8 @@ export default function App() {
   }, [desktop, path]);
 
   if (path === "/knowledge") return <KnowledgeBase authenticated={Boolean(session)} onExit={() => navigate("/")} />;
+  if (path === "/terms") return <LegalPage kind="terms" onExit={() => navigate("/")} />;
+  if (path === "/privacy") return <LegalPage kind="privacy" onExit={() => navigate("/")} />;
   if (path === "/reset-password") return <PasswordResetPage />;
 
   if (session === undefined) return <div className="app-loading"><img className="ginga-mark-image loading" src="/favicon.svg" alt="" /><small>Iniciando...</small></div>;
@@ -75,5 +98,10 @@ export default function App() {
     if (code) return <InviteLanding code={code} onDone={() => navigate("/")} onExit={() => navigate("/")} />;
   }
 
-  return <Workspace token={session.token} user={session.user} onSessionUpdate={(token,user)=>setSession({token,user})} onLogout={()=>{setToken(null);setSession(null);}} onNavigate={navigate} desktop={desktop} />;
+  return <Workspace token={session.token} user={session.user} onSessionUpdate={(token,user)=>setSession({token,user})} onLogout={()=>{
+    void api<void>("/api/auth/logout", { method: "POST" }).catch(() => undefined).finally(() => {
+      setToken(null);
+      setSession(null);
+    });
+  }} onNavigate={navigate} desktop={desktop} />;
 }

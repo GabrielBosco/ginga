@@ -69,7 +69,7 @@ export function PasswordResetPage() {
   }
 
   return (
-    <main className="auth-page auth-simple password-reset-page">
+    <main className="auth-page auth-simple password-reset-page auth-v047-r2">
       <section className="auth-panel">
         <form className="auth-card password-reset-card" onSubmit={token && !completed ? confirmReset : requestReset}>
           <img className="auth-app-icon-image" src="/ginga-mark.svg" alt="" />
@@ -94,6 +94,7 @@ export function PasswordResetPage() {
           {notice && <div className="inline-alert info"><ShieldCheck size={17}/><div><strong>{completed ? "Tudo certo" : "Confira seu e-mail"}</strong><span>{notice}</span></div></div>}
 
           {!completed && <button className="primary-button auth-submit" disabled={loading}><KeyRound size={17}/>{loading ? "Aguarde..." : token ? "Alterar senha" : "Enviar link de redefinicao"}</button>}
+          {!token && !completed && <a className="auth-recovery-card wide password-reset-2fa" href="/?login=2fa"><KeyRound size={17}/><span><strong>Tenho 2FA</strong><small>Entrar com o autenticador sem usar a senha.</small></span></a>}
           <a className="auth-link-button password-reset-back" href="/"><ArrowLeft size={15}/> Voltar para entrar</a>
         </form>
       </section>

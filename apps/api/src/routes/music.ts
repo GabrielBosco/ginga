@@ -60,8 +60,7 @@ interface MusicRuntimeState {
 }
 
 const musicStates = new Map<string, MusicRuntimeState>();
-const musicPlaybackLeases = new Map<string, { clientId: string; expiresAt: number }>();
-const MUSIC_PLAYBACK_LEASE_TTL_MS = 12_000;
+const musicNaturalAdvanceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const settingsSchema = z.object({
   enabled: z.boolean().optional(),
@@ -152,9 +151,48 @@ async function runtimeFor(guildId: string) {
   return runtime;
 }
 
+function clearNaturalAdvance(guildId: string) {
+  const existing = musicNaturalAdvanceTimers.get(guildId);
+  if (existing) clearTimeout(existing);
+  musicNaturalAdvanceTimers.delete(guildId);
+}
+
+function emitMusicState(io: any, guildId: string, state: MusicRuntimeState) {
+  io?.to?.(`guild:${guildId}`)?.emit?.("music:state", publicRuntime(state));
+}
+
+function scheduleNaturalAdvance(io: any, guildId: string, state: MusicRuntimeState) {
+  clearNaturalAdvance(guildId);
+  const track = state.queue[0];
+  const duration = track?.durationSeconds ?? null;
+  if (!track || !duration || state.status !== "PLAYING") return;
+
+  const trackId = track.id;
+  const remainingMs = Math.max(150, Math.ceil((duration - currentPosition(state)) * 1000) + 180);
+  const timer = setTimeout(() => {
+    musicNaturalAdvanceTimers.delete(guildId);
+    const live = musicStates.get(guildId);
+    const current = live?.queue[0];
+    if (!live || !current || current.id !== trackId || live.status !== "PLAYING") return;
+
+    // Se o timer disparou cedo por jitter do event loop, reagenda pelo relogio autoritativo.
+    if (currentPosition(live) + 0.15 < duration) {
+      scheduleNaturalAdvance(io, guildId, live);
+      return;
+    }
+
+    advance(live, true);
+    emitMusicState(io, guildId, live);
+    scheduleNaturalAdvance(io, guildId, live);
+  }, remainingMs);
+  timer.unref?.();
+  musicNaturalAdvanceTimers.set(guildId, timer);
+}
+
 function emitMusic(req: Request, guildId: string, state: MusicRuntimeState) {
   const io = req.app.get("io");
-  io?.to?.(`guild:${guildId}`)?.emit?.("music:state", publicRuntime(state));
+  emitMusicState(io, guildId, state);
+  scheduleNaturalAdvance(io, guildId, state);
 }
 
 function publicSettings(settings: { musicEnabled: boolean; musicAllowMembers: boolean; musicDefaultVolume: number; musicDefaultVoiceChannelId: string | null }) {
@@ -165,6 +203,8 @@ function publicSettings(settings: { musicEnabled: boolean; musicAllowMembers: bo
     defaultVoiceChannelId: settings.musicDefaultVoiceChannelId,
     youtubeSearchEnabled: Boolean(config.youtubeApiKey),
     soundcloudSearchEnabled: Boolean(config.soundcloudClientId && config.soundcloudClientSecret),
+    playbackMode: "CLIENT_EDGE" as const,
+    audioProxiedByServer: false,
     maxQueue: config.musicMaxQueue,
     maxPlaylistItems: config.musicMaxPlaylistItems
   };
@@ -175,13 +215,18 @@ function emitMusicSettings(req: Request, guildId: string, settings: { musicEnabl
   io?.to?.(`guild:${guildId}`)?.emit?.("music:settings", { guildId, settings: publicSettings(settings) });
 }
 
-async function musicAccess(userId: string, guildId: string, requireManager = false) {
+async function musicContext(userId: string, guildId: string) {
   const { membership, permissions } = await effectiveGuildPermissionsForUser(userId, guildId);
   const settings = await guildMusicSettings(guildId);
   const manager = membership.role === "OWNER" || membership.role === "ADMIN" || permissions.canManageServer || permissions.canManageBots;
-  if (requireManager && !manager) throw new HttpError(403, "Voce nao pode gerenciar o Ginga Music neste servidor");
-  if (!requireManager && !settings.musicAllowMembers && !manager) throw new HttpError(403, "Somente a moderacao pode controlar a musica neste servidor");
   return { membership, permissions, settings, manager };
+}
+
+async function musicAccess(userId: string, guildId: string, requireManager = false) {
+  const context = await musicContext(userId, guildId);
+  if (requireManager && !context.manager) throw new HttpError(403, "Voce nao pode gerenciar o Ginga Music neste servidor");
+  if (!requireManager && !context.settings.musicAllowMembers && !context.manager) throw new HttpError(403, "Somente a moderacao pode controlar a musica neste servidor");
+  return context;
 }
 
 function parseYoutube(input: URL) {
@@ -494,26 +539,13 @@ musicRouter.patch("/guilds/:guildId/music/settings", requireAuth, asyncHandler(a
   });
 }));
 
+// Compatibilidade com clients 0.4.7: o 0.4.8 nao usa heartbeat no servidor.
+// Cada usuario toca a midia diretamente do provedor e o servidor apenas sincroniza estado.
 musicRouter.post("/guilds/:guildId/music/playback-lease", requireAuth, asyncHandler(async (req, res) => {
   const guildId = routeParam(req.params.guildId, "guildId");
-  const userId = req.auth!.sub;
-  await requireGuildMember(userId, guildId);
-  const { clientId, action } = playbackLeaseSchema.parse(req.body);
-  const key = `${guildId}:${userId}`;
-  const current = musicPlaybackLeases.get(key);
-
-  if (action === "RELEASE") {
-    if (current?.clientId === clientId) musicPlaybackLeases.delete(key);
-    return res.json({ owner: false, expiresAt: 0 });
-  }
-
-  const now = Date.now();
-  if (!current || current.clientId === clientId || current.expiresAt <= now) {
-    const expiresAt = now + MUSIC_PLAYBACK_LEASE_TTL_MS;
-    musicPlaybackLeases.set(key, { clientId, expiresAt });
-    return res.json({ owner: true, expiresAt });
-  }
-  res.json({ owner: false, expiresAt: current.expiresAt });
+  await requireGuildMember(req.auth!.sub, guildId);
+  playbackLeaseSchema.parse(req.body);
+  res.json({ owner: true, expiresAt: Date.now() + 60_000, deprecated: true, playbackMode: "CLIENT_EDGE" });
 }));
 
 musicRouter.post("/guilds/:guildId/music/join", requireAuth, asyncHandler(async (req, res) => {
@@ -597,17 +629,24 @@ musicRouter.post("/guilds/:guildId/music/control", requireAuth, musicControlLimi
   const guildId = routeParam(req.params.guildId, "guildId");
   const userId = req.auth!.sub;
   const data = controlSchema.parse(req.body);
-  // ENDED e um sinal do player oficial, nao um comando de moderacao.
-  // Qualquer membro conectado pode reportar o fim da faixa, mas sempre precisa
-  // identificar a faixa atual; os demais comandos respeitam musicAllowMembers.
-  const settings = data.action === "ENDED"
-    ? await (async () => { await requireGuildMember(userId, guildId); return guildMusicSettings(guildId); })()
-    : (await musicAccess(userId, guildId)).settings;
+  // Toda operacao sensivel e validada no servidor. ENDED e idempotente e pode
+  // ser reportado por players edge, mas um membro sem permissao so consegue
+  // conclui-lo quando o relogio do servidor confirma o termino natural.
+  const context = data.action === "ENDED" ? await musicContext(userId, guildId) : await musicAccess(userId, guildId);
+  const settings = context.settings;
   if (!settings.musicEnabled) throw new HttpError(409, "O Ginga Music esta desativado neste servidor");
   const state = await runtimeFor(guildId);
 
   if (data.action === "ENDED") {
-    if (!data.expectedTrackId || state.queue[0]?.id !== data.expectedTrackId) return res.json({ state: publicRuntime(state) });
+    const current = state.queue[0];
+    if (!data.expectedTrackId || !current || current.id !== data.expectedTrackId) return res.json({ state: publicRuntime(state) });
+    if (!settings.musicAllowMembers && !context.manager) {
+      const duration = current.durationSeconds;
+      const position = currentPosition(state);
+      if (!duration || position + 2.5 < duration) {
+        throw new HttpError(403, "Somente a moderacao pode encerrar esta faixa antes do termino natural");
+      }
+    }
     advance(state, true);
   } else if (data.action === "PLAY") {
     if (state.queue.length) {

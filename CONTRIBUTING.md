@@ -44,5 +44,5 @@ Use mensagens curtas que expliquem a intenção, por exemplo:
 ```text
 fix: corrige upload de GIF no perfil
 feat: adiciona suporte a pacote Linux
-release: Ginga v0.4.5
+release: Ginga v0.4.8
 ```

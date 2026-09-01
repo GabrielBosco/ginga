@@ -10088,6 +10088,26 @@ html[data-ginga-surface="developer"] .developer-permission-picker-v3 .developer-
 .game-detection-status small { color: #726ba8; font-size: 9px; font-weight: 900; letter-spacing: .08em; }
 .game-detection-status strong { color: #e8e8f0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .game-detection-status span { color: #8e94a1; font-size: 10.5px; line-height: 1.4; }
+.game-overlay-local-warning {
+  display:flex; align-items:flex-start; gap:10px; margin:0 0 14px; padding:11px 12px;
+  border:1px solid rgba(216,165,66,.22); border-radius:11px; background:rgba(216,165,66,.07); color:#d9b86f;
+}
+.game-overlay-local-warning svg { flex:0 0 auto; margin-top:1px; }
+.game-overlay-local-warning > div { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.game-overlay-local-warning strong { font-size:11.5px; color:#ead39c; }
+.game-overlay-local-warning span { font-size:10px; line-height:1.45; color:#aa9c7d; }
+.game-overlay-runtime-status {
+  display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:10px; margin:14px 0; padding:11px 12px;
+  border:1px solid rgba(255,255,255,.065); border-radius:11px; background:rgba(255,255,255,.022);
+}
+.game-overlay-runtime-dot { width:9px; height:9px; border-radius:50%; background:#626a78; box-shadow:0 0 0 4px rgba(98,106,120,.08); }
+.game-overlay-runtime-status.ready .game-overlay-runtime-dot { background:#45ba7b; box-shadow:0 0 0 4px rgba(69,186,123,.09); }
+.game-overlay-runtime-status.warn .game-overlay-runtime-dot { background:#d6a34d; box-shadow:0 0 0 4px rgba(214,163,77,.09); }
+.game-overlay-runtime-status > div { min-width:0; display:flex; flex-direction:column; gap:2px; }
+.game-overlay-runtime-status strong { color:#e5e8ef; font-size:11px; }
+.game-overlay-runtime-status span { color:#858d9b; font-size:9.8px; line-height:1.4; }
+.game-overlay-runtime-status small { color:#9e97e6; font-size:9px; }
+.game-overlay-runtime-status kbd { white-space:nowrap; padding:5px 7px; border:1px solid rgba(255,255,255,.07); border-radius:7px; background:rgba(255,255,255,.045); color:#aeb4bf; font:700 9px Inter,"Segoe UI",sans-serif; }
 .game-overlay-form-grid { margin-top: 14px; }
 .game-overlay-actions {
   display: flex;
@@ -10102,6 +10122,8 @@ html[data-ginga-surface="developer"] .developer-permission-picker-v3 .developer-
   .game-detection-status { grid-template-columns: auto minmax(0,1fr); }
   .game-detection-status > button { grid-column: 1 / -1; width: 100%; }
   .game-overlay-actions { align-items: stretch; flex-direction: column; }
+  .game-overlay-runtime-status { grid-template-columns:auto minmax(0,1fr); }
+  .game-overlay-runtime-status kbd { grid-column:1 / -1; justify-self:start; }
 }
 
 /* ========================================================================== */
@@ -10766,3 +10788,6 @@ html.ginga-desktop-windows .voice-controls-wrap {
   .desktop-startup-card { grid-template-columns: auto minmax(0,1fr); }
   .desktop-startup-switch { grid-column: 1 / -1; justify-self: end; }
 }
+
+/* 0.4.8 - Ginga Music Client Edge */
+.ginga-music-edge-note{display:flex;align-items:center;gap:7px;margin:0 0 8px;padding:7px 9px;border:1px solid rgba(70,190,130,.15);border-radius:8px;background:rgba(34,130,88,.07);color:#9ab0a5;font-size:9px}.ginga-music-edge-note>span{padding:2px 5px;border-radius:5px;background:rgba(45,190,125,.13);color:#77d4a7;font-size:7px;font-weight:900;letter-spacing:.08em}.ginga-music-edge-note>strong{color:#c9d7cf;font-size:9px}.ginga-music-edge-note>small{color:#6f8479;font-size:8px}@media(max-width:620px){.ginga-music-edge-note{flex-wrap:wrap}.ginga-music-edge-note>small{flex-basis:100%}}

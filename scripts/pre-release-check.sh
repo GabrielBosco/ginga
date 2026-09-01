@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Ginga 0.4.5+ - Gate de pre-release.
+# Ginga 0.4.7+ - Gate de pre-release.
 # Nao publica nada e nao reinicia containers. Faz build de API/Web e valida
 # o Desktop/updater antes de liberar a execucao do release-win.sh.
 
@@ -18,7 +18,7 @@ ok(){ printf '\033[1;32m[OK]\033[0m %s\n' "$*"; }
 warn(){ printf '\033[1;33m[WARN]\033[0m %s\n' "$*" >&2; }
 die(){ printf '\033[1;31m[ERRO]\033[0m %s\n' "$*" >&2; exit 1; }
 
-[[ -n "$VERSION" ]] || die "Informe a versao. Exemplo: ./scripts/pre-release-check.sh 0.4.5 [--all|--windows|--linux]"
+[[ -n "$VERSION" ]] || die "Informe a versao. Exemplo: ./scripts/pre-release-check.sh 0.4.7 [--all|--windows|--linux]"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]] || die "Versao SemVer invalida: $VERSION"
 case "$MODE" in --all|--windows|--linux) ;; *) die "Modo invalido: $MODE. Use --all, --windows ou --linux" ;; esac
 
@@ -132,8 +132,65 @@ ok "TypeScript/Vite/API compilaram"
 log "6/7 - Sanidade visual/arquivos de release"
 [[ -f "$SERVER_ROOT/apps/web/src/ui-release-v043.css" ]] || die "ui-release-v043.css ausente"
 [[ -f "$SERVER_ROOT/apps/web/src/ui-rc9-v043.css" ]] || die "ui-rc9-v043.css ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/ui-v046.css" ]] || die "ui-v046.css ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/ui-v047.css" ]] || die "ui-v047.css ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/ui-v047-final.css" ]] || die "ui-v047-final.css ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/ui-v048-viewport-fit.css" ]] || die "ui-v048-viewport-fit.css ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/ui-v048-responsive-final.css" ]] || die "ui-v048-responsive-final.css ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/ui-packfix-20260901.css" ]] || die "ui-packfix-20260901.css ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/auth-v047.css" ]] || die "auth-v047.css ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/auth-v047-r2.css" ]] || die "auth-v047-r2.css ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/auth-v047-r3.css" ]] || die "auth-v047-r3.css ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/auth-v048-redesign.css" ]] || die "auth-v048-redesign.css ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/lib/unreadState.ts" ]] || die "Persistencia de nao lidas 0.4.7 ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/components/SoundboardPanel.tsx" ]] || die "SoundboardPanel.tsx ausente"
+[[ -f "$SERVER_ROOT/apps/web/src/lib/soundboard.ts" ]] || die "lib/soundboard.ts ausente"
 grep -Fq 'import "./ui-release-v043.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Camada final de CSS nao esta importada"
 grep -Fq 'import "./ui-rc9-v043.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Camada RC9 de CSS nao esta importada"
+grep -Fq 'import "./ui-v046.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Camada UI/UX 0.4.6 nao esta importada"
+grep -Fq 'import "./ui-v047.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Camada 0.4.7 nao esta importada"
+grep -Fq 'import "./ui-v047-final.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Camada final responsiva 0.4.7 nao esta importada"
+grep -Fq 'import "./ui-v048-viewport-fit.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Hotfix de viewport 0.4.8 nao esta importado"
+grep -Fq 'import "./ui-v048-responsive-final.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Camada responsiva global 0.4.8 nao esta importada"
+grep -Fq 'import "./ui-packfix-20260901.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Packfix 2026-09-01 nao esta importado por ultimo"
+grep -Fq 'compactNavigation' "$SERVER_ROOT/apps/web/src/components/SettingsShell.tsx" || die "SettingsShell perdeu navegacao mobile previsivel"
+grep -Fq 'import "./auth-v047.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Camada de autenticacao 0.4.7 nao esta importada"
+grep -Fq 'import "./auth-v047-r2.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Camada responsiva AUTH R2 nao esta importada"
+grep -Fq 'import "./auth-v047-r3.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Camada dark/downloads AUTH R3 nao esta importada"
+grep -Fq 'import "./auth-v048-redesign.css";' "$SERVER_ROOT/apps/web/src/main.tsx" || die "Redesign final de login 0.4.8 nao esta importado"
+grep -Fq 'auth-v047-r2' "$SERVER_ROOT/apps/web/src/components/AuthScreen.tsx" || die "AuthScreen perdeu isolamento responsivo R2"
+grep -Fq 'auth-v047-r3' "$SERVER_ROOT/apps/web/src/components/AuthScreen.tsx" || die "AuthScreen perdeu tema dark R3"
+grep -Fq 'auth-v048-redesign' "$SERVER_ROOT/apps/web/src/components/AuthScreen.tsx" || die "AuthScreen perdeu redesign final 0.4.8"
+grep -Fq 'auth-chat-mock' "$SERVER_ROOT/apps/web/src/components/AuthScreen.tsx" || die "Preview de produto do login 0.4.8 ausente"
+grep -Fq 'auth-linux-strip' "$SERVER_ROOT/apps/web/src/components/AuthScreen.tsx" || die "Landing perdeu downloads Linux compactos"
+grep -Fq 'auth-mobile-brand' "$SERVER_ROOT/apps/web/src/components/AuthScreen.tsx" || die "Login mobile perdeu cabecalho compacto"
+grep -Fq 'loadPersistedUnreadState' "$SERVER_ROOT/apps/web/src/components/Workspace.tsx" || die "Workspace perdeu persistencia de nao lidas"
+grep -Fq 'ginga_remember_session' "$SERVER_ROOT/apps/api/src/routes/auth.ts" || die "API perdeu cookie de sessao lembrada"
+grep -Fq '/session/restore' "$SERVER_ROOT/apps/api/src/routes/auth.ts" || die "API perdeu restauracao de sessao lembrada"
+grep -Fq '/login/2fa-only' "$SERVER_ROOT/apps/api/src/routes/auth.ts" || die "API perdeu login de recuperacao por 2FA"
+grep -Fq 'createRememberedAuthSession' "$SERVER_ROOT/apps/api/src/authSessions.ts" || die "Storage de sessoes lembradas ausente"
+grep -Fq 'Entrar com 2FA' "$SERVER_ROOT/apps/web/src/components/AuthScreen.tsx" || die "Tela de login perdeu recuperacao por 2FA"
+grep -Fq 'voice:soundboard-play' "$SERVER_ROOT/apps/api/src/socket.ts" || die "Socket perdeu disparo do Soundboard"
+grep -Fq 'GingaGuildSoundboardSound' "$SERVER_ROOT/apps/api/src/v090Storage.ts" || die "Storage do Soundboard ausente"
+grep -Fq 'SoundboardPanel' "$SERVER_ROOT/apps/web/src/components/VoiceRoom.tsx" || die "VoiceRoom perdeu painel de sons"
+grep -Fq 'voice:soundboard-played' "$SERVER_ROOT/apps/web/src/components/PersistentVoiceAudio.tsx" || die "Audio persistente perdeu playback do Soundboard"
+grep -Fq 'Ir para o final' "$SERVER_ROOT/apps/web/src/components/ChatView.tsx" || die "ChatView perdeu navegacao para o final"
+grep -Fq 'Ir para o final' "$SERVER_ROOT/apps/web/src/components/DirectChat.tsx" || die "DirectChat perdeu navegacao para o final"
+grep -Fq 'voice-stream-focus-layout' "$SERVER_ROOT/apps/web/src/components/VoiceRoom.tsx" || die "VoiceRoom perdeu modo foco da transmissao"
+grep -Fq 'voice-stream-viewers' "$SERVER_ROOT/apps/web/src/components/VoiceRoom.tsx" || die "VoiceRoom perdeu avatares de espectadores"
+[[ -f "$BUILD_ROOT/apps/desktop/src/game-overlay.html" ]] || die "game-overlay.html ausente no Desktop"
+grep -Fq 'GingaOverlayNative' "$BUILD_ROOT/apps/desktop/src/main.cjs" || die "Desktop perdeu deteccao da janela real do jogo"
+grep -Fq 'ginga:game-overlay-status' "$BUILD_ROOT/apps/desktop/src/main.cjs" || die "Desktop perdeu diagnostico/runtime da sobreposicao"
+grep -Fq 'getGameOverlayStatus' "$BUILD_ROOT/apps/desktop/src/preload.cjs" || die "Preload perdeu bridge de status da sobreposicao"
+grep -Fq 'screenShareEnabled: Boolean(participant.isScreenShareEnabled)' "$SERVER_ROOT/apps/web/src/lib/gameOverlay.ts" || die "Overlay perdeu estado de transmissao dos participantes"
+grep -Fq 'cameraEnabled: Boolean(participant.isCameraEnabled)' "$SERVER_ROOT/apps/web/src/lib/gameOverlay.ts" || die "Overlay perdeu estado de camera dos participantes"
+grep -Fq 'Promise.allSettled' "$SERVER_ROOT/apps/web/src/components/UserSettingsModal.tsx" || die "Configuracao do overlay voltou a depender integralmente da API de perfil"
+grep -Fq 'ginga-shell-v048-packfix-20260901' "$SERVER_ROOT/apps/web/public/sw.js" || die "Service Worker nao foi rotacionado para o PACKFIX 2026-09-01"
+! grep -Fq 'resp.clone()' "$SERVER_ROOT/apps/web/public/sw.js" || die "Service Worker voltou a clonar Response em runtime"
+grep -Fq '__LIVEKIT_CONNECT_SRC__' "$SERVER_ROOT/apps/web/nginx.conf" || die "Template CSP perdeu placeholder do LiveKit"
+grep -Fq 'PUBLIC_LIVEKIT_URL: ${PUBLIC_LIVEKIT_URL:-}' "$SERVER_ROOT/docker-compose.yml" || die "Compose nao injeta PUBLIC_LIVEKIT_URL no build Web"
+grep -Fq 'LIVEKIT_DOMAIN: ${LIVEKIT_DOMAIN:-}' "$SERVER_ROOT/docker-compose.yml" || die "Compose nao injeta LIVEKIT_DOMAIN no build Web"
+grep -Fq 'viewerIds' "$SERVER_ROOT/apps/api/src/socket.ts" || die "API perdeu lista de espectadores da transmissao"
 grep -Fq "GINGA $VERSION" "$SERVER_ROOT/apps/web/src/components/ServerUltimatePanel.tsx" || die "ServerUltimatePanel nao exibe GINGA $VERSION"
 grep -Fq "Ginga $VERSION suporta" "$SERVER_ROOT/apps/web/src/components/UserSocialPanel.tsx" || die "UserSocialPanel ainda exibe versao diferente de $VERSION"
 python3 - "$BUILD_ROOT/apps/desktop/package.json" <<'PYLINUX'
@@ -166,6 +223,10 @@ fi
 rm -f /tmp/ginga-v09-ui.$$ 2>/dev/null || true
 ok "Camada de UI final e nomenclatura da release OK"
 
+log "6.5/7 - Security regression gate 0.4.8"
+"$BUILD_ROOT/scripts/security-regression-check.sh"
+ok "Security regression gate passou"
+
 log "7/7 - Consultando runtime atual (informativo)"
 WEB_PORT="$(awk -F= '/^WEB_PORT=/{print $2; exit}' "$SERVER_ROOT/.env" | tr -d '\r' || true)"
 WEB_PORT="${WEB_PORT:-3090}"
@@ -194,3 +255,4 @@ if [[ "$MODE" != "--windows" ]]; then
   printf '  Linux x64 + ARM64: cd %s && ./release-linux.sh %s --all\n' "$BUILD_ROOT" "$VERSION"
 fi
 printf '\n'
+

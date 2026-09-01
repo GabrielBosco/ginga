@@ -1,0 +1,678 @@
+/* Ginga maintenance pack - 2026-09-01
+   Correcoes aditivas: Knowledge viewport, paginas legais, cadastro 16+,
+   soundboard trim e sensibilidade do microfone. Importado por ultimo. */
+
+:root {
+  --ginga-desktop-titlebar-height: 28px;
+}
+
+/* Knowledge: deixa o grid medir o header real em vez de assumir 58px.
+   A sidebar e o artigo passam a rolar dentro da area restante da viewport. */
+@media (min-width: 761px) {
+  .knowledge-page {
+    width: 100%;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+    grid-template-rows: auto auto minmax(0, 1fr) !important;
+  }
+
+  .knowledge-page .kb-topbar,
+  .knowledge-page .kb-audience-switch {
+    min-height: 0;
+  }
+
+  .knowledge-page .kb-layout {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .knowledge-page .kb-sidebar,
+  .knowledge-page .kb-main {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .knowledge-page .kb-sidebar {
+    overflow-x: hidden;
+  }
+
+  .knowledge-page .kb-main {
+    overflow-x: hidden;
+    padding-bottom: 64px;
+  }
+}
+
+html.ginga-desktop-windows .knowledge-page {
+  height: calc(100dvh - var(--ginga-desktop-titlebar-height, 28px));
+}
+
+/* Cadastro: mantem o input date no mesmo padrao visual dos outros campos. */
+.auth-birth-date-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.auth-birth-date-field > svg {
+  position: absolute;
+  left: 13px;
+  z-index: 1;
+  color: #7f8792;
+  pointer-events: none;
+}
+
+.auth-birth-date-field > input {
+  width: 100%;
+  padding-left: 40px !important;
+  color-scheme: dark;
+}
+
+.auth-legal-links {
+  margin-top: 2px;
+  padding-top: 11px;
+  border-top: 1px solid rgba(255, 255, 255, .055);
+  color: #7f8792;
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.auth-legal-links p {
+  margin: 0 0 8px;
+}
+
+.auth-legal-links > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+}
+
+.auth-legal-links a,
+.auth-legal-links button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 3px 0;
+  background: transparent;
+  color: #aaa4dc;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.auth-legal-links a:hover,
+.auth-legal-links button:hover {
+  color: #d6d1ff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Paginas legais: rotas publicas /terms e /privacy, legiveis no desktop e mobile. */
+.legal-page {
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  background: #171a20;
+  color: #e7e9ed;
+}
+
+.legal-topbar {
+  min-height: 58px;
+  padding: 9px 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, .065);
+  background: #14171c;
+}
+
+.legal-back,
+.legal-help,
+.legal-brand {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  color: #abb2bd;
+  text-decoration: none;
+}
+
+.legal-back {
+  justify-self: start;
+  border: 1px solid rgba(255, 255, 255, .07);
+  padding: 0 11px;
+  background: #1b1f26;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.legal-back:hover,
+.legal-help:hover {
+  color: #fff;
+  background: #222730;
+}
+
+.legal-brand {
+  justify-self: center;
+  color: #fff;
+  font-size: 15px;
+  letter-spacing: -.02em;
+}
+
+.legal-brand img {
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
+}
+
+.legal-help {
+  justify-self: end;
+  padding: 0 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.legal-shell {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.legal-sidebar {
+  min-height: 0;
+  padding: 22px 14px;
+  overflow-y: auto;
+  border-right: 1px solid rgba(255, 255, 255, .065);
+  background: #15181d;
+}
+
+.legal-sidebar-heading {
+  margin: 0 6px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #9d92ef;
+}
+
+.legal-sidebar-heading > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.legal-sidebar-heading small {
+  color: #747c87;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .11em;
+}
+
+.legal-sidebar-heading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #e8eaed;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.legal-sidebar nav {
+  display: grid;
+  gap: 3px;
+}
+
+.legal-sidebar nav a,
+.legal-sidebar-links a {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  color: #858d98;
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.legal-sidebar nav a:hover,
+.legal-sidebar-links a:hover,
+.legal-sidebar-links a.active {
+  background: #20242b;
+  color: #e6e8eb;
+}
+
+.legal-sidebar-links {
+  margin-top: 18px;
+  padding-top: 14px;
+  display: grid;
+  gap: 3px;
+  border-top: 1px solid rgba(255, 255, 255, .055);
+}
+
+.legal-sidebar-links a.active {
+  box-shadow: inset 2px 0 #7867e8;
+  color: #c8c1ff;
+}
+
+.legal-content {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: #1d2128;
+}
+
+.legal-document {
+  width: min(860px, calc(100% - 44px));
+  margin: 0 auto;
+  padding: 42px 0 72px;
+}
+
+.legal-document > header {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  gap: 15px;
+  align-items: start;
+  margin-bottom: 22px;
+}
+
+.legal-document-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(120, 103, 232, .26);
+  border-radius: 12px;
+  background: rgba(120, 103, 232, .10);
+  color: #a89cf5;
+}
+
+.legal-document > header small {
+  display: block;
+  margin-bottom: 5px;
+  color: #777f8a;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.legal-document h1 {
+  margin: 0 0 8px;
+  color: #f2f3f5;
+  font-size: clamp(26px, 3vw, 38px);
+  letter-spacing: -.04em;
+}
+
+.legal-document > header p {
+  margin: 0;
+  max-width: 680px;
+  color: #9da5af;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.legal-notice {
+  margin: 0 0 28px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid rgba(120, 103, 232, .18);
+  border-radius: 9px;
+  background: rgba(120, 103, 232, .07);
+  color: #aaa5cf;
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.legal-notice > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #9a8ff0;
+}
+
+.legal-section {
+  scroll-margin-top: 20px;
+  padding: 23px 0;
+  border-top: 1px solid rgba(255, 255, 255, .055);
+}
+
+.legal-section h2 {
+  margin: 0 0 11px;
+  color: #e7e9ed;
+  font-size: 16px;
+  letter-spacing: -.015em;
+}
+
+.legal-section p,
+.legal-section li {
+  color: #a4abb5;
+  font-size: 11.5px;
+  line-height: 1.75;
+}
+
+.legal-section p {
+  margin: 8px 0;
+}
+
+.legal-section ul {
+  margin: 9px 0;
+  padding-left: 22px;
+}
+
+.legal-section strong,
+.legal-section a,
+.legal-document footer a {
+  color: #c6c0f4;
+}
+
+.legal-document footer {
+  margin-top: 18px;
+  padding: 15px 16px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 9px;
+  background: #181c22;
+  color: #9098a3;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+html.ginga-desktop-windows .legal-page {
+  height: calc(100dvh - var(--ginga-desktop-titlebar-height, 28px));
+}
+
+/* Documentos legais tambem ficam disponiveis dentro das configuracoes. */
+.settings-legal-links {
+  margin-top: 14px;
+  padding: 13px 14px;
+  display: grid;
+  gap: 11px;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, .10);
+}
+
+.settings-legal-links > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: #a79fe8;
+}
+
+.settings-legal-links > div > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-legal-links strong {
+  color: #dfe2e7;
+  font-size: 11px;
+}
+
+.settings-legal-links small {
+  color: #818995;
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
+.settings-legal-links > span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.knowledge-page .kb-article > footer a {
+  color: #aaa0f2;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.knowledge-page .kb-article > footer a:hover {
+  color: #d8d2ff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Sensibilidade do microfone: controle funcional, visualmente integrado. */
+.voice-microphone-sensitivity {
+  margin-top: 13px;
+  padding: 13px 14px 11px;
+  border: 1px solid var(--cfg-line-strong, rgba(255,255,255,.09));
+  border-radius: 9px;
+  background: var(--cfg-input, rgba(0,0,0,.14));
+}
+
+.voice-microphone-sensitivity-copy {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.voice-microphone-sensitivity-copy > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.voice-microphone-sensitivity-copy strong {
+  color: #e9ebee;
+  font-size: 11.5px;
+}
+
+.voice-microphone-sensitivity-copy small {
+  color: #858d98;
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
+.voice-microphone-sensitivity-copy output {
+  min-width: 44px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: rgba(120, 103, 232, .12);
+  color: #c3bbff;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.voice-microphone-sensitivity > input[type="range"] {
+  width: 100%;
+  margin: 11px 0 4px;
+  accent-color: var(--cfg-accent, #7867e8);
+}
+
+.voice-microphone-sensitivity-scale {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  color: #6f7782;
+  font-size: 8.5px;
+}
+
+.voice-microphone-sensitivity-scale span:nth-child(2) { text-align: center; }
+.voice-microphone-sensitivity-scale span:last-child { text-align: right; }
+
+/* Soundboard: corte nao-destrutivo de audio + pre-escuta do trecho. */
+.soundboard-upload-card {
+  max-height: min(390px, 55dvh);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.soundboard-trimmer {
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .12);
+}
+
+.soundboard-trimmer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.soundboard-trimmer-head > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #c9cdd3;
+}
+
+.soundboard-trimmer-head strong {
+  font-size: 10px;
+}
+
+.soundboard-trimmer-head em {
+  color: #7f8792;
+  font-size: 8.5px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.soundboard-trim-track {
+  position: relative;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #252a32;
+}
+
+.soundboard-trim-track::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 8px, rgba(255,255,255,.035) 8px 9px);
+}
+
+.soundboard-trim-track > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: inherit;
+  background: #7867e8;
+  box-shadow: 0 0 10px rgba(120, 103, 232, .28);
+}
+
+.soundboard-trim-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.soundboard-trim-controls label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  color: #858d98;
+  font-size: 8.5px;
+  font-weight: 700;
+}
+
+.soundboard-trim-controls input[type="range"] {
+  min-width: 0;
+  width: 100%;
+  accent-color: #7867e8;
+}
+
+.soundboard-trim-controls output {
+  min-width: 30px;
+  color: #a9b0ba;
+  font-size: 8.5px;
+  text-align: right;
+}
+
+.soundboard-preview-button {
+  min-height: 29px;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(120, 103, 232, .25);
+  border-radius: 7px;
+  padding: 0 10px;
+  background: rgba(120, 103, 232, .09);
+  color: #bbb4f1;
+  font: inherit;
+  font-size: 9.5px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.soundboard-preview-button:hover {
+  border-color: rgba(120, 103, 232, .48);
+  background: rgba(120, 103, 232, .16);
+  color: #e3dfff;
+}
+
+@media (max-width: 760px) {
+  .legal-page {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .legal-topbar {
+    grid-template-columns: auto 1fr auto;
+    padding: 8px 10px;
+  }
+
+  .legal-back {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+
+  .legal-help {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+
+  .legal-brand { justify-self: center; }
+  .legal-shell { display: block; overflow: visible; }
+  .legal-sidebar { display: none; }
+  .legal-content { overflow: visible; }
+  .legal-document { width: min(100% - 28px, 760px); padding: 30px 0 52px; }
+  .legal-document > header { grid-template-columns: 42px minmax(0,1fr); gap: 12px; }
+  .legal-document-icon { width: 40px; height: 40px; border-radius: 10px; }
+  .legal-document h1 { font-size: 26px; }
+
+  .soundboard-trim-controls { grid-template-columns: 1fr; }
+  .soundboard-trimmer-head { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .soundboard-trimmer-head em { white-space: normal; }
+}

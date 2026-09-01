@@ -1,0 +1,33 @@
+GINGA 0.4.7 - STABILITY + SOUNDBOARD
+====================================
+
+APLICAR NO SERVIDOR
+
+cd /root/Ginga-v0.4.7-LINUX-PROJECT-source
+./scripts/apply-update-safe.sh "$(pwd)"
+
+REBUILD API + WEB
+
+cd /opt/ginga
+docker compose build api web
+docker compose up -d --force-recreate api web
+docker compose ps
+
+VALIDAR RELEASE
+
+cd /opt/ginga-build
+./scripts/pre-release-check.sh 0.4.7 --all
+
+PUBLICAR WINDOWS + LINUX
+
+./release-all.sh 0.4.7 --all
+
+SOUNDBOARD
+- Sons por servidor
+- MP3/WAV/OGG/WebM/M4A/AAC
+- 48 sons por servidor
+- 2 MB e 12 s por clip
+- favoritos e volume local
+- playback sincronizado e persistente na sala de voz
+- painel acessivel tambem no mini-card ao navegar pelos chats
+- cooldown anti-spam

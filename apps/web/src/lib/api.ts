@@ -1,4 +1,4 @@
-import type { Attachment } from "../types";
+import type { Attachment, User } from "../types";
 import { installDirectCallExperience } from "./directCalls";
 import { installGamingProfileExperience } from "./gamingProfile";
 import { installGameOverlayRuntime } from "./gameOverlay";
@@ -137,7 +137,36 @@ function invalidateAuthenticatedSession() {
   }
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+type RestoredRememberedSession = { token: string; user: User; remembered?: boolean };
+let rememberRestorePromise: Promise<RestoredRememberedSession | null> | null = null;
+
+export async function restoreRememberedSession(): Promise<RestoredRememberedSession | null> {
+  if (rememberRestorePromise) return rememberRestorePromise;
+  rememberRestorePromise = (async () => {
+    try {
+      const response = await fetch("/api/auth/session/restore", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Accept": "application/json" }
+      });
+      if (!response.ok) return null;
+      const result = await response.json() as RestoredRememberedSession;
+      if (!result?.token || !result?.user) return null;
+      setToken(result.token);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("ginga:session-restored", { detail: result }));
+      }
+      return result;
+    } catch {
+      return null;
+    } finally {
+      rememberRestorePromise = null;
+    }
+  })();
+  return rememberRestorePromise;
+}
+
+async function apiRequest<T>(path: string, init: RequestInit, allowRememberRestore: boolean): Promise<T> {
   const token = getToken();
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -147,7 +176,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   let response: Response;
   try {
-    response = await fetch(path, { ...init, headers });
+    response = await fetch(path, { ...init, headers, credentials: init.credentials ?? "same-origin" });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new ApiError("Nao foi possivel conectar ao servidor. Verifique sua conexao e tente novamente.", 0);
@@ -159,6 +188,17 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   if (!response.ok) {
+    const canRestore = response.status === 401
+      && Boolean(token)
+      && allowRememberRestore
+      && !path.startsWith("/api/auth/login")
+      && path !== "/api/auth/session/restore";
+    if (canRestore) {
+      const restored = await restoreRememberedSession();
+      if (restored?.token && restored.token !== token) {
+        return apiRequest<T>(path, init, false);
+      }
+    }
     if (response.status === 401 && token) invalidateAuthenticatedSession();
     const fallback = response.status >= 500
       ? "O servidor encontrou um problema. Tente novamente em alguns instantes."
@@ -173,6 +213,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return body as T;
+}
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return apiRequest<T>(path, init, true);
 }
 
 export async function uploadFile(file: File, onProgress?: (percent: number) => void): Promise<Attachment> {

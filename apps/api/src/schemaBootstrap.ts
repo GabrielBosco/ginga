@@ -51,6 +51,7 @@ async function ensureIncrementalColumns() {
   await prisma.$executeRawUnsafe(`ALTER TABLE "GuildMember" ADD COLUMN IF NOT EXISTS "nickname" VARCHAR(32) NOT NULL DEFAULT ''`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "GuildMember" ADD COLUMN IF NOT EXISTS "serverMuted" BOOLEAN NOT NULL DEFAULT false`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "GuildMember" ADD COLUMN IF NOT EXISTS "serverDeafened" BOOLEAN NOT NULL DEFAULT false`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "birthDate" DATE`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "accountDisabled" BOOLEAN NOT NULL DEFAULT false`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "accountDisabledAt" TIMESTAMP(3)`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "accountDisabledReason" VARCHAR(300) NOT NULL DEFAULT ''`);

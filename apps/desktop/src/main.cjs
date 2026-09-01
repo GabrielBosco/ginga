@@ -125,31 +125,80 @@ async function detectGameActivityUncached() {
   const powershellNames = Array.from(KNOWN_GAME_PROCESSES.keys())
     .map((name) => `'${name.replace(/'/g, "''")}'`)
     .join(',');
+  // Consultamos apenas executaveis de jogos conhecidos. Para posicionar a
+  // sobreposicao no monitor correto, lemos somente o retangulo da janela do
+  // jogo reconhecido e se ela e a janela em primeiro plano. Nenhuma lista de
+  // processos e enviada ao renderer/servidor.
   const command = [
-    '$ErrorActionPreference = "Stop"',
+    '$ErrorActionPreference = "SilentlyContinue"',
+    `Add-Type -TypeDefinition @'\nusing System;\nusing System.Runtime.InteropServices;\npublic static class GingaOverlayNative {\n  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }\n  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);\n  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();\n}\n'@`,
     `$known = @(${powershellNames})`,
-    '$names = Get-Process -Name $known -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ProcessName -Unique',
-    '$names | ConvertTo-Json -Compress'
-  ].join('; ');
+    '$foreground = [GingaOverlayNative]::GetForegroundWindow()',
+    '$items = @()',
+    'Get-Process -Name $known -ErrorAction SilentlyContinue | ForEach-Object {',
+    '  $handle = $_.MainWindowHandle',
+    '  $bounds = $null',
+    '  if ($handle -ne 0) {',
+    "    $rect = New-Object 'GingaOverlayNative+RECT'",
+    '    if ([GingaOverlayNative]::GetWindowRect($handle, [ref]$rect)) {',
+    '      $width = [Math]::Max(0, $rect.Right - $rect.Left)',
+    '      $height = [Math]::Max(0, $rect.Bottom - $rect.Top)',
+    '      if ($width -gt 240 -and $height -gt 160) { $bounds = [ordered]@{ x=$rect.Left; y=$rect.Top; width=$width; height=$height } }',
+    '    }',
+    '  }',
+    '  $items += [pscustomobject]@{ processName=$_.ProcessName; pid=$_.Id; foreground=($handle -ne 0 -and $handle -eq $foreground); hasWindow=($null -ne $bounds); bounds=$bounds }',
+    '}',
+    '$items | ConvertTo-Json -Compress -Depth 4'
+  ].join('\n');
   try {
     const stdout = await execFileText('powershell.exe', [
       '-NoProfile',
       '-NonInteractive',
       '-ExecutionPolicy', 'Bypass',
       '-Command', command
-    ], { windowsHide: true, timeout: 4500, maxBuffer: 128 * 1024 });
+    ], { windowsHide: true, timeout: 5000, maxBuffer: 256 * 1024 });
     const parsed = stdout.trim() ? JSON.parse(stdout.trim()) : [];
-    const names = (Array.isArray(parsed) ? parsed : [parsed])
-      .map((name) => String(name || '').trim().toLowerCase())
-      .filter(Boolean);
-    const running = new Set(names);
-    for (const [processName, gameName] of KNOWN_GAME_PROCESSES) {
-      if (running.has(processName.toLowerCase())) return { supported: true, activity: { name: gameName, detectedAt: new Date().toISOString() } };
-    }
-    return { supported: true, activity: null };
+    const entries = (Array.isArray(parsed) ? parsed : [parsed]).flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return [];
+      const processName = String(entry.processName || '').trim();
+      const gameName = KNOWN_GAME_PROCESSES.get(processName.toLowerCase());
+      if (!gameName) return [];
+      const rawBounds = entry.bounds && typeof entry.bounds === 'object' ? entry.bounds : null;
+      const bounds = rawBounds ? {
+        x: Number(rawBounds.x) || 0,
+        y: Number(rawBounds.y) || 0,
+        width: Math.max(0, Number(rawBounds.width) || 0),
+        height: Math.max(0, Number(rawBounds.height) || 0)
+      } : null;
+      return [{
+        name: gameName,
+        processName,
+        pid: Number(entry.pid) || 0,
+        foreground: Boolean(entry.foreground),
+        hasWindow: Boolean(entry.hasWindow && bounds && bounds.width > 0 && bounds.height > 0),
+        bounds,
+        detectedAt: new Date().toISOString()
+      }];
+    });
+    entries.sort((a, b) => Number(b.foreground) - Number(a.foreground) || Number(b.hasWindow) - Number(a.hasWindow) || a.name.localeCompare(b.name));
+    return { supported: true, activity: entries[0] || null };
   } catch (error) {
     return { supported: true, activity: null, error: error instanceof Error ? error.message : 'Falha ao detectar jogo' };
   }
+}
+
+function publicDetectedGame(result) {
+  const activity = result?.activity;
+  return {
+    supported: result?.supported !== false,
+    activity: activity?.name ? {
+      name: String(activity.name),
+      detectedAt: String(activity.detectedAt || new Date().toISOString()),
+      focused: activity.foreground !== false,
+      windowDetected: Boolean(activity.hasWindow)
+    } : null,
+    ...(result?.error ? { error: String(result.error) } : {})
+  };
 }
 
 
@@ -159,7 +208,7 @@ let gameDetectionCache = { supported: process.platform === 'win32', activity: nu
 let gameDetectionInFlight = null;
 async function detectGameActivity() {
   const now = Date.now();
-  if (now - gameDetectionCacheAt < 5000) return gameDetectionCache;
+  if (now - gameDetectionCacheAt < 1200) return gameDetectionCache;
   if (gameDetectionInFlight) return gameDetectionInFlight;
   gameDetectionInFlight = detectGameActivityUncached()
     .then((result) => { gameDetectionCache = result; gameDetectionCacheAt = Date.now(); return result; })
@@ -185,6 +234,7 @@ let gameOverlayPreviewTimer = null;
 let gameOverlayManualHidden = false;
 let gameOverlayLastGame = '';
 let gameOverlayScanRunning = false;
+let gameOverlayShortcutRegistered = false;
 
 function normalizeGameOverlaySettings(value) {
   const input = value && typeof value === 'object' ? value : {};
@@ -215,6 +265,7 @@ function saveGameOverlaySettings(value) {
   gameOverlayManualHidden = false;
   positionGameOverlayWindow();
   renderGameOverlay();
+  if (gameOverlaySettings.enabled) void refreshGameOverlayDetection();
   return gameOverlaySettings;
 }
 
@@ -239,7 +290,7 @@ function createGameOverlayWindow() {
     webPreferences: hardenedWindowOptions({ preload: path.join(__dirname, 'game-overlay-preload.cjs'), backgroundThrottling: false })
   });
   gameOverlayWindow.setIgnoreMouseEvents(true, { forward: true });
-  try { gameOverlayWindow.setAlwaysOnTop(true, 'screen-saver'); } catch { gameOverlayWindow.setAlwaysOnTop(true); }
+  try { gameOverlayWindow.setAlwaysOnTop(true, 'screen-saver', 1); } catch { gameOverlayWindow.setAlwaysOnTop(true); }
   try { gameOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
   gameOverlayWindow.loadFile(path.join(__dirname, 'game-overlay.html'));
   gameOverlayWindow.on('closed', () => { gameOverlayWindow = null; });
@@ -252,16 +303,40 @@ function positionGameOverlayWindow() {
   if (!app.isReady()) return;
   const win = gameOverlayWindow;
   if (!win || win.isDestroyed()) return;
-  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const area = display.workArea;
   const [width, height] = win.getSize();
-  const margin = 18;
+  const gameBounds = gameOverlayDetectedActivity?.hasWindow && gameOverlayDetectedActivity?.bounds
+    ? gameOverlayDetectedActivity.bounds
+    : null;
+  let area;
+  if (gameBounds && gameBounds.width >= width && gameBounds.height >= 180) {
+    area = gameBounds;
+  } else {
+    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    area = display.workArea;
+  }
+  const margin = gameBounds ? 22 : 18;
   const right = gameOverlaySettings.position.endsWith('right');
   const bottom = gameOverlaySettings.position.startsWith('bottom');
-  const x = right ? area.x + area.width - width - margin : area.x + margin;
-  const y = bottom ? area.y + area.height - height - margin : area.y + margin;
+  let x = right ? area.x + area.width - width - margin : area.x + margin;
+  let y = bottom ? area.y + area.height - height - margin : area.y + margin;
+  try {
+    const display = screen.getDisplayMatching({ x: Math.round(area.x), y: Math.round(area.y), width: Math.max(1, Math.round(area.width)), height: Math.max(1, Math.round(area.height)) });
+    const bounds = display.bounds;
+    x = Math.max(bounds.x, Math.min(x, bounds.x + bounds.width - width));
+    y = Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - height));
+  } catch {}
   win.setPosition(Math.round(x), Math.round(y), false);
 }
+
+function reinforceGameOverlayWindow() {
+  const win = gameOverlayWindow;
+  if (!win || win.isDestroyed()) return;
+  try { win.setIgnoreMouseEvents(true, { forward: true }); } catch {}
+  try { win.setAlwaysOnTop(true, 'screen-saver', 1); } catch { try { win.setAlwaysOnTop(true); } catch {} }
+  try { win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
+  try { win.moveTop(); } catch {}
+}
+
 
 function gameOverlayPayload(preview = false) {
   const voice = preview ? {
@@ -280,7 +355,7 @@ function gameOverlayPayload(preview = false) {
   } : gameOverlayVoiceState;
   return {
     settings: gameOverlaySettings,
-    game: preview ? { name: 'Jogo detectado', detectedAt: new Date().toISOString() } : gameOverlayDetectedActivity,
+    game: preview ? { name: 'Jogo detectado', detectedAt: new Date().toISOString(), focused: true, windowDetected: true } : publicDetectedGame({ supported: true, activity: gameOverlayDetectedActivity }).activity,
     voice,
     preview
   };
@@ -289,6 +364,10 @@ function gameOverlayPayload(preview = false) {
 function shouldShowGameOverlay(preview = false) {
   if (preview) return true;
   if (!gameOverlaySettings.enabled || gameOverlayManualHidden || !gameOverlayDetectedActivity?.name) return false;
+  // Nao deixe a camada flutuando sobre navegador/desktop quando o usuario
+  // deu Alt+Tab. Se o jogo possui janela detectavel, a overlay acompanha o
+  // foco e volta automaticamente ao retornar para o jogo.
+  if (gameOverlayDetectedActivity.hasWindow && gameOverlayDetectedActivity.foreground === false) return false;
   if (gameOverlaySettings.showOnlyInVoice && !gameOverlayVoiceState?.connected) return false;
   if (!gameOverlaySettings.showGame && (!gameOverlaySettings.showVoice || !gameOverlayVoiceState?.connected)) return false;
   return true;
@@ -304,6 +383,7 @@ function renderGameOverlay({ preview = false } = {}) {
     return;
   }
   positionGameOverlayWindow();
+  reinforceGameOverlayWindow();
   win.setOpacity(gameOverlaySettings.opacity);
   win.webContents.send('ginga:game-overlay-state', gameOverlayPayload(preview));
   if (!win.isVisible()) win.showInactive();
@@ -337,27 +417,54 @@ function startGameOverlayWatcher() {
   readGameOverlaySettings();
   if (gameOverlayPollTimer) clearInterval(gameOverlayPollTimer);
   void refreshGameOverlayDetection();
-  gameOverlayPollTimer = setInterval(() => void refreshGameOverlayDetection(), 8000);
+  // 2,5 s deixa Alt+Tab/retorno ao jogo perceptivelmente rapido sem manter
+  // uma consulta PowerShell agressiva em segundo plano.
+  gameOverlayPollTimer = setInterval(() => void refreshGameOverlayDetection(), 2500);
+  gameOverlayPollTimer.unref?.();
   try {
     globalShortcut.unregister('CommandOrControl+Shift+O');
-    globalShortcut.register('CommandOrControl+Shift+O', () => {
-      if (!gameOverlayDetectedActivity?.name) return;
+    gameOverlayShortcutRegistered = globalShortcut.register('CommandOrControl+Shift+O', () => {
+      if (!gameOverlayDetectedActivity?.name) {
+        // Sem jogo, o atalho serve como teste rapido de 3 segundos.
+        previewGameOverlayWindow(3000);
+        return;
+      }
       gameOverlayManualHidden = !gameOverlayManualHidden;
       renderGameOverlay();
     });
+    if (!gameOverlayShortcutRegistered) logRuntime('overlay-shortcut registration=failed');
   } catch (error) {
+    gameOverlayShortcutRegistered = false;
     logRuntime(`overlay-shortcut error=${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
-function previewGameOverlayWindow() {
+function gameOverlayRuntimeStatus() {
+  let reason = 'ready';
+  if (process.platform !== 'win32') reason = 'unsupported_platform';
+  else if (!gameOverlaySettings.enabled) reason = 'disabled';
+  else if (!gameOverlayDetectedActivity?.name) reason = 'game_not_detected';
+  else if (gameOverlayDetectedActivity.hasWindow && gameOverlayDetectedActivity.foreground === false) reason = 'game_not_focused';
+  else if (gameOverlayManualHidden) reason = 'manual_hidden';
+  else if (gameOverlaySettings.showOnlyInVoice && !gameOverlayVoiceState?.connected) reason = 'voice_required';
+  return {
+    supported: process.platform === 'win32',
+    enabled: gameOverlaySettings.enabled,
+    visible: Boolean(gameOverlayWindow && !gameOverlayWindow.isDestroyed() && gameOverlayWindow.isVisible()),
+    shortcutRegistered: gameOverlayShortcutRegistered,
+    reason,
+    detectedGame: publicDetectedGame({ supported: process.platform === 'win32', activity: gameOverlayDetectedActivity }).activity
+  };
+}
+
+function previewGameOverlayWindow(durationMs = 5000) {
   if (gameOverlayPreviewTimer) clearTimeout(gameOverlayPreviewTimer);
   createGameOverlayWindow();
   renderGameOverlay({ preview: true });
   gameOverlayPreviewTimer = setTimeout(() => {
     gameOverlayPreviewTimer = null;
     renderGameOverlay();
-  }, 5000);
+  }, Math.max(1500, Math.min(15000, Number(durationMs) || 5000)));
   return true;
 }
 
@@ -1849,7 +1956,7 @@ if (!lock) {
     });
     ipcMain.handle('ginga:detect-game', async (event) => {
       if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');
-      return detectGameActivity();
+      return publicDetectedGame(await detectGameActivity());
     });
     ipcMain.handle('ginga:game-overlay-settings-get', async (event) => {
       if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');
@@ -1868,6 +1975,10 @@ if (!lock) {
     ipcMain.handle('ginga:game-overlay-preview', async (event) => {
       if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');
       return previewGameOverlayWindow();
+    });
+    ipcMain.handle('ginga:game-overlay-status', async (event) => {
+      if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');
+      return gameOverlayRuntimeStatus();
     });
     ipcMain.handle('ginga:check-runtime-update', async (event) => {
       if (!isAllowedRendererSender(event)) throw new Error('Origem IPC nao permitida');

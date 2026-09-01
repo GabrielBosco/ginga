@@ -1,18 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ConnectionState, RoomEvent, Track, type Participant, type TrackPublication } from "livekit-client";
+import type { Socket } from "socket.io-client";
 import { api } from "../lib/api";
-import { loadVoicePreferences, saveVoicePreferences, type VoicePreferences } from "../lib/voicePreferences";
+import { applyMicrophoneSensitivity, loadVoicePreferences, saveVoicePreferences, type VoicePreferences } from "../lib/voicePreferences";
 import { keyboardEventMatchesBinding, mouseButtonFromBinding } from "../lib/pushToTalkBinding";
 import { loadNotificationPreferences } from "../lib/preferences";
 import { isChannelMuted, isGuildSilent, loadGuildPreferences } from "../lib/serverPreferences";
 import { playUiSound } from "../lib/sounds";
 import { watchVoiceNetworkStats } from "../lib/voiceDiagnostics";
 import type { LiveKitCredentials } from "../types";
+import { loadSoundboardVolume, type SoundboardPlayedEvent } from "../lib/soundboard";
 
 interface PersistentVoiceAudioProps {
   activeChannelId: string;
   activeGuildId?: string;
   voiceViewVisible: boolean;
+  socket?: Socket;
 }
 
 interface RemoteAudioPublication {
@@ -155,7 +158,7 @@ function PersistentAudioTrack({
   return <audio ref={ref} autoPlay playsInline />;
 }
 
-export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceViewVisible }: PersistentVoiceAudioProps) {
+export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceViewVisible, socket }: PersistentVoiceAudioProps) {
   // Audio stays centralized here even while VoiceRoom is visible. Keeping a single
   // attachment path prevents duplicate remote tracks during navigation/reconnects.
   void voiceViewVisible;
@@ -164,6 +167,8 @@ export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceView
   const [deafened, setDeafened] = useState(() => Boolean(window.__gingaVoiceSession?.deafened));
   const [participantVolumes, setParticipantVolumes] = useState<Record<string, number>>(readVolumeMap);
   const [participantMutes, setParticipantMutes] = useState<Record<string, boolean>>(readMuteMap);
+  const [soundboardVolume, setSoundboardVolume] = useState(loadSoundboardVolume);
+  const soundboardAudiosRef = useRef(new Set<HTMLAudioElement>());
   const recoverTimerRef = useRef<number | null>(null);
   const recoverAttemptsRef = useRef(0);
   const micRepairingRef = useRef(false);
@@ -205,21 +210,93 @@ export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceView
     const onStorage = (event: StorageEvent) => {
       if (event.key === PARTICIPANT_VOLUME_KEY) setParticipantVolumes(readVolumeMap());
       if (event.key === PARTICIPANT_MUTE_KEY) setParticipantMutes(readMuteMap());
+      if (event.key === "ginga.voice.soundboardVolume") setSoundboardVolume(loadSoundboardVolume());
+    };
+    const onSoundboardVolume = (event: Event) => {
+      const next = Number((event as CustomEvent<{ volume?: number }>).detail?.volume);
+      setSoundboardVolume(Number.isFinite(next) ? Math.max(0, Math.min(100, next)) : loadSoundboardVolume());
     };
 
     window.addEventListener("ginga:voice-preferences-changed", onPreferences as EventListener);
     window.addEventListener("ginga:voice-deafen-changed", onDeafen as EventListener);
     window.addEventListener("ginga:voice-server-moderation", onServerModeration as EventListener);
     window.addEventListener("ginga:voice-participant-audio-changed", onParticipantAudio as EventListener);
+    window.addEventListener("ginga:soundboard-volume-changed", onSoundboardVolume as EventListener);
     window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener("ginga:voice-preferences-changed", onPreferences as EventListener);
       window.removeEventListener("ginga:voice-deafen-changed", onDeafen as EventListener);
       window.removeEventListener("ginga:voice-server-moderation", onServerModeration as EventListener);
       window.removeEventListener("ginga:voice-participant-audio-changed", onParticipantAudio as EventListener);
+      window.removeEventListener("ginga:soundboard-volume-changed", onSoundboardVolume as EventListener);
       window.removeEventListener("storage", onStorage);
     };
   }, []);
+
+  useEffect(() => {
+    if (!socket || !activeChannelId) return;
+    const active = soundboardAudiosRef.current;
+    const onSoundboard = (payload: SoundboardPlayedEvent) => {
+      if (!payload?.sound?.url || payload.channelId !== activeChannelId || deafened) return;
+      const audio = new Audio(payload.sound.url);
+      active.add(audio);
+      audio.preload = "auto";
+      audio.muted = false;
+      const localGain = Math.max(0, Math.min(1, soundboardVolume / 100));
+      const outputGain = Math.max(0, Math.min(1, preferences.outputVolume / 100));
+      audio.volume = Math.max(0, Math.min(1, localGain * outputGain));
+      let finished = false;
+      const cleanup = () => {
+        if (finished) return;
+        finished = true;
+        active.delete(audio);
+        try { audio.pause(); } catch {}
+        audio.removeAttribute("src");
+      };
+      audio.addEventListener("ended", cleanup, { once: true });
+      audio.addEventListener("error", cleanup, { once: true });
+      try { audio.load(); } catch {}
+      const play = async () => {
+        if (deafened || window.__gingaVoiceSession?.serverDeafened) return cleanup();
+        const media = audio as HTMLAudioElement & { setSinkId?: (deviceId: string) => Promise<void> };
+        if (preferences.outputDevice) await media.setSinkId?.(preferences.outputDevice).catch(() => undefined);
+        try {
+          await room?.startAudio().catch(() => undefined);
+          if (audio.readyState < 1) {
+            await new Promise<void>((resolve) => {
+              const done = () => resolve();
+              audio.addEventListener("loadedmetadata", done, { once: true });
+              window.setTimeout(done, 1200);
+            });
+          }
+          const trimStartSeconds = Math.max(0, Number(payload.sound.trimStartMs || 0)) / 1000;
+          if (trimStartSeconds > 0 && Number.isFinite(audio.duration)) {
+            audio.currentTime = Math.min(trimStartSeconds, Math.max(0, audio.duration - 0.01));
+          }
+          await audio.play();
+          notifyPlaybackBlocked(false);
+          window.dispatchEvent(new CustomEvent("ginga:soundboard-played", { detail: payload }));
+        } catch {
+          notifyPlaybackBlocked(true);
+          cleanup();
+          return;
+        }
+        const clipDurationMs = Math.min(12_000, Math.max(250, Number(payload.sound.durationMs || 12_000)));
+        window.setTimeout(cleanup, clipDurationMs + 80);
+      };
+      const delay = Math.max(0, Number(payload.playAt || Date.now()) - Date.now());
+      window.setTimeout(() => { void play(); }, delay);
+    };
+    socket.on("voice:soundboard-played", onSoundboard);
+    return () => {
+      socket.off("voice:soundboard-played", onSoundboard);
+      for (const audio of active) {
+        try { audio.pause(); } catch {}
+        audio.removeAttribute("src");
+      }
+      active.clear();
+    };
+  }, [socket, activeChannelId, deafened, soundboardVolume, preferences.outputDevice, preferences.outputVolume, room]);
 
   useEffect(() => {
     if (!room || !session) return;
@@ -231,14 +308,14 @@ export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceView
       }
       session.desiredMicEnabled = true;
       if (room.state === ConnectionState.Connected && !room.localParticipant.isMicrophoneEnabled) {
-        void room.localParticipant.setMicrophoneEnabled(true, { deviceId: preferences.microphoneDevice || undefined, echoCancellation: true, noiseSuppression: preferences.noiseSuppression, autoGainControl: true }).catch(() => undefined);
+        void room.localParticipant.setMicrophoneEnabled(true, { deviceId: preferences.microphoneDevice || undefined, echoCancellation: true, noiseSuppression: preferences.noiseSuppression, autoGainControl: true }).then(() => applyMicrophoneSensitivity(room, preferences.microphoneSensitivity)).catch(() => undefined);
       }
       return;
     }
     session.desiredMicEnabled = false;
     let pressed=false; let sequence=0;
     const editable=(target:EventTarget|null)=>target instanceof HTMLElement && Boolean(target.closest("input,textarea,select,[contenteditable='true']"));
-    const setPtt=(enabled:boolean)=>{ if(pressed===enabled&&enabled)return; pressed=enabled; const op=++sequence; void(async()=>{if(room.state!==ConnectionState.Connected||window.__gingaVoiceSession!==session)return;try{if(enabled){if(session.serverMuted||session.serverDeafened)return;try{await room.localParticipant.setMicrophoneEnabled(true,{deviceId:preferences.microphoneDevice||undefined,echoCancellation:true,noiseSuppression:preferences.noiseSuppression,autoGainControl:true})}catch(error){if(!preferences.microphoneDevice)throw error;await room.localParticipant.setMicrophoneEnabled(true,{echoCancellation:true,noiseSuppression:preferences.noiseSuppression,autoGainControl:true});const fallback={...preferences,microphoneDevice:""};setPreferences(fallback);saveVoicePreferences(fallback);}}else await room.localParticipant.setMicrophoneEnabled(false);if(op!==sequence&&enabled)return;window.dispatchEvent(new CustomEvent("ginga:voice-local-mic-state",{detail:{channelId:activeChannelId,enabled:room.localParticipant.isMicrophoneEnabled,pushToTalk:true}}));}catch{window.dispatchEvent(new CustomEvent("ginga:voice-ptt-error",{detail:{channelId:activeChannelId}}));}})(); };
+    const setPtt=(enabled:boolean)=>{ if(pressed===enabled&&enabled)return; pressed=enabled; const op=++sequence; void(async()=>{if(room.state!==ConnectionState.Connected||window.__gingaVoiceSession!==session)return;try{if(enabled){if(session.serverMuted||session.serverDeafened)return;try{await room.localParticipant.setMicrophoneEnabled(true,{deviceId:preferences.microphoneDevice||undefined,echoCancellation:true,noiseSuppression:preferences.noiseSuppression,autoGainControl:true})}catch(error){if(!preferences.microphoneDevice)throw error;await room.localParticipant.setMicrophoneEnabled(true,{echoCancellation:true,noiseSuppression:preferences.noiseSuppression,autoGainControl:true});const fallback={...preferences,microphoneDevice:""};setPreferences(fallback);saveVoicePreferences(fallback);}await applyMicrophoneSensitivity(room,preferences.microphoneSensitivity).catch(()=>false);}else await room.localParticipant.setMicrophoneEnabled(false);if(op!==sequence&&enabled)return;window.dispatchEvent(new CustomEvent("ginga:voice-local-mic-state",{detail:{channelId:activeChannelId,enabled:room.localParticipant.isMicrophoneEnabled,pushToTalk:true}}));}catch{window.dispatchEvent(new CustomEvent("ginga:voice-ptt-error",{detail:{channelId:activeChannelId}}));}})(); };
     const down=(event:globalThis.KeyboardEvent)=>{if(!keyboardEventMatchesBinding(preferences.pushToTalkKey,event)||event.repeat||editable(event.target))return;event.preventDefault();setPtt(true)};
     const up=(event:globalThis.KeyboardEvent)=>{if(!keyboardEventMatchesBinding(preferences.pushToTalkKey,event))return;event.preventDefault();setPtt(false)};
     const mouseButton=mouseButtonFromBinding(preferences.pushToTalkKey);
@@ -248,7 +325,12 @@ export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceView
     const release=()=>setPtt(false);
     window.addEventListener("keydown",down,true);window.addEventListener("keyup",up,true);window.addEventListener("mousedown",md,true);window.addEventListener("mouseup",mu,true);window.addEventListener("contextmenu",context,true);window.addEventListener("blur",release);document.addEventListener("visibilitychange",release);setPtt(false);
     return()=>{window.removeEventListener("keydown",down,true);window.removeEventListener("keyup",up,true);window.removeEventListener("mousedown",md,true);window.removeEventListener("mouseup",mu,true);window.removeEventListener("contextmenu",context,true);window.removeEventListener("blur",release);document.removeEventListener("visibilitychange",release);if(pressed&&room.state===ConnectionState.Connected)void room.localParticipant.setMicrophoneEnabled(false).catch(()=>undefined)};
-  }, [activeChannelId, room, session, preferences.inputMode, preferences.pushToTalkKey, preferences.microphoneDevice, preferences.noiseSuppression]);
+  }, [activeChannelId, room, session, preferences.inputMode, preferences.pushToTalkKey, preferences.microphoneDevice, preferences.microphoneSensitivity, preferences.noiseSuppression]);
+
+  useEffect(() => {
+    if (!room || !room.localParticipant.isMicrophoneEnabled) return;
+    void applyMicrophoneSensitivity(room, preferences.microphoneSensitivity).catch(() => undefined);
+  }, [room, preferences.microphoneSensitivity]);
 
   useEffect(() => {
     if (!room || !session) return;
@@ -298,12 +380,14 @@ export function PersistentVoiceAudio({ activeChannelId, activeGuildId, voiceView
     const enableMicrophoneWithFallback = async () => {
       try {
         await room.localParticipant.setMicrophoneEnabled(true, microphoneOptions(preferences.microphoneDevice));
+        await applyMicrophoneSensitivity(room, preferences.microphoneSensitivity).catch(() => false);
         return true;
       } catch (primaryError) {
         if (!preferences.microphoneDevice) throw primaryError;
         // Dispositivo salvo foi removido/trocou de ID. Mantemos a chamada viva
         // tentando o dispositivo padrao antes de declarar falha do microfone.
         await room.localParticipant.setMicrophoneEnabled(true, microphoneOptions());
+        await applyMicrophoneSensitivity(room, preferences.microphoneSensitivity).catch(() => false);
         const fallbackPreferences = { ...preferences, microphoneDevice: "" };
         setPreferences(fallbackPreferences);
         saveVoicePreferences(fallbackPreferences);

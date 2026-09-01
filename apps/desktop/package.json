@@ -1,6 +1,6 @@
 {
   "name": "@ginga/desktop",
-  "version": "0.4.5",
+  "version": "0.4.8",
   "private": true,
   "description": "Cliente desktop auto-hospedado do Ginga",
   "main": "src/main.cjs",
@@ -40,7 +40,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://example.invalid/updates/windows"
+        "url": "https://ginga.opik.net:3090/updates/windows"
       }
     ],
     "win": {
@@ -97,5 +97,5 @@
       "packageName": "ginga"
     }
   },
-  "homepage": "https://github.com/GabrielBosco/ginga"
+  "homepage": "https://ginga.opik.net:3090"
 }

@@ -1,6 +1,6 @@
 # Instalação do Ginga
 
-Este guia corresponde ao source `0.4.5`.
+Este guia corresponde ao source `0.4.8`.
 
 ## Pré-requisitos
 

@@ -1,0 +1,334 @@
+/* ========================================================================== */
+/* Ginga 0.4.8 R2 - viewport fit / 100% zoom hotfix                           */
+/* Corrige a UI que "comia a tela" em 1366x768, 1600x900 e viewports curtos. */
+/* O objetivo e caber em zoom 100% no Web e no Desktop, sem usar zoom CSS.    */
+/* ========================================================================== */
+
+:root {
+  --ginga-desktop-titlebar-height: 28px;
+}
+
+html,
+body,
+#root,
+.app-shell,
+.main-shell,
+.nexora-shell,
+.main-panel,
+.context-panel,
+.inspector-panel {
+  min-height: 0;
+}
+
+html.ginga-desktop-windows #root,
+html.ginga-desktop-windows :is(.app-shell, .main-shell, .nexora-shell) {
+  height: calc(100dvh - var(--ginga-desktop-titlebar-height)) !important;
+  max-height: calc(100dvh - var(--ginga-desktop-titlebar-height)) !important;
+}
+
+html.ginga-desktop-windows .settings-overlay,
+html.ginga-desktop-windows .modal-overlay,
+html.ginga-desktop-windows .overlay-sheet {
+  top: var(--ginga-desktop-titlebar-height) !important;
+  height: calc(100dvh - var(--ginga-desktop-titlebar-height)) !important;
+}
+
+@media (min-width: 801px) and (max-width: 1460px),
+       (min-width: 801px) and (max-height: 860px) {
+  body {
+    font-size: 12.75px !important;
+  }
+
+  .nexora-shell.with-inspector {
+    grid-template-columns: 60px 230px minmax(0, 1fr) 214px !important;
+  }
+  .nexora-shell.no-inspector {
+    grid-template-columns: 60px 230px minmax(0, 1fr) !important;
+  }
+
+  .app-rail,
+  .server-rail {
+    width: 60px !important;
+    padding: 8px 6px !important;
+    gap: 7px !important;
+  }
+  .rail-home,
+  .rail-action,
+  .rail-profile,
+  .rail-space,
+  .rail-folder-button {
+    width: 38px !important;
+    min-width: 38px !important;
+    height: 38px !important;
+    flex-basis: 38px !important;
+    border-radius: 11px !important;
+  }
+  .rail-home .brand-mark,
+  .rail-home .ginga-mark-image,
+  .rail-space .space-nav-icon {
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 11px !important;
+  }
+  .rail-space .space-nav-icon {
+    font-size: 11px !important;
+  }
+  .rail-divider {
+    width: 24px !important;
+    margin: 4px 0 !important;
+  }
+  .rail-spaces {
+    gap: 5px !important;
+  }
+  .rail-footer {
+    gap: 4px !important;
+    padding-top: 6px !important;
+  }
+
+  .context-header,
+  .content-header,
+  .inspector-header {
+    min-height: 46px !important;
+    height: 46px !important;
+    flex-basis: 46px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  .context-header { padding-inline: 10px !important; }
+  .content-header { padding-inline: 14px !important; gap: 10px !important; }
+  .inspector-header { padding-inline: 10px !important; font-size: 10.5px !important; }
+
+  .context-header strong,
+  .space-context-header strong,
+  .channel-title strong,
+  .content-header > strong {
+    font-size: 13px !important;
+  }
+  .context-header small,
+  .space-context-header small,
+  .channel-topic {
+    font-size: 10px !important;
+    line-height: 1.25 !important;
+  }
+
+  .context-scroll {
+    padding: 7px 7px 12px !important;
+  }
+  .context-panel.has-voice-connection .context-scroll {
+    padding-bottom: 90px !important;
+  }
+  .context-group-title {
+    height: 28px !important;
+    margin-top: 5px !important;
+    padding-inline: 7px 4px !important;
+  }
+  .context-group-title span,
+  .member-group-heading {
+    font-size: 9px !important;
+    letter-spacing: .055em !important;
+  }
+  .context-home,
+  .direct-nav-row,
+  .modern-channel {
+    border-radius: 8px !important;
+  }
+  .context-home {
+    min-height: 34px !important;
+    height: 34px !important;
+    padding-inline: 8px !important;
+    font-size: 11px !important;
+  }
+  .direct-nav-row {
+    min-height: 40px !important;
+    padding: 4px 7px !important;
+    gap: 8px !important;
+  }
+  .modern-channel {
+    min-height: 31px !important;
+    padding-inline: 7px !important;
+    gap: 7px !important;
+  }
+  .modern-channel span,
+  .direct-nav-row strong,
+  .voice-channel-user,
+  .member-row strong,
+  .member-display-name {
+    font-size: 11.25px !important;
+  }
+  .direct-nav-row span,
+  .member-row span,
+  .member-row small,
+  .member-voice-location,
+  .member-voice-flags,
+  .context-empty {
+    font-size: 9.75px !important;
+  }
+  .modern-channel svg {
+    width: 15px !important;
+    height: 15px !important;
+  }
+  .voice-channel-users {
+    padding: 2px 0 6px 24px !important;
+  }
+  .voice-channel-user {
+    min-height: 25px !important;
+    height: auto !important;
+    padding: 0 4px !important;
+  }
+
+  .member-list {
+    padding: 8px 6px 14px !important;
+  }
+  .member-row {
+    min-height: 40px !important;
+    padding: 4px 6px !important;
+    gap: 8px !important;
+    border-radius: 8px !important;
+  }
+  .member-row > .avatar-sm,
+  .avatar-sm {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+    min-height: 28px !important;
+  }
+  .avatar-md {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .message-row {
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+  }
+  .message-meta strong {
+    font-size: 12px !important;
+  }
+  .message-meta span,
+  .message-meta time,
+  .compact-time {
+    font-size: 9.5px !important;
+  }
+  .message-text {
+    font-size: 13px !important;
+    line-height: 1.48 !important;
+  }
+  .composer-wrap {
+    padding: 0 12px 10px !important;
+  }
+  .composer {
+    min-height: 42px !important;
+    border-radius: 10px !important;
+  }
+  .composer textarea {
+    height: 32px !important;
+    min-height: 32px !important;
+    font-size: 13px !important;
+    padding-top: 7px !important;
+    padding-bottom: 5px !important;
+  }
+  .composer-attach,
+  .composer-emoji,
+  .composer-template,
+  .composer-schedule,
+  .composer-voice-button,
+  .compact-icon-button.icon-only {
+    width: 32px !important;
+    height: 32px !important;
+    flex-basis: 32px !important;
+  }
+  .compact-icon-button {
+    min-height: 29px !important;
+    font-size: 10px !important;
+  }
+
+  .voice-controls-wrap {
+    min-height: 60px !important;
+    padding: 6px 12px !important;
+    gap: 4px !important;
+  }
+  .ginga-music-panel {
+    margin: 8px 12px !important;
+  }
+
+  .settings-overlay {
+    grid-template-columns: 214px minmax(0, 1fr) !important;
+  }
+  .settings-sidebar {
+    width: 214px !important;
+    padding-top: 24px !important;
+    padding-right: 12px !important;
+  }
+  .settings-sidebar nav button {
+    min-height: 32px !important;
+    font-size: 10.5px !important;
+  }
+  .settings-page-inner {
+    width: min(100%, 900px) !important;
+    padding: 30px 28px 48px !important;
+  }
+  .settings-page-title {
+    margin-bottom: 16px !important;
+  }
+  .settings-page-title h1 {
+    font-size: 21px !important;
+  }
+  .settings-page-title p,
+  .settings-section-description,
+  .settings-hint {
+    font-size: 11px !important;
+  }
+  .settings-section-card,
+  .ultimate-card {
+    padding: 13px !important;
+  }
+  .settings-close {
+    top: 22px !important;
+    width: 30px !important;
+    height: 30px !important;
+  }
+
+  .modal-card,
+  .events-view > .overlay-sheet > .sheet-card,
+  .forum-v2 > .overlay-sheet > .sheet-card {
+    max-height: calc(100dvh - 28px) !important;
+  }
+}
+
+@media (min-width: 801px) and (max-width: 1366px),
+       (min-width: 801px) and (max-height: 768px) {
+  .nexora-shell.with-inspector {
+    grid-template-columns: 56px 220px minmax(0, 1fr) 204px !important;
+  }
+  .nexora-shell.no-inspector {
+    grid-template-columns: 56px 220px minmax(0, 1fr) !important;
+  }
+  .app-rail,
+  .server-rail {
+    width: 56px !important;
+    padding-inline: 5px !important;
+  }
+  .context-header,
+  .content-header,
+  .inspector-header {
+    min-height: 44px !important;
+    height: 44px !important;
+    flex-basis: 44px !important;
+  }
+  .context-scroll {
+    padding-top: 6px !important;
+    padding-bottom: 10px !important;
+  }
+  .context-home {
+    min-height: 32px !important;
+    height: 32px !important;
+  }
+  .direct-nav-row { min-height: 38px !important; }
+  .modern-channel { min-height: 30px !important; }
+  .voice-channel-user { min-height: 24px !important; }
+  .member-row { min-height: 38px !important; }
+  .message-text,
+  .composer textarea { font-size: 12.5px !important; }
+  .voice-controls-wrap { min-height: 56px !important; }
+  .settings-page-inner { padding: 26px 24px 42px !important; }
+}

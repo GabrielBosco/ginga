@@ -247,10 +247,10 @@ export async function effectiveGuildPermissionsForUser(userId: string, guildId: 
   const base = await effectiveGuildPermissions(guildId, membership.role);
   if (membership.role === "OWNER" || membership.role === "ADMIN") return { membership, permissions: base };
 
-  const assignments = await prisma.guildMemberCustomRole.findMany({
+  const assignments = (await prisma.guildMemberCustomRole.findMany({
     where: { guildId, userId },
-    include: { role: { select: { permissions: true } } }
-  });
+    include: { role: { select: { guildId: true, permissions: true } } }
+  })).filter((assignment) => assignment.role.guildId === guildId);
   const granted = new Set(assignments.flatMap((assignment) => assignment.role.permissions));
   const permissions = { ...base };
   for (const capability of customRolePermissionKeys) {
@@ -400,10 +400,10 @@ export async function requireChannelCapability(userId: string, channelId: string
   }
   if (membership.role === "OWNER" || membership.role === "ADMIN") return { channel, membership };
 
-  const assignments = await prisma.guildMemberCustomRole.findMany({
+  const assignments = (await prisma.guildMemberCustomRole.findMany({
     where: { guildId: channel.guildId, userId },
-    include: { role: { select: { permissions: true } } }
-  });
+    include: { role: { select: { guildId: true, permissions: true } } }
+  })).filter((assignment) => assignment.role.guildId === channel.guildId);
 
   if (capability !== "view" && membership.role === "MEMBER" && channel.guild.lockdownEnabled) {
     const staffCapabilities = new Set(["manageServer", "manageMessages", "manageMembers", "kickMembers", "moveMembers", "muteMembers", "deafenMembers", "manageNicknames", "banMembers", "manageAutoMod"]);
@@ -417,8 +417,11 @@ export async function requireChannelCapability(userId: string, channelId: string
     }
   }
 
-  const permissionSource = channel.category && channel.syncPermissionsWithCategory
-    ? channel.category.permissions
+  // Uma categoria vinculada a outro guild jamais participa do calculo de permissao.
+  // Isto tambem neutraliza registros legados/corrompidos no banco.
+  const inheritedCategory = channel.category?.guildId === channel.guildId ? channel.category : null;
+  const permissionSource = inheritedCategory && channel.syncPermissionsWithCategory
+    ? inheritedCategory.permissions
     : channel.permissions;
   const permission = permissionSource.find((item) => item.role === membership.role);
 
@@ -429,13 +432,13 @@ export async function requireChannelCapability(userId: string, channelId: string
       : (permission?.canView ?? true) && (permission?.canConnect ?? true);
 
   const roleIds = new Set(assignments.map((item) => item.roleId));
-  const customSource = channel.category && channel.syncPermissionsWithCategory
-    ? channel.category.customRolePermissions
+  const customSource = inheritedCategory && channel.syncPermissionsWithCategory
+    ? inheritedCategory.customRolePermissions
     : channel.customRolePermissions;
   const relevant = customSource.filter((item) => roleIds.has(item.roleId));
   const override = resolveCustomOverride(relevant, capability);
   if (override !== null) allowed = override;
-  const individualSource = channel.category && channel.syncPermissionsWithCategory ? channel.category.userPermissions : channel.userPermissions;
+  const individualSource = inheritedCategory && channel.syncPermissionsWithCategory ? inheritedCategory.userPermissions : channel.userPermissions;
   const individual = individualSource.find((item) => item.userId === userId);
   const individualField = capability === "view" ? individual?.canView : capability === "sendMessages" ? individual?.canSendMessages : individual?.canConnect;
   if (individualField !== null && individualField !== undefined) allowed = individualField;

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { assertDeliverableEmail, assertPasswordNotPwned } from "../credentialSecurity.js";
+import { birthDateInputSchema } from "../agePolicy.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const REQUEST_WINDOW_MS = 15 * 60 * 1000;
@@ -16,6 +17,7 @@ type Challenge = {
   id: string;
   email: string;
   username: string;
+  birthDate: string;
   salt: Buffer;
   codeHash: Buffer;
   expiresAt: number;
@@ -36,6 +38,7 @@ const requestCodeSchema = z.object({
   email: z.string().trim().email().max(160),
   username: z.string().trim().min(3).max(24),
   displayName: z.string().trim().min(2).max(32),
+  birthDate: birthDateInputSchema,
   password: z.string().min(8).max(128).optional()
 });
 
@@ -243,6 +246,7 @@ registrationVerificationRouter.post("/register/code", async (req, res) => {
     id: randomUUID(),
     email,
     username,
+    birthDate: parsed.data.birthDate,
     salt,
     codeHash: hashCode(code, salt),
     expiresAt: Date.now() + CODE_TTL_MS,
@@ -278,6 +282,7 @@ registrationVerificationRouter.post("/register", (req: Request, res: Response, n
   const verificationCode = String(body.verificationCode ?? "").replace(/\D/g, "");
   const email = String(body.email ?? "").trim().toLowerCase();
   const username = String(body.username ?? "").trim().toLowerCase();
+  const birthDate = String(body.birthDate ?? "").trim();
 
   if (!challengeId || !/^\d{6}$/.test(verificationCode)) {
     return res.status(400).json({ error: "Confirme seu e-mail com o codigo de 6 digitos antes de criar a conta." });
@@ -289,7 +294,7 @@ registrationVerificationRouter.post("/register", (req: Request, res: Response, n
     return res.status(400).json({ error: "Esse codigo expirou. Solicite um novo codigo de verificacao." });
   }
 
-  if (challenge.email !== email || challenge.username !== username) {
+  if (challenge.email !== email || challenge.username !== username || challenge.birthDate !== birthDate) {
     return res.status(400).json({ error: "Os dados do cadastro mudaram. Solicite um novo codigo de verificacao." });
   }
 

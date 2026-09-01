@@ -245,7 +245,7 @@ export function ServerUltimatePanel({
     <section className="ultimate-panel settings-page-section" aria-busy={loading || busy}>
       <div className="ultimate-hero">
         <div>
-          <span className="eyebrow">GINGA 0.4.5</span>
+          <span className="eyebrow">GINGA 0.4.8</span>
           <h1>Personalizacao do servidor</h1>
           <p>Organize areas, assets, onboarding, salas dinamicas, badges e protecao sem sair deste painel.</p>
         </div>
